@@ -1,6 +1,7 @@
 import baseUrl from "../assets/map/base.png"
 import selectedUrl from "../assets/map/selected.png"
 import modelUrl from "../assets/map/azerbaijan.glb?url"
+import content from "../data/content.json"
 
 // The nine centre screens share one map. Change numbers here; the wall has no sliders.
 // A synced region id replaces regionId while it is set.
@@ -50,19 +51,4 @@ export const mapConfig = {
   targetZ: 0.22,
 }
 
-export const mapRegions = [
-  { id: "lankaran-astara", label: "Lənkəran-Astara", enabled: false },
-  { id: "mil-mughan", label: "Mil-Muğan", enabled: false },
-  { id: "shirvan-salyan", label: "Şirvan-Salyan", enabled: false },
-  { id: "baku", label: "Bakı", enabled: true },
-  { id: "absheron-khizi", label: "Abşeron-Xızı", enabled: true },
-  { id: "guba-khachmaz", label: "Quba-Xaçmaz", enabled: false },
-  { id: "daghlig-shirvan", label: "Dağlıq Şirvan", enabled: true },
-  { id: "sheki-zagatala", label: "Şəki-Zaqatala", enabled: false },
-  { id: "central-aran", label: "Mərkəzi Aran", enabled: false },
-  { id: "karabakh", label: "Qarabağ", enabled: false },
-  { id: "ganja-dashkasan", label: "Gəncə-Daşkəsən", enabled: false },
-  { id: "gazakh-tovuz", label: "Qazax-Tovuz", enabled: false },
-  { id: "east-zangezur", label: "Şərqi Zəngəzur", enabled: false },
-  { id: "nakhchivan", label: "Naxçıvan", enabled: false },
-]
+export const mapRegions = content.regions

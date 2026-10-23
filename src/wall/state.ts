@@ -3,6 +3,8 @@ export type WallState = {
   regionId: string | null
   regionSet: boolean
   rev: number
+  seed: number
+  period: string
 }
 
 export const defaultWall: WallState = {
@@ -10,6 +12,8 @@ export const defaultWall: WallState = {
   regionId: null,
   regionSet: false,
   rev: 0,
+  seed: 0,
+  period: "Last 30 Days",
 }
 
 export function periodLabel(iso: string) {

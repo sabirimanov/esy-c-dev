@@ -2,6 +2,7 @@ import fs from "node:fs"
 
 const statePath = new URL("./wall-state.json", import.meta.url)
 const clients = new Set()
+const periods = new Set(["Today", "Last 7 Days", "Last 30 Days", "Last Month", "This Year", "This Month"])
 
 function load() {
   try {
@@ -12,12 +13,14 @@ function load() {
         regionId: raw.regionId ?? null,
         regionSet: Boolean(raw.regionSet),
         rev: Number(raw.rev) || 1,
+        seed: Number.isInteger(raw.seed) && raw.seed >= 0 ? raw.seed : 0,
+        period: periods.has(raw.period) ? raw.period : "Last 30 Days",
       }
     }
   } catch {
     // first boot
   }
-  return { date: "2026-09-30", regionId: null, regionSet: false, rev: 1 }
+  return { date: "2026-09-30", regionId: null, regionSet: false, rev: 1, seed: 0, period: "Last 30 Days" }
 }
 
 let state = load()
@@ -78,6 +81,8 @@ export function handleSync(req, res) {
         next.regionId = patch.regionId || null
       }
       if ("regionSet" in patch) next.regionSet = Boolean(patch.regionSet)
+      if (Number.isInteger(patch.seed) && patch.seed >= 0 && patch.seed < 1e10) next.seed = patch.seed
+      if (typeof patch.period === "string" && periods.has(patch.period)) next.period = patch.period
       next.rev = state.rev + 1
       state = next
       persist()

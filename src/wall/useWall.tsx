@@ -4,27 +4,30 @@ import { defaultWall, type WallState } from "./state"
 
 type WallApi = {
   state: WallState
-  patch: (partial: Partial<Pick<WallState, "date" | "regionId" | "regionSet">>) => void
+  patch: (partial: Partial<Pick<WallState, "date" | "regionId" | "regionSet" | "seed" | "period">>) => void
 }
 
 const WallContext = createContext<WallApi | null>(null)
 const storageKey = "ccc-wall"
 
+function normalize(raw: Partial<WallState> | null): WallState {
+  if (!raw || typeof raw.date !== "string") return defaultWall
+  return {
+    date: raw.date,
+    regionId: raw.regionId ?? null,
+    regionSet: Boolean(raw.regionSet),
+    rev: Number(raw.rev) || 0,
+    seed: Number.isInteger(raw.seed) && (raw.seed as number) >= 0 ? (raw.seed as number) : 0,
+    period: typeof raw.period === "string" && raw.period ? raw.period : defaultWall.period,
+  }
+}
+
 function readStored(): WallState {
   try {
-    const raw = JSON.parse(localStorage.getItem(storageKey) || "")
-    if (raw && typeof raw.date === "string") {
-      return {
-        date: raw.date,
-        regionId: raw.regionId ?? null,
-        regionSet: Boolean(raw.regionSet),
-        rev: Number(raw.rev) || 0,
-      }
-    }
+    return normalize(JSON.parse(localStorage.getItem(storageKey) || ""))
   } catch {
-    // ignore a broken local snapshot
+    return defaultWall
   }
-  return defaultWall
 }
 
 export function WallProvider({ children }: { children: ReactNode }) {
@@ -33,14 +36,14 @@ export function WallProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const source = new EventSource("/sync")
     source.onmessage = (event) => {
-      const next = JSON.parse(event.data) as WallState
+      const next = normalize(JSON.parse(event.data) as WallState)
       localStorage.setItem(storageKey, JSON.stringify(next))
       setState(next)
     }
     return () => source.close()
   }, [])
 
-  function patch(partial: Partial<Pick<WallState, "date" | "regionId" | "regionSet">>) {
+  function patch(partial: Partial<Pick<WallState, "date" | "regionId" | "regionSet" | "seed" | "period">>) {
     void fetch("/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
