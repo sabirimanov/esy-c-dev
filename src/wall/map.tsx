@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react"
-import glowUrl from "../assets/map-glow.png"
+import glowUrl from "../assets/map-glow.jpg"
 import { initTerrain, type Terrain } from "./terrain"
 
 // Master map is 3×3 tiles, 5760×3240. Each screen renders its own 1920×1080
