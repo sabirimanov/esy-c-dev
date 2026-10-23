@@ -16,10 +16,11 @@ html, body, #root { width: 1920px; height: 1080px; margin: 0; overflow: hidden; 
 button, input { font-family: inherit; }
 h1, h2, h3, p { margin: 0; }
 
-.wall { position: relative; overflow: hidden; background: #000; }
+.wall-fit { width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+.wall { position: relative; transform-origin: top left; background: #000; }
 .wall-tile { position: absolute; width: 1920px; height: 1080px; }
 .screen { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
-.screen.is-off { filter: grayscale(1); opacity: 0.25; pointer-events: none; }
+.screen.is-off { filter: grayscale(1); opacity: 0.9; pointer-events: none; }
 .map-glow { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; pointer-events: none; }
 .map-terrain { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .map-terrain canvas { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }

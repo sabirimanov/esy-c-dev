@@ -36,12 +36,14 @@ function RouteScreen() {
   const maxRow = Math.max(...spots.map((spot) => spot.row))
   const width = ids.length ? (maxCol - minCol + 1) * TILE.w : TILE.w
   const height = ids.length ? (maxRow - minRow + 1) * TILE.h : TILE.h
+  const scaleX = TILE.w / width
+  const scaleY = TILE.h / height
 
   useEffect(() => {
-    fitPage(width, height)
+    fitPage(TILE.w, TILE.h)
     document.title = ids.join("--") || "CCC"
     return () => fitPage(TILE.w, TILE.h)
-  }, [width, height, screenId])
+  }, [screenId])
 
   useEffect(() => {
     if (single === null) return
@@ -59,12 +61,14 @@ function RouteScreen() {
 
   if (!ids.length) return <div className="screen" />
   return (
-    <div className="wall" style={{ width, height }}>
-      {spots.map((spot) => (
-        <div key={spot.id} className="wall-tile" style={{ left: (spot.col - minCol) * TILE.w, top: (spot.row - minRow) * TILE.h }}>
-          <ScreenView id={spot.id} />
-        </div>
-      ))}
+    <div className="wall-fit">
+      <div className="wall" style={{ width, height, transform: `scale(${scaleX}, ${scaleY})` }}>
+        {spots.map((spot) => (
+          <div key={spot.id} className="wall-tile" style={{ left: (spot.col - minCol) * TILE.w, top: (spot.row - minRow) * TILE.h }}>
+            <ScreenView id={spot.id} />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
