@@ -1,10 +1,10 @@
 import type { CSSProperties, ReactNode } from "react"
 
-export function Frame({ children, border = true }: { children: ReactNode; border?: boolean }) {
+export function Frame({ children, border = true, mirror = false }: { children: ReactNode; border?: boolean; mirror?: boolean }) {
   return (
     <div className="screen-body canvas">
       {border && <div className="frame-plate" />}
-      {border && <div className="frame-stroke" />}
+      {border && <div className={mirror ? "frame-stroke is-mirrored" : "frame-stroke"} />}
       {children}
     </div>
   )

@@ -307,7 +307,7 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
       }
     }
     if (marker.visible && markerRegion >= 0) {
-      const bob = 0.012 * Math.sin((now * 2 * Math.PI) / 3600)
+      const bob = 0 // 0.012 * Math.sin((now * 2 * Math.PI) / 3600)
       marker.position.set(markerPos.x, markerHeight + regions[markerRegion].progress * lift + 0.037 + bob, markerPos.y)
       const anchor = marker.position.clone().add(new THREE.Vector3(0, 0.19, 0)).project(camera)
       cityLabel.style.left = `${(anchor.x * 0.5 + 0.5) * TILE.w + mapConfig.labelOffset}px`

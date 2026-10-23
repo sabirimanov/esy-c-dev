@@ -73,7 +73,7 @@ function Screen1({ state }: { state: WallState }) {
   const period = periodLabel(state.date)
   const previous = periodLabel(shiftMonth(state.date, -1))
   return (
-    <Frame>
+    <Frame mirror>
       <PlaceText x={37} y={28} size={32} weight={900}>UFG PERFORMANCE & LOSS MONITORING</PlaceText>
       <At x={42} y={98} w={443} h={150}><div className="kpi" /></At>
       <At x={508} y={97} w={451} h={150}><div className="kpi" /></At>
@@ -161,7 +161,7 @@ function Screen2() {
     { title: "Pressure sensor compliance", hint: "Pressure sensors", y: 673, bar: 691, fill: 894, value: "97.0%" },
   ]
   return (
-    <Frame>
+    <Frame mirror>
       <Pin x={37} y={28} size={32} weight={900} color="#34efde" lh={40}>CALIBRATION STATUS</Pin>
       <At x={43} y={97} w={427} h={150}><div className="kpi" /></At>
       <At x={505} y={97} w={426} h={150}><div className="kpi" /></At>
@@ -631,7 +631,7 @@ function Screen8() {
     [744, 25, "Jul"], [842, 32, "Aug"], [946, 31, "Sep"], [1049, 28, "Oct"], [1150, 32, "Nov"], [1253, 31, "Dec"],
   ] as const
   return (
-    <Frame>
+    <Frame mirror>
       <Pin x={37} y={28} size={32} weight={900} color="#34efde" lh={40}>GAS DEMAND & FLOW</Pin>
       <At x={34} y={97} w={910} h={165}><div className="kpi" /></At>
       <At x={959} y={97} w={910} h={165}><div className="kpi" /></At>
@@ -750,7 +750,7 @@ function Screen9() {
     { x: 1740, label: "Resolved", lx: 1706, lw: 98, time: "15:30", tx: 1715, color: "#a9f45b", to: "#628e35" },
   ]
   return (
-    <Frame>
+    <Frame mirror>
       <At x={43} y={52} w={1814} h={407}><div className="panel shell dim" /></At>
       <At x={43} y={475} w={1814} h={290}><div className="panel shell dim" /></At>
       <At x={43} y={781} w={1814} h={252}><div className="panel shell dim" /></At>
@@ -1119,7 +1119,7 @@ function Screen15() {
     [203, "5 Apr"], [493, "10 Apr"], [783, "15 Apr"], [1087, "20 Apr"], [1406, "25 Apr"], [1727, "30 Apr"],
   ] as const
   return (
-    <Frame>
+    <Frame mirror>
       <Pin x={37} y={28} size={32} weight={900} color="#34efde" lh={40}>REVENUE & BILLING PERFORMANCE</Pin>
       {kpis.map((card) => (
         <span key={card.label}>
@@ -1182,7 +1182,7 @@ function Screen16() {
     [810, 801, 1048],
   ] as const
   return (
-    <Frame>
+    <Frame mirror>
       <Pin x={37} y={28} size={32} weight={900} color="#34efde" lh={40}>FIELD OPERATION</Pin>
       <Pin x={1546} y={43} size={16} color="#a3aeab" lh={19}>Activity: 1–20 Oct 2026 · through 01:50 AZT</Pin>
       {kpis.map((card) => (
