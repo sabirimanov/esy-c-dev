@@ -1312,9 +1312,9 @@ function Screen18() {
         </span>
       ))}
       <img className="at" src={weatherBaku} alt="" style={{ left: 1437, top: 805, width: 463, height: 219 }} />
-      <Pin x={1437} y={837} w={463} size={44} weight={500} color="#ffffff" lh={32} align="center">Baku</Pin>
-      <Pin x={1437} y={888} w={463} size={72} weight={500} color="#ffffff" lh={76} align="center">21°</Pin>
-      <Pin x={1437} y={976} w={463} size={22} weight={500} color="#ffffff" lh={26} align="center">Field risk low</Pin>
+      <Pin x={1437} y={830} w={463} size={34} weight={300} color="#ffffff" lh={32} align="center">Baku</Pin>
+      <Pin x={1437} y={888} w={463} size={100} weight={300} color="#ffffff" lh={76} align="center">21°</Pin>
+      <Pin x={1437} y={985} w={463} size={22} weight={500} color="#ffffff" lh={26} align="center">Field risk low</Pin>
     </Frame>
   )
 }
