@@ -1,0 +1,5 @@
+.env
+node_modules
+dist
+server/wall-state.json
+.DS_Store
