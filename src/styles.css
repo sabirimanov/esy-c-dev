@@ -17,6 +17,7 @@ button, input { font-family: inherit; }
 h1, h2, h3, p { margin: 0; }
 
 .screen { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+.screen.is-off { filter: grayscale(1); opacity: 0.25; pointer-events: none; }
 .map-glow { position: absolute; pointer-events: none; }
 .map-terrain { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .map-terrain canvas { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }

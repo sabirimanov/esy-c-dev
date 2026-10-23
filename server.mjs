@@ -4,7 +4,7 @@ import path from "node:path"
 import { handleSync } from "./server/sync.mjs"
 
 const root = path.resolve("dist")
-const port = Number(process.env.PORT || 8080)
+const port = Number(process.env.PORT || 3089)
 const host = process.env.HOST || "0.0.0.0"
 const types = {
   ".html": "text/html; charset=utf-8",
