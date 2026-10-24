@@ -7,6 +7,7 @@ import weatherBaku from "../assets/weather-baku.png"
 import { UfgScreen2, UfgScreen8, UfgScreen9 } from "./UfgDetail"
 import { At, Frame, PlaceText } from "../ui/widgets"
 import { useContent } from "../data/live"
+import { useSocPanel } from "../data/socDashboard"
 import { formatRange, iso, monthGrid, monthTitle, parseIso, periodRange, shiftView } from "../wall/dates"
 import { citiesOf, cityById, EXC_REGIONS, regionEnabled, regionLabel } from "../wall/places"
 import { periodLabel, shiftMonth, type WallState } from "../wall/state"
@@ -1399,16 +1400,24 @@ function HealthRing({ x }: { x: number }) {
   )
 }
 
+const healthRings = [
+  { x: 140, label: "Telecom", key: "comm.gateway_availability" },
+  { x: 421, label: "Critical", key: "soc.critical_alerts" },
+  { x: 703, label: "Integration", key: "int.integration_success" },
+  { x: 993, label: "Availability", key: "dc.infra_availability" },
+  { x: 1274, label: "Response", key: "app.avg_response" },
+  { x: 1556, label: "Comm.", key: "comm.success" },
+]
+
 function Screen19() {
-  const source = useContent().screen19.rings
-  const rings = [140, 421, 703, 993, 1274, 1556].map((x, index) => ({ x, ...source[index] }))
+  const read = useSocPanel()
   return (
     <Frame border={false}>
       <Pin x={425} y={657} size={32} weight={900} color="#34efde" lh={40}>SYSTEM HEALTH, CYBERSECURITY & ENTERPRISE ECOSYSTEM HEALTH</Pin>
-      {rings.map((ring) => (
+      {healthRings.map((ring) => (
         <span key={ring.label}>
           <HealthRing x={ring.x} />
-          <Pin x={ring.x - 20} y={842} w={264} size={48} color="#ffffff" lh={40} align="center">{ring.value}</Pin>
+          <Pin x={ring.x - 20} y={842} w={264} size={48} color="#ffffff" lh={40} align="center">{read(ring.key)}</Pin>
           <Pin x={ring.x - 20} y={1004} w={264} size={32} color="#8fa7a4" lh={36} align="center">{ring.label}</Pin>
         </span>
       ))}
