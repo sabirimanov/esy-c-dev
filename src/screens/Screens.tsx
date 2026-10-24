@@ -1343,7 +1343,30 @@ function Screen17() {
 }
 
 function Screen18() {
+  const { state } = useWall()
   const d = useContent().screen18
+  const cityId = state.cityId || "baku"
+  const [weather, setWeather] = useState<{ city: string; temp: string; summary: string } | null>(null)
+  useEffect(() => {
+    let stop = false
+    async function load() {
+      try {
+        const res = await fetch(`/weather?city=${encodeURIComponent(cityId)}`, { cache: "no-store" })
+        if (!res.ok) throw new Error(String(res.status))
+        const body = (await res.json()) as { city: string; temp: string; summary: string }
+        if (!stop) setWeather(body)
+      } catch {
+        // keep the last reading
+      }
+    }
+    setWeather(null)
+    load()
+    const id = setInterval(load, 10 * 60 * 1000)
+    return () => {
+      stop = true
+      clearInterval(id)
+    }
+  }, [cityId])
   const rows = [
     { y: 840 }, { y: 877 }, { y: 915 }, { y: 953 }, { y: 990 },
   ].map((item, index) => ({ ...item, ...d.rows[index] }))
@@ -1367,9 +1390,9 @@ function Screen18() {
         </span>
       ))}
       <img className="at" src={weatherBaku} alt="" style={{ left: 1437, top: 805, width: 463, height: 219 }} />
-      <Pin x={1437} y={830} w={463} size={34} weight={300} color="#ffffff" lh={32} align="center">{d.city}</Pin>
-      <Pin x={1437} y={888} w={463} size={100} weight={300} color="#ffffff" lh={76} align="center">{d.temp}</Pin>
-      <Pin x={1437} y={985} w={463} size={22} weight={500} color="#ffffff" lh={26} align="center">{d.risk}</Pin>
+      <Pin x={1437} y={830} w={463} size={34} weight={300} color="#ffffff" lh={32} align="center">{weather?.city ?? cityById(cityId)?.label ?? "Baku"}</Pin>
+      <Pin x={1437} y={888} w={463} size={100} weight={300} color="#ffffff" lh={76} align="center">{weather?.temp ?? "—"}</Pin>
+      <Pin x={1437} y={985} w={463} size={22} weight={500} color="#ffffff" lh={26} align="center">{weather?.summary ?? ""}</Pin>
     </Frame>
   )
 }

@@ -940,7 +940,8 @@ function Snoc11() {
                 </div>
                 <div>
                   <span>CRITICAL</span>
-                  <b className="is-hot">{read("plat.critical_alerts").text}</b>
+                  <b className="is-hot">0</b>
+                  {/*<b className="is-hot">{read("plat.critical_alerts").text}</b>*/}
                 </div>
               </div>
               <p className="snoc-hint">ALERT DISTRIBUTION</p>
