@@ -30,8 +30,11 @@ type Region = {
   lastRise: number
 }
 
+export type MapPlace = { label: string; x: number; z: number } | null
+
 export type Terrain = {
   setRegion: (id: string | null) => void
+  setPlace: (place: MapPlace) => void
   dispose: () => void
 }
 
@@ -212,23 +215,31 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
     regions.push({ id: node.name, label: node.extras.label, group, mats, progress: 0, from: 0, to: 0, start: 0, lastRise: -1 })
   }
 
+  const markerMat = new THREE.MeshStandardMaterial({
+    color: 0xb0d6c7,
+    roughness: 0.65,
+    metalness: 0,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  })
   const marker = new THREE.Group()
-  marker.add(
-    new THREE.Mesh(
-      roundedPointer(),
-      new THREE.MeshStandardMaterial({ color: 0xb0d6c7, roughness: 0.65, metalness: 0, side: THREE.DoubleSide }),
-    ),
-  )
+  marker.add(new THREE.Mesh(roundedPointer(), markerMat))
   scene.add(marker)
 
   const cityLabel = document.createElement("div")
   cityLabel.className = "map-city"
-  cityLabel.textContent = mapConfig.city
   cityLabel.style.fontSize = `${validate(mapConfig.textSize, 10, 48, "Text size")}px`
+  cityLabel.style.opacity = "0"
   host.append(cityLabel)
 
   const ray = new THREE.Raycaster()
   const markerPos = { x: mapConfig.markerX, y: mapConfig.markerY }
+  let targetX = markerPos.x
+  let targetZ = markerPos.y
+  let markerAlpha = 0
+  let alphaTarget = 0
   let markerRegion = -1
   let markerHeight = 0
   let selected: string | null = null
@@ -238,11 +249,20 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
     scene.updateMatrixWorld(true)
     ray.set(new THREE.Vector3(markerPos.x, 3, markerPos.y), new THREE.Vector3(0, -1, 0))
     const hit = ray.intersectObjects(surfaces, false)[0]
-    marker.visible = !!hit
-    if (hit) {
-      markerRegion = hit.object.userData.region as number
-      markerHeight = hit.point.y - regions[markerRegion].progress * lift
+    if (!hit) return
+    markerRegion = hit.object.userData.region as number
+    markerHeight = hit.point.y
+  }
+
+  function setPlace(place: MapPlace) {
+    if (!place) {
+      alphaTarget = 0
+      return
     }
+    targetX = place.x
+    targetZ = place.z
+    cityLabel.textContent = place.label
+    alphaTarget = 1
   }
 
   function setRegion(id: string | null, immediate = false) {
@@ -270,7 +290,7 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
   }
 
   locateMarker()
-  setRegion(mapConfig.regionId, true)
+  setRegion(null, true)
 
   let dimCurrent = selected ? dim : 0
   let last = performance.now()
@@ -306,14 +326,21 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
         material.uniforms.color.value.set("#b0d6c7").multiplyScalar(brightness)
       }
     }
-    if (marker.visible && markerRegion >= 0) {
+    const glide = 1 - Math.exp(-dt * 3.2)
+    markerPos.x += (targetX - markerPos.x) * glide
+    markerPos.y += (targetZ - markerPos.y) * glide
+    markerAlpha += (alphaTarget - markerAlpha) * (1 - Math.exp(-dt * 5))
+    locateMarker()
+    markerMat.opacity = markerAlpha
+    marker.visible = markerAlpha > 0.02 && markerRegion >= 0
+    cityLabel.style.opacity = markerAlpha.toFixed(3)
+    if (markerRegion >= 0) {
       const bob = 0 // 0.012 * Math.sin((now * 2 * Math.PI) / 3600)
-      marker.position.set(markerPos.x, markerHeight + regions[markerRegion].progress * lift + 0.037 + bob, markerPos.y)
+      marker.position.set(markerPos.x, markerHeight + 0.037 + bob, markerPos.y)
       const anchor = marker.position.clone().add(new THREE.Vector3(0, 0.19, 0)).project(camera)
       cityLabel.style.left = `${(anchor.x * 0.5 + 0.5) * TILE.w + mapConfig.labelOffset}px`
       cityLabel.style.top = `${(-anchor.y * 0.5 + 0.5) * TILE.h}px`
     }
-    cityLabel.hidden = !marker.visible || !mapConfig.city
     renderer.render(scene, camera)
     frameId = requestAnimationFrame(frame)
   }
@@ -321,6 +348,7 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
 
   return {
     setRegion: (id) => setRegion(id),
+    setPlace,
     dispose() {
       cancelAnimationFrame(frameId)
       renderer.dispose()

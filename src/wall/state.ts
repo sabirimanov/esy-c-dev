@@ -1,6 +1,11 @@
+// Shared wall session. regionId and cityId are null when the filter is All.
+// date and dateTo are an inclusive range; equal values are a single day.
+// Region ids are the exc codes. 11 is Bakı, 9 is Dağlıq Şirvan, 8 is Abşeron-Xızı.
 export type WallState = {
   date: string
+  dateTo: string
   regionId: string | null
+  cityId: string | null
   regionSet: boolean
   rev: number
   seed: number
@@ -10,7 +15,9 @@ export type WallState = {
 
 export const defaultWall: WallState = {
   date: "2026-09-30",
+  dateTo: "2026-09-30",
   regionId: null,
+  cityId: null,
   regionSet: false,
   rev: 0,
   seed: 0,

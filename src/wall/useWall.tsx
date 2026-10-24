@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
-import { mapRegions } from "./mapConfig"
+import { normalizeCity, normalizeRegion } from "./places"
 import { defaultWall, type WallState } from "./state"
+
+type WallPatch = Partial<Pick<WallState, "date" | "dateTo" | "regionId" | "cityId" | "regionSet" | "seed" | "period" | "ufgOpen">>
 
 type WallApi = {
   state: WallState
-  patch: (partial: Partial<Pick<WallState, "date" | "regionId" | "regionSet" | "seed" | "period" | "ufgOpen">>) => void
+  patch: (partial: WallPatch) => void
 }
 
 const WallContext = createContext<WallApi | null>(null)
@@ -12,13 +14,17 @@ const storageKey = "ccc-wall"
 
 function normalize(raw: Partial<WallState> | null): WallState {
   if (!raw || typeof raw.date !== "string") return defaultWall
+  const regionId = normalizeRegion(raw.regionId)
+  const dateTo = typeof raw.dateTo === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.dateTo) ? raw.dateTo : raw.date
   return {
-    date: raw.date,
-    regionId: raw.regionId ?? null,
+    date: raw.date <= dateTo ? raw.date : dateTo,
+    dateTo: raw.date <= dateTo ? dateTo : raw.date,
+    regionId,
+    cityId: normalizeCity(regionId, raw.cityId),
     regionSet: Boolean(raw.regionSet),
     rev: Number(raw.rev) || 0,
     seed: Number.isInteger(raw.seed) && (raw.seed as number) >= 0 ? (raw.seed as number) : 0,
-    period: typeof raw.period === "string" && raw.period ? raw.period : defaultWall.period,
+    period: raw.period === "" || (typeof raw.period === "string" && raw.period) ? raw.period : defaultWall.period,
     ufgOpen: Boolean(raw.ufgOpen),
   }
 }
@@ -44,7 +50,7 @@ export function WallProvider({ children }: { children: ReactNode }) {
     return () => source.close()
   }, [])
 
-  function patch(partial: Partial<Pick<WallState, "date" | "regionId" | "regionSet" | "seed" | "period" | "ufgOpen">>) {
+  function patch(partial: WallPatch) {
     void fetch("/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -53,14 +59,13 @@ export function WallProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    const known = new Set(mapRegions.map((region) => region.id))
     window.setRegion = (id: string | null) => {
-      const regionId = id ? String(id) : null
-      if (regionId && !known.has(regionId)) {
-        console.warn("Unknown region:", regionId)
+      const regionId = normalizeRegion(id)
+      if (id && !regionId) {
+        console.warn("Unknown region:", id)
         return
       }
-      patch({ regionId, regionSet: true })
+      patch({ regionId, regionSet: true, cityId: null })
     }
   })
 

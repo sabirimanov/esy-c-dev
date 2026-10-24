@@ -1,6 +1,6 @@
 import { useEffect } from "react"
 import { MapTile, tileOf } from "../wall/map"
-import { mapConfig } from "../wall/mapConfig"
+import { cityById, mapRegionId } from "../wall/places"
 import { useWall } from "../wall/useWall"
 import { screenBody } from "./Screens"
 
@@ -10,7 +10,7 @@ const ufgScreens = new Set([2, 8, 9])
 
 export function ScreenView({ id }: { id: number }) {
   const { state, patch } = useWall()
-  const region = state.regionSet ? state.regionId : mapConfig.regionId
+  const city = cityById(state.cityId)
   useEffect(() => {
     document.title = String(id)
   }, [id])
@@ -28,11 +28,19 @@ export function ScreenView({ id }: { id: number }) {
       className={className}
       data-screen={id}
       data-date={state.date}
+      data-date-to={state.dateTo}
       data-region={state.regionId ?? ""}
+      data-city={state.cityId ?? ""}
       data-ufg={state.ufgOpen ? "open" : "closed"}
       onClick={id === 1 ? () => patch({ ufgOpen: !state.ufgOpen }) : undefined}
     >
-      {tileOf(id) && <MapTile screen={id} selected={region} />}
+      {tileOf(id) && (
+        <MapTile
+          screen={id}
+          selected={mapRegionId(state.regionId)}
+          place={city ? { label: city.mapLabel, x: city.x, z: city.z } : null}
+        />
+      )}
       {screenBody(id, state)}
     </div>
   )

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import drillAi from "../assets/drill-ai.png"
 import drillReady from "../assets/drill-ready.png"
 import drillMaint from "../assets/drill-maint.png"
@@ -7,7 +7,8 @@ import weatherBaku from "../assets/weather-baku.png"
 import { UfgScreen2, UfgScreen8, UfgScreen9 } from "./UfgDetail"
 import { At, Frame, PlaceText } from "../ui/widgets"
 import { useContent } from "../data/live"
-import { mapConfig, mapRegions } from "../wall/mapConfig"
+import { formatRange, iso, monthGrid, monthTitle, parseIso, periodRange, shiftView } from "../wall/dates"
+import { citiesOf, cityById, EXC_REGIONS, regionEnabled, regionLabel } from "../wall/places"
 import { periodLabel, shiftMonth, type WallState } from "../wall/state"
 import { useWall } from "../wall/useWall"
 
@@ -275,29 +276,28 @@ function Screen5() {
   const { state, patch } = useWall()
   const content = useContent()
   const d = content.screen5
-  const region = state.regionSet ? state.regionId : mapConfig.regionId
-  const regionLabel = mapRegions.find((item) => item.id === region)?.label ?? "Вся карта"
+  const opened = parseIso(state.date)
+  const [view, setView] = useState({ y: opened.y, m: opened.m })
+  const [anchor, setAnchor] = useState<string | null>(null)
+  useEffect(() => {
+    const next = parseIso(state.date)
+    setView((current) => (current.y === next.y && current.m === next.m ? current : { y: next.y, m: next.m }))
+  }, [state.date])
+  const committedFrom = state.date <= state.dateTo ? state.date : state.dateTo
+  const committedTo = state.date <= state.dateTo ? state.dateTo : state.date
+  const from = anchor ?? committedFrom
+  const to = anchor ?? committedTo
+  const weeks = monthGrid(view.y, view.m)
+  const rowH = weeks.length > 5 ? 60 : 72
+  const cities = citiesOf(state.regionId)
+  const filters = [
+    ["Region", regionLabel(state.regionId)],
+    ["City", cityById(state.cityId)?.label ?? "All cities"],
+    ["Cluster", "All clusters"],
+    ["Date Range", formatRange(from, to)],
+  ]
   const ox = 20
   const oy = 330
-  const weeks = [
-    [null, null, null, 1, 2, 3, 4],
-    [5, 6, 7, 8, 9, 10, 11],
-    [12, 13, 14, 15, 16, 17, 18],
-    [19, 20, 21, 22, 23, 24, 25],
-    [26, 27, 28, 29, 30, 31, null],
-  ]
-  const fields = [
-    { kicker: "REPUBLIC", y: 144, value: d.republic },
-    { kicker: "CITY", y: 338, value: d.city },
-    { kicker: "CLUSTER", y: 435, value: d.cluster },
-  ]
-  const filters = [
-    ["Republic", d.republic],
-    ["Region", regionLabel],
-    ["City", d.city],
-    ["Cluster", d.cluster],
-    ["Date Range", d.rangeLabel],
-  ]
   const calX = 576
   const calW = 604
   const colW = calW / 7
@@ -306,6 +306,60 @@ function Screen5() {
   const chipH = 48
   const chipGap = 14
   const chips = [content.periods.slice(0, 3), content.periods.slice(3)]
+  const bars: ReactNode[] = []
+  const days: ReactNode[] = []
+  function pickDay(day: string) {
+    if (!anchor) {
+      setAnchor(day)
+      return
+    }
+    const seed = Math.floor(Math.random() * 1e9) + 1
+    setAnchor(null)
+    if (anchor === day) {
+      patch({ date: day, dateTo: day, period: "", seed })
+      return
+    }
+    patch({
+      date: anchor < day ? anchor : day,
+      dateTo: anchor < day ? day : anchor,
+      period: "",
+      seed,
+    })
+  }
+  weeks.forEach((week, row) => {
+    const columns = week.flatMap((day, column) => {
+      if (day == null) return []
+      const key = iso(view.y, view.m, day)
+      return key >= from && key <= to ? [column] : []
+    })
+    if (columns.length && from !== to) {
+      const start = columns[0]
+      const end = columns[columns.length - 1]
+      bars.push(
+        <At key={`bar-${view.y}-${view.m}-${row}`} x={ox + calX + start * colW} y={oy + 305 + row * rowH} w={(end - start + 1) * colW} h={40}>
+          <div style={{ height: "100%", borderRadius: 20, background: "#165654" }} />
+        </At>,
+      )
+    }
+    week.forEach((day, column) => {
+      if (day == null) return
+      const key = iso(view.y, view.m, day)
+      const end = key === from || key === to || key === anchor
+      const y = oy + 298 + row * rowH
+      days.push(
+        <span key={key}>
+          {end && (
+            <At x={ox + calX + column * colW + (colW - 54) / 2} y={y} w={54} h={54}>
+              <div style={{ width: 54, height: 54, borderRadius: 27, background: "#34efde" }} />
+            </At>
+          )}
+          <At x={ox + calX + column * colW} y={y} w={colW} h={54}>
+            <button type="button" className="cal-day" style={{ color: end ? "#07302c" : "#e7f0ee", fontWeight: end ? 700 : 400 }} onClick={() => pickDay(key)}>{day}</button>
+          </At>
+        </span>,
+      )
+    })
+  })
   return (
     <StripCards cards={d.cards}>
       <At x={ox} y={oy} w={1880} h={685}>
@@ -313,28 +367,42 @@ function Screen5() {
       </At>
       <Pin x={ox + 78} y={oy + 36} size={20} weight={700} color="#2de0d2" lh={24}>LOCATION</Pin>
       <Pin x={ox + 78} y={oy + 74} size={16} color="#7a8a8b" lh={20}>Select geographic coverage</Pin>
-      {fields.map((field) => (
-        <At key={field.kicker} x={ox + 78} y={oy + field.y} w={420} h={80}>
-          <div style={{ height: "100%", borderRadius: 40, background: "#0c1b1c", position: "relative" }}>
-            <div style={{ position: "absolute", left: 28, top: 14, fontSize: 13, letterSpacing: 1.4, color: "#798586" }}>{field.kicker}</div>
-            <div style={{ position: "absolute", left: 28, top: 36, fontSize: 26, color: "#f2f6f5" }}>{field.value}</div>
-            <div style={{ position: "absolute", right: 28, top: 30, color: "#9aabb0", fontSize: 16, pointerEvents: "none" }}>⌄</div>
-          </div>
-        </At>
-      ))}
-      <At x={ox + 78} y={oy + 241} w={420} h={80}>
+      <At x={ox + 78} y={oy + 144} w={420} h={80}>
         <div style={{ height: "100%", borderRadius: 40, background: "#0c1b1c", position: "relative" }}>
           <div style={{ position: "absolute", left: 28, top: 14, fontSize: 13, letterSpacing: 1.4, color: "#798586" }}>REGION</div>
           <select
             className="region-select"
-            value={region ?? ""}
+            value={state.regionId ?? ""}
             onChange={(event) => window.setRegion(event.target.value || null)}
           >
-            <option value="">Вся карта</option>
-            {mapRegions.map((item) => (
-              <option key={item.id} value={item.id} disabled={!item.enabled}>{item.label}</option>
+            <option value="">All regions</option>
+            {EXC_REGIONS.map((item) => (
+              <option key={item.value} value={item.value} disabled={!regionEnabled(item.value)}>{item.label}</option>
             ))}
           </select>
+          <div style={{ position: "absolute", right: 28, top: 30, color: "#9aabb0", fontSize: 16, pointerEvents: "none" }}>⌄</div>
+        </div>
+      </At>
+      <At x={ox + 78} y={oy + 241} w={420} h={80}>
+        <div style={{ height: "100%", borderRadius: 40, background: "#0c1b1c", position: "relative" }}>
+          <div style={{ position: "absolute", left: 28, top: 14, fontSize: 13, letterSpacing: 1.4, color: "#798586" }}>CITY</div>
+          <select
+            className="region-select"
+            value={state.cityId ?? ""}
+            onChange={(event) => patch({ cityId: event.target.value || null })}
+          >
+            <option value="">All cities</option>
+            {cities.map((city) => (
+              <option key={city.id} value={city.id}>{city.label}</option>
+            ))}
+          </select>
+          <div style={{ position: "absolute", right: 28, top: 30, color: "#9aabb0", fontSize: 16, pointerEvents: "none" }}>⌄</div>
+        </div>
+      </At>
+      <At x={ox + 78} y={oy + 338} w={420} h={80}>
+        <div style={{ height: "100%", borderRadius: 40, background: "#0c1b1c", position: "relative" }}>
+          <div style={{ position: "absolute", left: 28, top: 14, fontSize: 13, letterSpacing: 1.4, color: "#798586" }}>CLUSTER</div>
+          <div style={{ position: "absolute", left: 28, top: 36, fontSize: 26, color: "#f2f6f5" }}>All clusters</div>
           <div style={{ position: "absolute", right: 28, top: 30, color: "#9aabb0", fontSize: 16, pointerEvents: "none" }}>⌄</div>
         </div>
       </At>
@@ -349,29 +417,18 @@ function Screen5() {
           <div style={{ position: "absolute", right: 8, top: 8, width: 132, height: 44, borderRadius: 22, background: active, color: "#07302c", fontSize: 16, fontWeight: 600, lineHeight: "44px", textAlign: "center" }}>Date Range</div>
         </div>
       </At>
-      <Pin x={ox + calX} y={oy + 196} w={36} size={28} color="#8fa0a0" lh={32} align="center">‹</Pin>
-      <Pin x={ox + calX + 36} y={oy + 196} w={calW - 72} size={28} weight={700} color="#f3f6f5" lh={34} align="center">October 2026</Pin>
-      <Pin x={ox + calX + calW - 36} y={oy + 196} w={36} size={28} color="#8fa0a0" lh={32} align="center">›</Pin>
+      <At x={ox + calX} y={oy + 190} w={36} h={40}>
+        <button type="button" className="cal-nav" onClick={() => setView((current) => shiftView(current, -1))}>‹</button>
+      </At>
+      <Pin x={ox + calX + 36} y={oy + 196} w={calW - 72} size={28} weight={700} color="#f3f6f5" lh={34} align="center">{monthTitle(view)}</Pin>
+      <At x={ox + calX + calW - 36} y={oy + 190} w={36} h={40}>
+        <button type="button" className="cal-nav" onClick={() => setView((current) => shiftView(current, 1))}>›</button>
+      </At>
       {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day, index) => (
         <Pin key={day} x={ox + calX + index * colW} y={oy + 252} w={colW} size={16} color="#8b9c9c" lh={20} align="center">{day}</Pin>
       ))}
-      <At x={ox + calX} y={oy + 449} w={calW} h={40}>
-        <div style={{ height: "100%", borderRadius: 20, background: "#165654" }} />
-      </At>
-      <At x={ox + calX} y={oy + 521} w={colW * 4 + (colW + 54) / 2} h={40}>
-        <div style={{ height: "100%", borderRadius: 20, background: "#165654" }} />
-      </At>
-      {weeks.map((week, row) => week.map((day, column) => day != null && (
-        <span key={`${row}-${day}`}>
-          {(day === 12 || day === 23) ? (
-            <At x={ox + calX + column * colW + (colW - 54) / 2} y={oy + 298 + row * 72} w={54} h={54}>
-              <div style={{ width: 54, height: 54, borderRadius: 27, background: "#34efde", color: "#07302c", fontSize: 20, fontWeight: 700, lineHeight: "54px", textAlign: "center" }}>{day}</div>
-            </At>
-          ) : (
-            <Pin x={ox + calX + column * colW} y={oy + 312 + row * 72} w={colW} size={20} color="#e7f0ee" lh={26} align="center">{day}</Pin>
-          )}
-        </span>
-      )))}
+      {bars}
+      {days}
 
       <At x={ox + 536} y={oy + 117} w={1} h={518}><div style={{ width: 1, height: "100%", background: "#343b3c" }} /></At>
       <At x={ox + 1260} y={oy + 117} w={1} h={518}><div style={{ width: 1, height: "100%", background: "#343b3c" }} /></At>
@@ -381,7 +438,12 @@ function Screen5() {
       {chips.map((row, rowIndex) => row.map((label, column) => (
         <At key={label} x={ox + 1296 + column * (chipW + chipGap)} y={oy + 118 + rowIndex * (chipH + 12)} w={chipW} h={chipH}>
           <div
-            onClick={() => patch({ period: label, seed: Math.floor(Math.random() * 1e9) + 1 })}
+            onClick={() => {
+              const range = periodRange(label)
+              if (!range) return
+              setAnchor(null)
+              patch({ ...range, period: label, seed: Math.floor(Math.random() * 1e9) + 1 })
+            }}
             style={{
               height: "100%",
               borderRadius: chipH / 2,
@@ -408,7 +470,15 @@ function Screen5() {
         </span>
       ))}
       <At x={ox + 1304} y={oy + 518} w={176} h={64}>
-        <div style={{ height: "100%", borderRadius: 32, background: "#102628", color: "#d5e0de", fontSize: 20, lineHeight: "64px", textAlign: "center" }}>Reset</div>
+        <div
+          onClick={() => {
+            const range = periodRange("Last 30 Days")
+            if (!range) return
+            setAnchor(null)
+            patch({ ...range, period: "Last 30 Days", regionId: null, regionSet: true, cityId: null, seed: 0 })
+          }}
+          style={{ height: "100%", borderRadius: 32, background: "#102628", color: "#d5e0de", fontSize: 20, lineHeight: "64px", textAlign: "center", cursor: "pointer" }}
+        >Reset</div>
       </At>
       <At x={ox + 1496} y={oy + 518} w={318} h={64}>
         <div style={{ height: "100%", borderRadius: 32, background: active, color: "#07302c", fontSize: 22, fontWeight: 700, lineHeight: "64px", textAlign: "center" }}>Apply Filters</div>

@@ -34,12 +34,23 @@ export function tileOf(screen: number) {
   return { x: (index % 3) * 1920, y: Math.floor(index / 3) * 1080 }
 }
 
-export function MapTile({ screen, selected }: { screen: number; selected: string | null }) {
+export function MapTile({
+  screen,
+  selected,
+  place,
+}: {
+  screen: number
+  selected: string | null
+  place: { label: string; x: number; z: number } | null
+}) {
   const tile = tileOf(screen)
   const host = useRef<HTMLDivElement>(null)
   const terrain = useRef<Terrain | null>(null)
   const selectedRef = useRef(selected)
+  const placeRef = useRef(place)
   selectedRef.current = selected
+  placeRef.current = place
+  const placeKey = place ? `${place.label}:${place.x}:${place.z}` : ""
 
   useEffect(() => {
     const node = host.current
@@ -52,6 +63,7 @@ export function MapTile({ screen, selected }: { screen: number; selected: string
       }
       terrain.current = api
       api.setRegion(selectedRef.current)
+      api.setPlace(placeRef.current)
     })
     return () => {
       active = false
@@ -63,6 +75,10 @@ export function MapTile({ screen, selected }: { screen: number; selected: string
   useEffect(() => {
     terrain.current?.setRegion(selected)
   }, [selected])
+
+  useEffect(() => {
+    terrain.current?.setPlace(placeRef.current)
+  }, [placeKey])
 
   if (!tile) return null
   return (
