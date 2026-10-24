@@ -4,7 +4,7 @@ import { defaultWall, type WallState } from "./state"
 
 type WallApi = {
   state: WallState
-  patch: (partial: Partial<Pick<WallState, "date" | "regionId" | "regionSet" | "seed" | "period">>) => void
+  patch: (partial: Partial<Pick<WallState, "date" | "regionId" | "regionSet" | "seed" | "period" | "ufgOpen">>) => void
 }
 
 const WallContext = createContext<WallApi | null>(null)
@@ -19,6 +19,7 @@ function normalize(raw: Partial<WallState> | null): WallState {
     rev: Number(raw.rev) || 0,
     seed: Number.isInteger(raw.seed) && (raw.seed as number) >= 0 ? (raw.seed as number) : 0,
     period: typeof raw.period === "string" && raw.period ? raw.period : defaultWall.period,
+    ufgOpen: Boolean(raw.ufgOpen),
   }
 }
 
@@ -43,7 +44,7 @@ export function WallProvider({ children }: { children: ReactNode }) {
     return () => source.close()
   }, [])
 
-  function patch(partial: Partial<Pick<WallState, "date" | "regionId" | "regionSet" | "seed" | "period">>) {
+  function patch(partial: Partial<Pick<WallState, "date" | "regionId" | "regionSet" | "seed" | "period" | "ufgOpen">>) {
     void fetch("/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

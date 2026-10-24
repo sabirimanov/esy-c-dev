@@ -15,12 +15,13 @@ function load() {
         rev: Number(raw.rev) || 1,
         seed: Number.isInteger(raw.seed) && raw.seed >= 0 ? raw.seed : 0,
         period: periods.has(raw.period) ? raw.period : "Last 30 Days",
+        ufgOpen: Boolean(raw.ufgOpen),
       }
     }
   } catch {
     // first boot
   }
-  return { date: "2026-09-30", regionId: null, regionSet: false, rev: 1, seed: 0, period: "Last 30 Days" }
+  return { date: "2026-09-30", regionId: null, regionSet: false, rev: 1, seed: 0, period: "Last 30 Days", ufgOpen: false }
 }
 
 let state = load()
@@ -83,6 +84,7 @@ export function handleSync(req, res) {
       if ("regionSet" in patch) next.regionSet = Boolean(patch.regionSet)
       if (Number.isInteger(patch.seed) && patch.seed >= 0 && patch.seed < 1e10) next.seed = patch.seed
       if (typeof patch.period === "string" && periods.has(patch.period)) next.period = patch.period
+      if ("ufgOpen" in patch) next.ufgOpen = Boolean(patch.ufgOpen)
       next.rev = state.rev + 1
       state = next
       persist()

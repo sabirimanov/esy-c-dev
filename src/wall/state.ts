@@ -5,6 +5,7 @@ export type WallState = {
   rev: number
   seed: number
   period: string
+  ufgOpen: boolean
 }
 
 export const defaultWall: WallState = {
@@ -14,6 +15,7 @@ export const defaultWall: WallState = {
   rev: 0,
   seed: 0,
   period: "Last 30 Days",
+  ufgOpen: false,
 }
 
 export function periodLabel(iso: string) {

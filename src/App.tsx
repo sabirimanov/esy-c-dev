@@ -1,7 +1,8 @@
 import { useEffect } from "react"
-import { BrowserRouter, Route, Routes, useNavigate, useParams } from "react-router-dom"
+import { BrowserRouter, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom"
 import { WallProvider } from "./wall/useWall"
 import { ScreenView } from "./screens/ScreenView"
+import { SnocRoute } from "./snoc/SnocRoute"
 
 const COLS = 7
 const TILE = { w: 1920, h: 1080 }
@@ -79,6 +80,8 @@ export function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<div className="screen" />} />
+          <Route path="/snoc" element={<Navigate to="/snoc/1" replace />} />
+          <Route path="/snoc/:screenId" element={<SnocRoute />} />
           <Route path="/:screenId" element={<RouteScreen />} />
         </Routes>
       </BrowserRouter>

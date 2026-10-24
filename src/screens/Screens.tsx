@@ -4,6 +4,7 @@ import drillReady from "../assets/drill-ready.png"
 import drillMaint from "../assets/drill-maint.png"
 import drillRisk from "../assets/drill-risk.png"
 import weatherBaku from "../assets/weather-baku.png"
+import { UfgScreen2, UfgScreen8, UfgScreen9 } from "./UfgDetail"
 import { At, Frame, PlaceText } from "../ui/widgets"
 import { useContent } from "../data/live"
 import { mapConfig, mapRegions } from "../wall/mapConfig"
@@ -123,6 +124,9 @@ function Screen1({ state }: { state: WallState }) {
       <Pin x={149} y={938} size={24} color="#757171" lh={40}>{`${period} · Current`}</Pin>
       <Pin x={658} y={938} size={24} color="#757171" lh={40}>{`${previous} · Previous`}</Pin>
       <Pin x={1138} y={938} size={24} color="#757171" lh={40}>{`Target · ${d.target}%`}</Pin>
+      {state.ufgOpen && (
+        <Pin x={1480} y={32} w={390} size={18} color="#34efde" align="right" lh={28}>Details open</Pin>
+      )}
 
       <At x={1338} y={321} w={556} h={681}><div className="panel shell dim" /></At>
       <Pin x={1366} y={340} size={32} weight={700} color="#ffffff" lh={40}>Regional comparison</Pin>
@@ -1568,14 +1572,14 @@ function Screen21() {
 
 const bodies: Record<number, (state: WallState) => ReactNode> = {
   1: (state) => <Screen1 state={state} />,
-  2: () => <Screen2 />,
+  2: (state) => (state.ufgOpen ? <UfgScreen2 /> : <Screen2 />),
   3: () => <Screen3 />,
   4: () => <Screen4 />,
   5: () => <Screen5 />,
   6: () => <Screen6 />,
   7: () => <Screen7 />,
-  8: () => <Screen8 />,
-  9: () => <Screen9 />,
+  8: (state) => (state.ufgOpen ? <UfgScreen8 /> : <Screen8 />),
+  9: (state) => (state.ufgOpen ? <UfgScreen9 /> : <Screen9 />),
   13: () => <Screen13 />,
   14: () => <Screen14 />,
   15: () => <Screen15 />,

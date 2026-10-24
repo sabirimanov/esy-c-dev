@@ -20,5 +20,12 @@ function wallSync(): Plugin {
 
 export default defineConfig({
   plugins: [react(), wallSync()],
-  server: { host: "127.0.0.1", port: 4317, strictPort: true },
+  server: {
+    host: "127.0.0.1",
+    port: 4317,
+    strictPort: true,
+    proxy: {
+      "/socnoc": { target: "https://cccdev.esyasoft.app", changeOrigin: true, secure: true },
+    },
+  },
 })
