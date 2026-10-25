@@ -3,6 +3,9 @@ import http from "node:http"
 import path from "node:path"
 import { handleSync } from "./server/sync.mjs"
 import { handleUfg } from "./server/ufg.mjs"
+import { handlePressure } from "./server/pressure.mjs"
+import { handleLeaks, handleQuality } from "./server/quality.mjs"
+import { handleDemand } from "./server/demand.mjs"
 import { handleWeather } from "./server/weather.mjs"
 
 const root = path.resolve("dist")
@@ -25,6 +28,10 @@ const types = {
 
 const server = http.createServer((req, res) => {
   if (handleUfg(req, res)) return
+  if (handlePressure(req, res)) return
+  if (handleQuality(req, res)) return
+  if (handleLeaks(req, res)) return
+  if (handleDemand(req, res)) return
   if (handleWeather(req, res)) return
   if (handleSync(req, res)) return
   const url = new URL(req.url || "/", "http://localhost")

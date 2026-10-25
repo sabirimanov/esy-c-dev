@@ -35,7 +35,7 @@ function jitterText(input: string, rnd: () => number) {
     const commas = token.includes(",")
     const decimals = token.includes(".") ? token.split(".")[1].length : 0
     const n = Number(token.replace(/,/g, ""))
-    if (!Number.isFinite(n)) return `${token}${pct ?? ""}`
+    if (!Number.isFinite(n) || n === 0) return `${token}${pct ?? ""}`
     let next = n
     if (pct && decimals === 0 && n <= 30) {
       const step = 1 + Math.floor(rnd() * 3)

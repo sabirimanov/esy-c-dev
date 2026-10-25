@@ -63,45 +63,45 @@
   },
   "screen6": {
     "cards": [
-      { "label": "Camera Incidents Today", "value": "42" },
-      { "label": "Critical Vision Alerts", "value": "6" },
-      { "label": "Verified Incidents", "value": "31" },
-      { "label": "False Positive Rate", "value": "8.4%" },
-      { "label": "Camera Availability", "value": "96.8%" },
-      { "label": "Avg Verification Time", "value": "3.2 min" }
+      { "label": "Camera Incidents Today", "value": "0" },
+      { "label": "Critical Vision Alerts", "value": "0" },
+      { "label": "Verified Incidents", "value": "0" },
+      { "label": "False Positive Rate", "value": "0%" },
+      { "label": "Camera Availability", "value": "0%" },
+      { "label": "Avg Verification Time", "value": "0 min" }
     ],
     "breakdown": [
-      { "label": "Unauthorized Access", "value": "12", "fill": 74, "track": 708 },
-      { "label": "Fire / Smoke Detection", "value": "6", "fill": 575, "track": 708 },
-      { "label": "Leak Area Activity", "value": "5", "fill": 309, "track": 708 },
-      { "label": "Excavation Near Pipeline", "value": "8", "fill": 443, "track": 708 },
-      { "label": "Equipment Tampering", "value": "7", "fill": 319, "track": 708 },
-      { "label": "PPE / Safety Violation", "value": "4", "fill": 177, "track": 708 }
+      { "label": "Unauthorized Access", "value": "0", "fill": 0, "track": 708 },
+      { "label": "Fire / Smoke Detection", "value": "0", "fill": 0, "track": 708 },
+      { "label": "Leak Area Activity", "value": "0", "fill": 0, "track": 708 },
+      { "label": "Excavation Near Pipeline", "value": "0", "fill": 0, "track": 708 },
+      { "label": "Equipment Tampering", "value": "0", "fill": 0, "track": 708 },
+      { "label": "PPE / Safety Violation", "value": "0", "fill": 0, "track": 708 }
     ],
-    "cameras": "1,284",
+    "cameras": "0",
     "pills": [
-      { "label": "Online Cameras", "value": "1,243" },
-      { "label": "Maintenance Due", "value": "24" },
-      { "label": "Low Signal", "value": "18" },
-      { "label": "Obstructed View", "value": "12" },
-      { "label": "Offline Cameras", "value": "41" }
+      { "label": "Online Cameras", "value": "0" },
+      { "label": "Maintenance Due", "value": "0" },
+      { "label": "Low Signal", "value": "0" },
+      { "label": "Obstructed View", "value": "0" },
+      { "label": "Offline Cameras", "value": "0" }
     ]
   },
   "screen7": {
     "cards": [
-      { "label": "High Priority Risks", "value": "14" },
-      { "label": "Predicted Leak Risk Zones", "value": "12" },
-      { "label": "Asset Failure Prediction", "value": "42" },
-      { "label": "Theft Probability Cases", "value": "7" },
+      { "label": "High Priority Risks", "value": "0" },
+      { "label": "Predicted Leak Risk Zones", "value": "0" },
+      { "label": "Asset Failure Prediction", "value": "0" },
+      { "label": "Theft Probability Cases", "value": "0" },
       { "label": "Peak Demand Risk", "value": "Medium" },
-      { "label": "Battery EOL Projections", "value": "417" }
+      { "label": "Battery EOL Projections", "value": "0" }
     ],
-    "tamperAlerts": "126",
-    "criticalTamper": "14",
-    "verifiedTamper": "42",
-    "falsePositive": "8.4%",
-    "revenueRisk": "680K AZN",
-    "pending": "18"
+    "tamperAlerts": "0",
+    "criticalTamper": "0",
+    "verifiedTamper": "0",
+    "falsePositive": "0%",
+    "revenueRisk": "0 AZN",
+    "pending": "0"
   },
   "screen8": {
     "actual": "6.1M",
@@ -200,18 +200,18 @@
   },
   "screen15": {
     "cards": [
-      { "label": "Revenue Realization", "value": "92.4%" },
-      { "label": "Collection Efficiency", "value": "91.3%" },
-      { "label": "Outstanding Balance", "value": "18.7M AZN" },
-      { "label": "Recovery Rate", "value": "82.4%" }
+      { "label": "Revenue Realization", "value": "0%" },
+      { "label": "Collection Efficiency", "value": "0%" },
+      { "label": "Outstanding Balance", "value": "0 AZN" },
+      { "label": "Recovery Rate", "value": "0%" }
     ],
-    "reconnect": "81.1%",
+    "reconnect": "0%",
     "bars": [
-      { "label": "Disconnect", "value": "8,972" },
-      { "label": "Reconnect", "value": "2,569" },
-      { "label": "Pending", "value": "131" },
-      { "label": "Emergency", "value": "92,498" },
-      { "label": "Tamper", "value": "8,761" }
+      { "label": "Disconnect", "value": "0" },
+      { "label": "Reconnect", "value": "0" },
+      { "label": "Pending", "value": "0" },
+      { "label": "Emergency", "value": "0" },
+      { "label": "Tamper", "value": "0" }
     ],
     "cyanPath": "M58 109 L66 108 L74 107 L82 107 L90 106 L98 102 L106 100 L114 97 L122 94 L130 91 L138 88 L146 85 L154 83 L162 80 L170 79 L178 77 L186 76 L194 75 L202 75 L210 75 L218 75 L226 76 L234 76 L242 77 L250 78 L258 80 L266 81 L274 83 L282 84 L290 86 L298 87 L306 88 L314 89 L322 90 L330 91 L338 91 L346 92 L354 92 L362 92 L370 91 L378 91 L386 90 L394 88 L402 87 L410 84 L418 82 L426 80 L434 77 L442 75 L450 73 L458 71 L466 69 L474 68 L482 67 L490 66 L498 65 L506 65 L514 65 L522 65 L530 64 L538 63 L546 62 L554 61 L562 59 L570 57 L578 55 L586 53 L594 51 L602 50 L610 48 L618 47 L626 46 L634 45 L642 44 L650 44 L658 44 L666 44 L674 45 L682 45 L690 46 L698 47 L706 49 L714 50 L722 52 L730 54 L738 56 L746 58 L754 59 L762 61 L770 62 L778 63 L786 64 L794 64 L802 64 L810 64 L818 64 L826 63 L834 62 L842 60 L850 58 L858 55 L866 52 L874 48 L882 45 L890 41 L898 38 L906 35 L914 32 L922 30 L930 29 L938 27 L946 27 L954 26 L962 26 L970 27 L978 28 L986 29 L994 30 L1002 32 L1010 35 L1018 37 L1026 40 L1034 43 L1042 46 L1050 49 L1058 51 L1066 53 L1074 55 L1082 56 L1090 57 L1098 58 L1106 58 L1114 58 L1122 58 L1130 57 L1138 56 L1146 55 L1154 53 L1162 52 L1170 50 L1178 47 L1186 45 L1194 43 L1202 41 L1210 39 L1218 38 L1226 36 L1234 36 L1242 35 L1250 35 L1258 34 L1266 34 L1274 34 L1282 33 L1290 33 L1298 31 L1306 30 L1314 29 L1322 27 L1330 25 L1338 23 L1346 21 L1354 20 L1362 18 L1370 17 L1378 16 L1386 15 L1394 15 L1402 15 L1410 14 L1418 15 L1426 15 L1434 15 L1442 16 L1450 16 L1458 17 L1466 18 L1474 19 L1482 21 L1490 22 L1498 23 L1506 24 L1514 25 L1522 25 L1530 26 L1538 26 L1546 27 L1554 27 L1562 27 L1570 27 L1578 26 L1586 26 L1594 25 L1602 24 L1610 22 L1618 21 L1626 19 L1634 18 L1642 16 L1650 14 L1658 13 L1666 11 L1674 10 L1682 9 L1690 9 L1698 8 L1706 8",
     "goldPath": "M80 109 L88 108 L96 106 L104 105 L112 104 L120 103 L128 102 L136 102 L144 102 L152 102 L160 102 L168 103 L176 103 L184 105 L192 105 L200 106 L208 107 L216 108 L224 110 L232 111 L240 113 L248 114 L256 116 L264 117 L272 119 L280 120 L288 121 L296 123 L304 124 L312 125 L320 125 L328 126 L336 127 L344 127 L352 127 L360 127 L368 126 L376 126 L384 124 L392 123 L400 121 L408 119 L416 117 L424 115 L432 112 L440 110 L448 107 L456 105 L464 103 L472 102 L480 101 L488 100 L496 99 L504 99 L512 99 L520 98 L528 97 L536 97 L544 95 L552 92 L560 89 L568 86 L576 81 L584 77 L592 74 L600 70 L608 67 L616 64 L624 62 L632 62 L640 60 L648 59 L656 60 L664 59 L672 60 L680 61 L688 62 L696 63 L704 65 L712 67 L720 69 L728 72 L736 74 L744 76 L752 78 L760 80 L768 81 L776 83 L784 83 L792 85 L800 84 L808 84 L816 84 L824 83 L832 81 L840 79 L848 77 L856 74 L864 71 L872 67 L880 63 L888 59 L896 56 L904 52 L912 49 L920 47 L928 45 L936 45 L944 43 L952 42 L960 42 L968 43 L976 43 L984 44 L992 46 L1000 48 L1008 50 L1016 53 L1024 56 L1032 59 L1040 62 L1048 65 L1056 68 L1064 70 L1072 72 L1080 73 L1088 75 L1096 75 L1104 75 L1112 75 L1120 75 L1128 75 L1136 74 L1144 73 L1152 71 L1160 71 L1168 68 L1176 66 L1184 64 L1192 62 L1200 60 L1208 59 L1216 57 L1224 56 L1232 55 L1240 54 L1248 54 L1256 54 L1264 54 L1272 53 L1280 53 L1288 51 L1296 50 L1304 48 L1312 46 L1320 45 L1328 41 L1336 39 L1344 36 L1352 34 L1360 31 L1368 30 L1376 28 L1384 27 L1392 26 L1400 25 L1408 25 L1416 25 L1424 25 L1432 26 L1440 27 L1448 28 L1456 29 L1464 30 L1472 32 L1480 34 L1488 35 L1496 38 L1504 39 L1512 40 L1520 41 L1528 42 L1536 43 L1544 43 L1552 44 L1560 44 L1568 44 L1576 44 L1584 43 L1592 42 L1600 39 L1608 38 L1616 35 L1624 33 L1632 30 L1640 28 L1648 25 L1656 23 L1664 21 L1672 19 L1680 17 L1688 16 L1696 16 L1704 15"

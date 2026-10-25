@@ -5,6 +5,7 @@ const ttl = 10 * 60 * 1000
 const boardCache = new Map()
 const regionCache = new Map()
 const consumerCache = new Map()
+const hourlyCache = new Map()
 let hierarchyCache = null
 let alarmCache = null
 
@@ -21,6 +22,31 @@ async function fetchCcc(path, extra) {
   const remote = await fetch(url)
   if (!remote.ok) throw new Error(String(remote.status))
   return remote.json()
+}
+
+export function loadUfgHierarchy() {
+  return hierarchy()
+}
+
+export async function loadClusterDemand(clusterId, from, to) {
+  if (!/^[A-Za-z0-9_]{1,80}$/.test(clusterId)) return new Map()
+  const key = `${clusterId}|${from}|${to}`
+  const hit = hourlyCache.get(key)
+  if (hit && hit.until > Date.now()) return hit.days
+  const data = await fetchCcc(`/api/v1/cluster_hourly/${clusterId}`, {
+    gasDay: to,
+    gasDayFrom: from,
+    series: "true",
+  })
+  const days = new Map()
+  for (const row of data.hours || []) {
+    const date = String(row.gas_day || "").slice(0, 10)
+    const value = Number(row.supply_kwh)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(value)) continue
+    days.set(date, (days.get(date) || 0) + value)
+  }
+  hourlyCache.set(key, { until: Date.now() + ttl, days })
+  return days
 }
 
 async function hierarchy() {

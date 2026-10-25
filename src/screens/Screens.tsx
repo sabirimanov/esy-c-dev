@@ -8,8 +8,12 @@ import { UfgScreen2, UfgScreen8, UfgScreen9 } from "./UfgDetail"
 import { At, Frame, PlaceText } from "../ui/widgets"
 import { useContent } from "../data/live"
 import { useSocPanel } from "../data/socDashboard"
+import { useLeaks } from "../data/leaks"
+import { usePressure } from "../data/pressure"
+import { useDemand } from "../data/demand"
+import { useQuality } from "../data/quality"
 import { useUfgHierarchy, useUfgSummary, useUfgTrend, type UfgCluster } from "../data/ufg"
-import { addDays, formatRange, iso, monthGrid, monthTitle, parseIso, periodRange, previousSpan, shiftView, trendCaption } from "../wall/dates"
+import { addDays, formatRange, iso, monthGrid, monthTitle, parseIso, periodRange, previousSpan, shiftView, todayIso, trendCaption } from "../wall/dates"
 import { apiRegionId, citiesOf, cityById, EXC_REGIONS, regionEnabled, regionLabel, zoneIdForCity } from "../wall/places"
 import { periodLabel, type WallState } from "../wall/state"
 import { useWall } from "../wall/useWall"
@@ -495,7 +499,9 @@ function Screen5() {
   const chips = [content.periods.slice(0, 3), content.periods.slice(3)]
   const bars: ReactNode[] = []
   const days: ReactNode[] = []
+  const today = todayIso()
   function pickDay(day: string) {
+    if (day > today) return
     if (!anchor) {
       setAnchor(day)
       return
@@ -517,7 +523,7 @@ function Screen5() {
     const columns = week.flatMap((day, column) => {
       if (day == null) return []
       const key = iso(view.y, view.m, day)
-      return key >= from && key <= to ? [column] : []
+      return key >= from && key <= to && key <= today ? [column] : []
     })
     if (columns.length && from !== to) {
       const start = columns[0]
@@ -531,7 +537,8 @@ function Screen5() {
     week.forEach((day, column) => {
       if (day == null) return
       const key = iso(view.y, view.m, day)
-      const end = key === from || key === to || key === anchor
+      const future = key > today
+      const end = !future && (key === from || key === to || key === anchor)
       const y = oy + 298 + row * rowH
       days.push(
         <span key={key}>
@@ -541,7 +548,7 @@ function Screen5() {
             </At>
           )}
           <At x={ox + calX + column * colW} y={y} w={colW} h={54}>
-            <button type="button" className="cal-day" style={{ color: end ? "#07302c" : "#e7f0ee", fontWeight: end ? 700 : 400 }} onClick={() => pickDay(key)}>{day}</button>
+            <button type="button" className="cal-day" disabled={future} style={{ color: future ? "#4d5c5a" : end ? "#07302c" : "#e7f0ee", fontWeight: end ? 700 : 400, cursor: future ? "default" : undefined }} onClick={() => pickDay(key)}>{day}</button>
           </At>
         </span>,
       )
@@ -872,60 +879,128 @@ function Screen7() {
   )
 }
 
-function DemandChart({ actualY, forecastPath }: { actualY: number[]; forecastPath: string }) {
-  const actual = [1.5, 103.5, 206.5, 308.5, 406.5, 513.5, 616.5, 718.5].map((x, index) => [x, actualY[index]] as [number, number])
-  const line = actual.map(([x, y], index) => `${index ? "L" : "M"}${x} ${y}`).join("")
+function demandMax(values: number[]) {
+  const high = values.reduce((max, value) => Math.max(max, value), 0)
+  if (!(high > 0)) return 3
+  let step = niceStep(high / 3)
+  for (let guard = 0; guard < 12 && step * 3 < high; guard += 1) step = niceStep(step * 2)
+  return step * 3
+}
+
+function spanDays(from: string, to: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return []
+  const days: string[] = []
+  for (let cursor = from; cursor <= to && days.length < 3660; cursor = addDays(cursor, 1)) days.push(cursor)
+  return days
+}
+
+function DemandChart({ values, forecast, max }: { values: (number | null)[]; forecast: (number | null)[] | null; max: number }) {
+  const count = Math.max(values.length, 2)
+  const xAt = (index: number) => (values.length <= 1 ? 564 : (index * 1128) / (count - 1))
+  const yAt = (value: number) => (max <= 0 ? 367 : ((max - value) / max) * 367)
   return (
     <svg className="at" viewBox="0 0 1130 368" style={{ left: 140, top: 500, width: 1130, height: 368 }}>
       {[0, 123, 244, 367].map((y) => (
         <line key={y} x1="1" x2="1129" y1={y} y2={y} stroke="#343838" strokeWidth="1" />
       ))}
-      <path d={forecastPath} fill="none" stroke="#f2a65a" strokeWidth="3" strokeDasharray="8 7" />
-      <path d={line} fill="none" stroke="#34ddcc" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-      {actual.map(([x, y]) => (
-        <circle key={`${x}-${y}`} cx={x} cy={y} r="4" fill="#34ddcc" />
+      {forecast && (
+        <path d={linePath(forecast, xAt, yAt)} fill="none" stroke="#f2a65a" strokeWidth="3" strokeDasharray="8 7" strokeLinecap="round" strokeLinejoin="round" />
+      )}
+      <path d={linePath(values, xAt, yAt)} fill="none" stroke="#34ddcc" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+      {values.length <= 60 && values.map((value, index) => (
+        value == null ? null : <circle key={index} cx={xAt(index)} cy={yAt(value)} r="4" fill="#34ddcc" />
+      ))}
+      {forecast && values.length <= 60 && forecast.map((value, index) => (
+        value == null ? null : <circle key={`f${index}`} cx={xAt(index)} cy={yAt(value)} r="4" fill="#f2a65a" />
       ))}
     </svg>
   )
 }
 
-function Screen8() {
-  const d = useContent().screen8
-  const months = [
-    [126, 30, "Jan"], [229, 30, "Feb"], [330, 32, "Mar"], [435, 28, "Apr"], [534, 34, "May"], [639, 30, "Jun"],
-    [744, 25, "Jul"], [842, 32, "Aug"], [946, 31, "Sep"], [1049, 28, "Oct"], [1150, 32, "Nov"], [1253, 31, "Dec"],
-  ] as const
+function signedCount(value: number) {
+  const text = compactCount(Math.round(Math.abs(value)))
+  if (value < 0) return `−${text}`
+  if (value > 0) return `+${text}`
+  return text
+}
+
+function signedPercent(value: number) {
+  const text = `${Math.abs(value).toFixed(1)}%`
+  if (value < 0) return `−${text}`
+  if (value > 0) return `+${text}`
+  return text
+}
+
+function Screen8({ state }: { state: WallState }) {
+  const demand = useDemand(state)
+  const forecastEnd = demand?.forecast?.predicted.reduce((last, point) => (point.date > last ? point.date : last), state.dateTo) ?? state.dateTo
+  const days = demand ? spanDays(state.date, forecastEnd) : []
+  const today = todayIso()
+  const byDate = new Map(demand?.points.map((point) => [point.date, point.value]) ?? [])
+  const series = days.map((date) => (date >= today ? null : byDate.get(date) ?? 0))
+  for (let index = series.length - 1; index >= 0 && !(series[index] > 0); index -= 1) series[index] = null
+  const simulated = new Map(demand?.forecast?.simulated.map((point) => [point.date, point.value]) ?? [])
+  const predicted = new Map(demand?.forecast?.predicted.map((point) => [point.date, point.value]) ?? [])
+  const forecastSeries = demand?.forecast
+    ? days.map((date) => (date < today ? simulated.get(date) : predicted.get(date)) ?? null)
+    : null
+  const actualNumbers = series.filter((value): value is number => value != null)
+  const forecastNumbers = (forecastSeries ?? []).filter((value): value is number => value != null)
+  const max = demandMax([...actualNumbers, ...forecastNumbers])
+  const ticks = demand ? [max, (max * 2) / 3, max / 3, 0] : []
+  const actual = demand ? compactCount(Math.round(actualNumbers.reduce((sum, value) => sum + value, 0))) : "—"
+  const forecastText = !demand ? "—" : demand.forecast ? compactCount(Math.round(forecastNumbers.reduce((sum, value) => sum + value, 0))) : "N/A"
+  let comparedActual = 0
+  let comparedForecast = 0
+  if (forecastSeries) {
+    series.forEach((value, index) => {
+      const other = forecastSeries[index]
+      if (value == null || other == null) return
+      comparedActual += value
+      comparedForecast += other
+    })
+  }
+  const gapValue = comparedActual - comparedForecast
+  const gapPercent = comparedForecast !== 0 ? (gapValue / comparedForecast) * 100 : null
+  const gap = !demand
+    ? "—"
+    : !demand.forecast || (comparedForecast === 0 && comparedActual === 0)
+      ? "Actual − forecast: N/A"
+      : `Actual − forecast: ${signedCount(gapValue)} m³${gapPercent == null ? "" : ` (${signedPercent(gapPercent)})`}`
   return (
     <Frame mirror>
       <Pin x={37} y={28} size={32} weight={900} color="#34efde" lh={40}>GAS DEMAND & FLOW</Pin>
       <At x={34} y={97} w={910} h={165}><div className="kpi" /></At>
       <At x={959} y={97} w={910} h={165}><div className="kpi" /></At>
       <Pin x={64} y={101} size={24} weight={500} color="#34efde" lh={40}>Gas demand · Actual</Pin>
-      <Pin x={64} y={159} size={60} weight={400} color="#ffffff" lh={40}>{d.actual}</Pin>
-      <Pin x={246} y={165} size={24} color="#a0aaa8" lh={28}>MCM</Pin>
+      <div className="at" style={{ left: 64, top: 159, display: "flex", alignItems: "baseline", gap: 12, height: 40 }}>
+        <span style={{ fontSize: 60, fontWeight: 400, lineHeight: "40px", color: "#ffffff" }}>{actual}</span>
+        <span style={{ fontSize: 24, lineHeight: "28px", color: "#a0aaa8" }}>m³</span>
+      </div>
       <Pin x={64} y={220} size={18} color="#ffffff" lh={21}>Total for selected period</Pin>
       <Pin x={994} y={101} size={24} weight={500} color="#34efde" lh={40}>Demand forecast</Pin>
-      <Pin x={994} y={159} size={60} weight={400} color="#ffffff" lh={40}>{d.forecastValue}</Pin>
-      <Pin x={1200} y={165} size={24} color="#a0aaa8" lh={28}>MCM</Pin>
-      <Pin x={994} y={220} size={18} color="#ffffff" lh={21}>Forecast for the same selected period</Pin>
+      <div className="at" style={{ left: 994, top: 159, display: "flex", alignItems: "baseline", gap: 12, height: 40 }}>
+        <span style={{ fontSize: 60, fontWeight: 400, lineHeight: "40px", color: "#ffffff" }}>{forecastText}</span>
+        {demand?.forecast && <span style={{ fontSize: 24, lineHeight: "28px", color: "#a0aaa8" }}>m³</span>}
+      </div>
 
       <At x={42} y={323} w={1272} h={692}><div className="panel shell dim" /></At>
       <At x={1338} y={323} w={556} h={692}><div className="panel shell dim" /></At>
       <Pin x={74} y={339} size={32} weight={700} color="#ffffff" lh={40}>Actual vs forecast</Pin>
-      <At x={1090} y={342} w={195} h={46}><div className="expand-pill">Expand chart</div></At>
-      <Pin x={74} y={406} size={18} color="#a0aaa8" lh={21}>Monthly volume · same reporting period</Pin>
-      <Pin x={74} y={450} size={19} color="#f3f5f4" lh={22}>Monthly volume (MCM)</Pin>
-      <Pin x={88} y={491} w={38} size={16} color="#7d8885" lh={17} align="right">1.5M</Pin>
-      <Pin x={103} y={613} w={23} size={16} color="#7d8885" lh={18} align="right">1M</Pin>
-      <Pin x={87} y={735} w={39} size={16} color="#7d8885" lh={18} align="right">500K</Pin>
-      <Pin x={103} y={858} w={23} size={16} color="#7d8885" lh={18} align="right">0.0</Pin>
-      {months.map(([x, w, label]) => (
-        <Pin key={label} x={x} y={883} w={w} size={18} color="#7d8885" lh={21} align="center">{label}</Pin>
+      
+      <Pin x={74} y={406} size={18} color="#a0aaa8" lh={21}>Daily volume · selected period</Pin>
+      <Pin x={74} y={450} size={19} color="#f3f5f4" lh={22}>Daily volume (kWh)</Pin>
+      {ticks.map((tick, index) => (
+        <Pin key={index} x={40} y={[491, 613, 735, 858][index]} w={92} size={16} color="#7d8885" lh={18} align="right">{compactCount(tick)}</Pin>
       ))}
-      <DemandChart actualY={d.actualY} forecastPath={d.forecastPath} />
+      {series.length > 0 && axisMarks(series.length).map((index) => {
+        const x = 140 + (series.length <= 1 ? 564 : (index * 1128) / (series.length - 1))
+        return <Pin key={days[index]} x={x - 36} y={883} w={72} size={18} color="#7d8885" lh={21} align="center">{dayLabel(state.date, index)}</Pin>
+      })}
+      <DemandChart values={series} forecast={forecastSeries} max={max} />
       <At x={73} y={966} w={32} h={4}><div style={{ height: 3.5, background: "#34eddc", borderRadius: 2 }} /></At>
       <Pin x={119} y={948} size={24} color="#757171" lh={40}>Actual gas demand</Pin>
-      <Pin x={491} y={948} size={24} color="#ffffff" lh={40}>{d.gap}</Pin>
+      <Pin x={491} y={948} size={24} color="#ffffff" lh={40}>{gap}</Pin>
       <At x={1050} y={966} w={32} h={4}>
         <div style={{ height: 3, background: "repeating-linear-gradient(90deg, #f2a65a 0 7px, transparent 7px 13px)" }} />
       </At>
@@ -935,21 +1010,21 @@ function Screen8() {
       <Pin x={1366} y={389} size={24} color="#757171" lh={40}>Jan–Aug 2026 against the</Pin>
       <Pin x={1366} y={429} size={24} color="#757171" lh={40}>same months a year earlier</Pin>
       <Pin x={1366} y={523} size={24} color="#f3f5f4" lh={28}>Weather impact</Pin>
-      <Pin x={1759} y={513} w={87} size={32} color="#f3f5f4" lh={38} align="right">{d.weather}</Pin>
+      <Pin x={1759} y={513} w={87} size={32} color="#f3f5f4" lh={38} align="right">N/A</Pin>
       <Pin x={1366} y={564} size={18} color="#76817f" lh={21}>Weather Underground → heating degree-days</Pin>
       <At x={1366} y={606} w={480} h={1}><div style={{ height: 1, background: "#343838" }} /></At>
       <Pin x={1366} y={629} size={24} color="#f3f5f4" lh={28}>Consumer growth impact</Pin>
-      <Pin x={1759} y={619} w={87} size={32} color="#f3f5f4" lh={38} align="right">{d.consumer}</Pin>
+      <Pin x={1759} y={619} w={87} size={32} color="#f3f5f4" lh={38} align="right">0</Pin>
       <Pin x={1366} y={671} size={18} color="#76817f" lh={21}>More customers × last year’s gas per customer</Pin>
       <At x={1360} y={710} w={512} h={186}>
         <div style={{ height: "100%", borderRadius: 20, background: "#232323", border: "1px solid #282b2a" }} />
       </At>
       <Pin x={1382} y={729} size={18} color="#76817f" lh={21}>Included within consumer growth</Pin>
       <Pin x={1382} y={765} size={24} color="#f3f5f4" lh={28}>Industrial growth impact</Pin>
-      <Pin x={1784} y={759} w={62} size={23} color="#f3f5f4" lh={27} align="right">{d.industrial}</Pin>
+      <Pin x={1784} y={759} w={62} size={23} color="#f3f5f4" lh={27} align="right">0</Pin>
       <At x={1382} y={806} w={464} h={1}><div style={{ height: 1, background: "#343838" }} /></At>
       <Pin x={1382} y={827} size={24} color="#f3f5f4" lh={28}>Commercial growth impact</Pin>
-      <Pin x={1784} y={821} w={62} size={23} color="#f3f5f4" lh={27} align="right">{d.commercial}</Pin>
+      <Pin x={1784} y={821} w={62} size={23} color="#f3f5f4" lh={27} align="right">0</Pin>
       <Pin x={1382} y={863} size={18} color="#76817f" lh={21}>Billing → GIS</Pin>
       <At x={1360} y={918} w={512} h={81}>
         <div style={{ position: "relative", height: "100%", borderRadius: 20, background: "#232323" }}>
@@ -1299,9 +1374,9 @@ function Screen14() {
       {tamper.map((row) => (
         <span key={row.label}>
           <Pin x={58} y={row.y} size={24} color="#e8f4f2" lh={29}>{row.label}</Pin>
-          <Pin x={row.vx} y={row.y} size={24} color="#e8f4f2" lh={29}>{row.value}</Pin>
+          <Pin x={670} y={row.y} size={24} color="#e8f4f2" lh={29}>{/*row.value*/0}</Pin>
           <At x={336} y={row.bar} w={295} h={27}><div style={{ height: "100%", borderRadius: 30, background: "#33413f" }} /></At>
-          <At x={336} y={row.bar} w={row.fill} h={27}><div style={{ height: "100%", borderRadius: 38, background: "linear-gradient(to right, #1e897f, #34efde)" }} /></At>
+          <At x={336} y={row.bar} w={/*row.fill*/0} h={27}><div style={{ height: "100%", borderRadius: 38, background: "linear-gradient(to right, #1e897f, #34efde)" }} /></At>
         </span>
       ))}
       {[484, 541, 598, 655].map((y) => (
@@ -1404,7 +1479,7 @@ function Screen15() {
       {days.map(([x, label]) => (
         <Pin key={label} x={x} y={589} size={18} color="#a4a7ae" lh={40}>{label}</Pin>
       ))}
-      <RevenueChart cyan={d.cyanPath} gold={d.goldPath} />
+      <RevenueChart cyan="M58 158 L1706 158" gold="M80 158 L1704 158" />
 
       <At x={34} y={701} w={1846} h={339}><div className="panel shell dim" /></At>
       <Pin x={67} y={733} size={32} weight={900} color="#ffffff" lh={40}>CONNECT / DISCONNECT OPERATIONS</Pin>
@@ -1655,31 +1730,55 @@ function Rule({ x, y, w, h = 1, color = "#353a39" }: { x: number; y: number; w: 
   return <At x={x} y={y} w={w} h={h}><div style={{ width: "100%", height: "100%", background: color }} /></At>
 }
 
+function recordView(received: number, expected: number) {
+  if (expected <= 0) return { text: "—", fill: 0, gap: "—" }
+  const share = received / expected
+  return {
+    text: `${(share * 100).toFixed(1)}%`,
+    fill: Math.max(0, Math.min(243, Math.round(share * 243))),
+    gap: `${((1 - share) * 100).toFixed(1)}%`,
+  }
+}
+
 function Screen20({ state }: { state: WallState }) {
   const d = useContent().screen20
+  const quality = useQuality(state)
+  const counts = quality ? [quality.total, quality.residential, quality.nonResidential, quality.balance] : [null, null, null, null]
+  const arrived = quality ? [quality.received.overall, quality.received.residential, quality.received.nonResidential, quality.received.balance] : [null, null, null, null]
+  const days = quality?.days ?? 0
+  const views = counts.map((count, index) => {
+    const got = arrived[index]
+    if (count == null || got == null) return { text: "—", fill: 0, gap: "—" }
+    return recordView(got, count * days)
+  })
   const kpis = [
     { x: 29, lx: 60 },
     { x: 495, lx: 516 },
     { x: 960, lx: 980 },
     { x: 1426, lx: 1446 },
-  ].map((item, index) => ({ ...item, ...d.cards[index] }))
+  ].map((item, index) => ({ ...item, ...d.cards[index], value: counts[index] == null ? "—" : counts[index].toLocaleString("en-US") }))
   const expected = [
-    { y: 429, dx: 489, mx: 768 },
-    { y: 500, dx: 489, mx: 786 },
-    { y: 571, dx: 506, mx: 800 },
-    { y: 642, dx: 519, mx: 685 },
-  ].map((item, index) => ({ ...item, ...d.expected[index] }))
+    { y: 429 },
+    { y: 500 },
+    { y: 571 },
+    { y: 642 },
+  ].map((item, index) => ({
+    ...item,
+    ...d.expected[index],
+    daily: counts[index] == null ? "—" : counts[index].toLocaleString("en-US"),
+    period: counts[index] == null ? "—" : (counts[index] * days).toLocaleString("en-US"),
+  }))
   const complete = [
     { y: 434, bar: 440, py: 414 },
     { y: 502, bar: 508, py: 481 },
     { y: 572, bar: 578, py: 554 },
     { y: 644, bar: 650, py: 625 },
-  ].map((item, index) => ({ ...item, ...d.complete[index] }))
+  ].map((item, index) => ({ ...item, ...d.complete[index], ...views[index] }))
   const reads = [
     { y: 852, rule: 818, vy: 845 },
     { y: 907, rule: 884, vy: 900 },
     { y: 962, rule: 939, vy: 955 },
-  ].map((item, index) => ({ ...item, ...d.reads[index] }))
+  ].map((item, index) => ({ ...item, ...d.reads[index], daily: views[index].gap, period: views[index].gap, hourly: "—" }))
   return (
     <Frame>
       <Pin x={27} y={28} size={32} weight={900} color="#34efde" lh={40}>DATA QUALITY</Pin>
@@ -1696,13 +1795,13 @@ function Screen20({ state }: { state: WallState }) {
       <Pin x={48} y={302} size={24} weight={700} color="#ffffff" lh={28}>Expected records</Pin>
       <Pin x={51} y={337} size={18} color="#76817f" lh={21}>Expected volume · count</Pin>
       <Pin x={512} y={375} size={18} color="#76817f" lh={21}>Daily</Pin>
-      <Pin x={764} y={375} size={18} color="#76817f" lh={21}>Monthly</Pin>
+      <Pin x={715} y={375} size={18} color="#76817f" lh={21}>For the period</Pin>
       <Rule x={51} y={405} w={776} />
       {expected.map((row) => (
         <span key={row.label}>
           <Pin x={49} y={row.y} size={24} color="#ffffff" lh={28}>{row.label}</Pin>
-          <Pin x={row.dx} y={row.y} size={24} color="#ffffff" lh={28}>{row.daily}</Pin>
-          <Pin x={row.mx} y={row.y} size={24} color="#ffffff" lh={28}>{row.monthly}</Pin>
+          <Pin x={400} y={row.y} w={170} size={24} color="#ffffff" lh={28} align="right">{row.daily}</Pin>
+          <Pin x={620} y={row.y} w={210} size={24} color="#ffffff" lh={28} align="right">{row.period}</Pin>
         </span>
       ))}
       <Rule x={51} y={472} w={776} />
@@ -1712,21 +1811,19 @@ function Screen20({ state }: { state: WallState }) {
       <At x={875} y={270} w={996} h={434}><div className="panel shell dim" /></At>
       <Pin x={898} y={302} size={24} weight={700} color="#ffffff" lh={28}>Data completeness</Pin>
       <Pin x={1707} y={311} size={18} color="#76817f" lh={21}>0–100% per cell</Pin>
-      <Pin x={899} y={337} size={18} color="#76817f" lh={21}>Daily and monthly completeness</Pin>
+      <Pin x={899} y={337} size={18} color="#76817f" lh={21}>Daily and period completeness</Pin>
       <Pin x={1375} y={375} size={18} color="#76817f" lh={21}>Daily</Pin>
-      <Pin x={1680} y={375} size={18} color="#76817f" lh={21}>Monthly</Pin>
+      <Pin x={1645} y={375} size={18} color="#76817f" lh={21}>For the period</Pin>
       <Rule x={899} y={405} w={936} />
       {complete.map((row) => (
         <span key={row.label}>
           <Pin x={899} y={row.y} size={24} color="#ffffff" lh={28}>{row.label}</Pin>
-          <At x={1273} y={row.bar} w={243} h={12}>
-            <div style={{ height: "100%", borderRadius: 6, background: "linear-gradient(to right, #1e897f, #34efde)" }} />
-          </At>
-          <At x={1583} y={row.bar} w={243} h={12}>
-            <div style={{ height: "100%", borderRadius: 6, background: "linear-gradient(to right, #1e897f, #34efde)" }} />
-          </At>
-          <Pin x={1476} y={row.py} size={18} color="#ffffff" lh={21}>{row.daily}</Pin>
-          <Pin x={1786} y={row.py} size={18} color="#ffffff" lh={21}>{row.monthly}</Pin>
+          <At x={1273} y={row.bar} w={243} h={12}><div style={{ height: "100%", borderRadius: 6, background: "#33413f" }} /></At>
+          <At x={1273} y={row.bar} w={row.fill} h={12}><div style={{ height: "100%", borderRadius: 6, background: "linear-gradient(to right, #1e897f, #34efde)" }} /></At>
+          <At x={1583} y={row.bar} w={243} h={12}><div style={{ height: "100%", borderRadius: 6, background: "#33413f" }} /></At>
+          <At x={1583} y={row.bar} w={row.fill} h={12}><div style={{ height: "100%", borderRadius: 6, background: "linear-gradient(to right, #1e897f, #34efde)" }} /></At>
+          <Pin x={1476} y={row.py} size={18} color="#ffffff" lh={21}>{row.text}</Pin>
+          <Pin x={1786} y={row.py} size={18} color="#ffffff" lh={21}>{row.text}</Pin>
         </span>
       ))}
       <Rule x={899} y={472} w={936} />
@@ -1737,15 +1834,15 @@ function Screen20({ state }: { state: WallState }) {
       <Pin x={51} y={736} size={24} color="#ffffff" lh={28}>Estimated reads</Pin>
       <Pin x={53} y={771} size={18} color="#76817f" lh={21}>Estimated readings · share</Pin>
       <Pin x={638} y={787} size={18} color="#76817f" lh={21}>Daily</Pin>
-      <Pin x={905} y={787} size={18} color="#76817f" lh={21}>Monthly</Pin>
+      <Pin x={905} y={787} size={18} color="#76817f" lh={21}>For the period</Pin>
       <Pin x={1206} y={787} size={18} color="#76817f" lh={21}>Hourly</Pin>
       {reads.map((row) => (
         <span key={row.label}>
           <Rule x={51} y={row.rule} w={1260} />
           <Pin x={49} y={row.y} size={24} color="#ffffff" lh={28}>{row.label}</Pin>
-          <Pin x={619} y={row.vy} size={24} color="#ffffff" lh={28}>{row.daily}</Pin>
-          <Pin x={909} y={row.vy} size={24} color="#ffffff" lh={28}>{row.monthly}</Pin>
-          <Pin x={1199} y={row.vy} size={24} color="#ffffff" lh={28}>{row.hourly}</Pin>
+          <Pin x={560} y={row.vy} w={150} size={24} color="#ffffff" lh={28} align="right">{row.daily}</Pin>
+          <Pin x={820} y={row.vy} w={170} size={24} color="#ffffff" lh={28} align="right">{row.period}</Pin>
+          <Pin x={1120} y={row.vy} w={150} size={24} color="#ffffff" lh={28} align="right">{row.hourly}</Pin>
         </span>
       ))}
 
@@ -1753,32 +1850,64 @@ function Screen20({ state }: { state: WallState }) {
       <Pin x={1371} y={736} size={24} color="#ffffff" lh={28}>Data processing</Pin>
       <Pin x={1371} y={780} size={18} color="#76817f" lh={21}>Separate measures</Pin>
       <Pin x={1371} y={862} size={24} color="#ffffff" lh={28}>Validation failure</Pin>
-      <Pin x={1762} y={860} size={38} color="#f3f5f4" lh={45}>{d.validation}</Pin>
+      <Pin x={1762} y={856} size={23} color="#f3f5f4" lh={45}>N/A</Pin>
       <Rule x={1371} y={922} w={472} />
       <Pin x={1371} y={944} size={24} color="#ffffff" lh={28}>Edited</Pin>
-      <Pin x={1762} y={942} size={38} color="#f3f5f4" lh={45}>{d.edited}</Pin>
+      <Pin x={1762} y={935} size={23} color="#f3f5f4" lh={45}>N/A</Pin>
     </Frame>
   )
 }
 
-function Screen21() {
+function countText(value: number | null) {
+  return value == null ? "—" : value.toLocaleString("en-US")
+}
+
+function violationView(part: number | null, whole: number | null) {
+  if (part == null || whole == null) return { value: "—", note: "—", fill: 0 }
+  if (whole === 0) return { value: "—", note: "0 / 0 sensors", fill: 0 }
+  const share = part / whole
+  return {
+    value: `${(share * 100).toFixed(1)}%`,
+    note: `${part.toLocaleString("en-US")} / ${whole.toLocaleString("en-US")} sensors`,
+    fill: Math.max(0, Math.min(355, Math.round(share * 355))),
+  }
+}
+
+function Screen21({ state }: { state: WallState }) {
   const d = useContent().screen21
+  const pressure = usePressure(state)
+  const leaks = useLeaks(state)
+  const lowSensors = pressure ? pressure.lowSensors : null
+  const mediumSensors = pressure ? pressure.mediumSensors : null
+  const totalSensors = lowSensors == null || mediumSensors == null ? null : lowSensors + mediumSensors
+  const lowViolation = violationView(pressure ? pressure.lowViolations : null, lowSensors)
+  const mediumViolation = violationView(pressure ? pressure.mediumViolations : null, mediumSensors)
   const kpis = [
     { x: 31, lx: 56 },
     { x: 649, lx: 674 },
     { x: 1267, lx: 1294 },
-  ].map((item, index) => ({ ...item, ...d.cards[index] }))
+  ].map((item, index) => ({ ...item, ...d.cards[index], value: [countText(totalSensors), countText(lowSensors), countText(mediumSensors)][index] }))
   const zones = [
     { y: 425, bar: 429, x: 1468 },
     { y: 463, bar: 467, x: 1468 },
     { y: 501, bar: 505, x: 1469 },
     { y: 539, bar: 543, x: 1469 },
   ].map((item, index) => ({ ...item, ...d.zones[index] }))
+  const gradeNames = ["Grade A", "Grade B", "Grade C"] as const
+  const gradeCounts = gradeNames.map((name) => leaks?.grades[name] ?? 0)
+  const gradeScale = chartScale(gradeCounts)
+  const gradeTrack = 140
+  const gradeBase = 969
   const grades = [
-    { trackY: 829, trackH: 139, bottom: 968, x: 1107, vx: 1093, vy: 840, lx: 1122 },
-    { trackY: 829, trackH: 139, bottom: 898 + 70, x: 1365, vx: 1349, vy: 881, lx: 1381 },
-    { trackY: 829, trackH: 146, bottom: 942 + 27, x: 1623, vx: 1607, vy: 921, lx: 1638 },
-  ].map((item, index) => ({ ...item, ...d.grades[index], fillH: d.grades[index].fill, fillY: item.bottom - d.grades[index].fill }))
+    { x: 1107, lx: 1122 },
+    { x: 1365, lx: 1381 },
+    { x: 1623, lx: 1638 },
+  ].map((item, index) => {
+    const count = leaks ? gradeCounts[index] : null
+    const fillH = count == null || gradeScale.max <= 0 ? 0 : Math.round((count / gradeScale.max) * gradeTrack)
+    return { ...item, label: gradeNames[index], value: count == null ? "—" : count.toLocaleString("en-US"), fillH, fillY: gradeBase - fillH }
+  })
+  const gradeTicks = [gradeScale.max, gradeScale.max / 2, 0]
   return (
     <Frame>
       <Pin x={32} y={28} size={32} weight={900} color="#34efde" lh={40}>PRESSURE & LEAK DETECTION</Pin>
@@ -1786,7 +1915,7 @@ function Screen21() {
         <span key={card.label}>
           <At x={card.x} y={97} w={605} h={150}><div className="kpi" /></At>
           <Pin x={card.lx} y={99} size={24} weight={500} color="#34efde" lh={28}>{card.label}</Pin>
-          <Pin x={card.lx} y={154} size={60} weight={700} color="#ffffff" lh={48}>{card.value}</Pin>
+          <Pin x={card.lx} y={140} size={60} weight={700} color="#ffffff" lh={48}>{card.value}</Pin>
           <Pin x={card.lx} y={201} size={18} weight={500} color="#ffffff" lh={22}>{card.note}</Pin>
         </span>
       ))}
@@ -1798,23 +1927,23 @@ function Screen21() {
       <Pin x={573} y={417} size={18} color="#76817f" lh={21}>50%</Pin>
       <Pin x={719} y={417} size={18} color="#76817f" lh={21}>100%</Pin>
       <Pin x={56} y={434} size={24} color="#f3f5f4" lh={28}>Low pressure violation</Pin>
-      <Pin x={56} y={468} size={18} color="#76817f" lh={21}>{d.lowViolation.note}</Pin>
+      <Pin x={56} y={468} size={18} color="#76817f" lh={21}>{lowViolation.note}</Pin>
       <At x={408} y={451} w={355} h={22}><div style={{ height: "100%", borderRadius: 27, background: "#33413f" }} /></At>
-      <At x={408} y={451} w={d.lowViolation.fill} h={22}><div style={{ height: "100%", borderRadius: 27, background: "linear-gradient(to right, #8c6034, #f2a65a)" }} /></At>
-      <Pin x={816} y={445} size={30} color="#f3f5f4" lh={36}>{d.lowViolation.value}</Pin>
+      <At x={408} y={451} w={lowViolation.fill} h={22}><div style={{ height: "100%", borderRadius: 27, background: "linear-gradient(to right, #8c6034, #f2a65a)" }} /></At>
+      <Pin x={816} y={445} size={30} color="#f3f5f4" lh={36}>{lowViolation.value}</Pin>
       <Rule x={56} y={498} w={824} color="#343838" />
       <Pin x={56} y={509} size={24} color="#f3f5f4" lh={28}>Medium pressure violation</Pin>
-      <Pin x={56} y={544} size={18} color="#76817f" lh={21}>{d.mediumViolation.note}</Pin>
+      <Pin x={56} y={544} size={18} color="#76817f" lh={21}>{mediumViolation.note}</Pin>
       <At x={408} y={528} w={355} h={22}><div style={{ height: "100%", borderRadius: 27, background: "#33413f" }} /></At>
-      <At x={408} y={528} w={d.mediumViolation.fill} h={22}><div style={{ height: "100%", borderRadius: 27, background: "linear-gradient(to right, #8c6034, #f2a65a)" }} /></At>
-      <Pin x={816} y={522} size={30} color="#f3f5f4" lh={36}>{d.mediumViolation.value}</Pin>
+      <At x={408} y={528} w={mediumViolation.fill} h={22}><div style={{ height: "100%", borderRadius: 27, background: "linear-gradient(to right, #8c6034, #f2a65a)" }} /></At>
+      <Pin x={816} y={522} size={30} color="#f3f5f4" lh={36}>{mediumViolation.value}</Pin>
       <At x={56} y={596} w={10} h={10}><div style={{ width: 10, height: 10, borderRadius: 5, background: "#f2ab65" }} /></At>
       <Pin x={76} y={590} size={18} color="#76817f" lh={21}>Sensors with pressure violations</Pin>
 
       <At x={953} y={320} w={919} h={314}><div className="panel shell dim" /></At>
       <Pin x={976} y={339} size={24} weight={700} color="#f3f5f4" lh={28}>Customers impacted</Pin>
       <Pin x={976} y={374} size={18} color="#a3aeab" lh={21}>By pressure violations</Pin>
-      <Pin x={976} y={424} size={70} color="#ffffff" lh={85} font="Inter, sans-serif">{d.customers}</Pin>
+      <Pin x={976} y={424} size={70} color="#ffffff" lh={85} font="Inter, sans-serif">0</Pin>
       <Pin x={976} y={517} w={171} size={18} color="#a3aeab" lh={21} wrap>Unique customers · illustrative definition</Pin>
       <Pin x={976} y={594} size={18} color="#7f8b87" lh={21}>Source: GIS</Pin>
       <Rule x={1267} y={424} w={1} h={139} color="#343838" />
@@ -1824,8 +1953,8 @@ function Screen21() {
         <span key={row.label}>
           <Pin x={1343} y={row.y} size={24} color="#e8f0ed" lh={28}>{row.label}</Pin>
           <At x={row.x} y={row.bar} w={280} h={20}><div style={{ height: "100%", borderRadius: 62, background: "#33413f" }} /></At>
-          <At x={row.x} y={row.bar} w={row.fill} h={20}><div style={{ height: "100%", borderRadius: 62, background: "linear-gradient(to right, #e6846b, #80493b)" }} /></At>
-          <Pin x={1787} y={row.y} size={24} color="#e8f0ed" lh={28}>{row.value}</Pin>
+          <At x={row.x} y={row.bar} w={/*row.fill*/0} h={20}><div style={{ height: "100%", borderRadius: 62, background: "linear-gradient(to right, #e6846b, #80493b)" }} /></At>
+          <Pin x={1787} y={row.y} size={24} color="#e8f0ed" lh={28}>{/*row.value*/} 0</Pin>
         </span>
       ))}
       <Pin x={1343} y={594} size={18} color="#7f8b87" lh={21}>Source: GIS</Pin>
@@ -1834,40 +1963,40 @@ function Screen21() {
       <Pin x={56} y={720} size={24} color="#ffffff" lh={28}>Leak indicators</Pin>
       <Pin x={56} y={758} size={18} color="#76817f" lh={21}>Counts and handling times for the selected context</Pin>
       <Pin x={56} y={812} size={18} color="#76817f" lh={21}>Suspected leaks</Pin>
-      <Pin x={56} y={851} size={40} color="#f3f5f4" lh={47}>{d.suspected}</Pin>
+      <Pin x={56} y={851} size={40} color="#f3f5f4" lh={47}>{leaks ? leaks.suspected.toLocaleString("en-US") : "—"}</Pin>
       <Pin x={399} y={864} size={18} color="#76817f" lh={21}>MDMS</Pin>
       <Pin x={486} y={812} size={18} color="#76817f" lh={21}>Confirmed leaks</Pin>
-      <Pin x={486} y={851} size={40} color="#f3f5f4" lh={47}>{d.confirmed}</Pin>
+      <Pin x={486} y={851} size={40} color="#f3f5f4" lh={47}>N/A</Pin>
       <Pin x={869} y={864} size={18} color="#76817f" lh={21}>LD</Pin>
       <Rule x={56} y={924} w={850} />
       <Rule x={471} y={825} w={1} h={183} />
       <Pin x={56} y={934} size={18} color="#76817f" lh={21}>Avg. leak response time</Pin>
-      <Pin x={56} y={971} size={40} color="#f3f5f4" lh={47}>{d.response}</Pin>
+      <Pin x={56} y={971} size={40} color="#f3f5f4" lh={47}>N/A</Pin>
       <Pin x={338} y={984} size={18} color="#76817f" lh={21}>MFS · minutes</Pin>
       <Pin x={486} y={934} size={18} color="#76817f" lh={21}>Avg. leak repair time</Pin>
-      <Pin x={486} y={961} size={40} color="#f3f5f4" lh={47}>{d.repair}</Pin>
+      <Pin x={486} y={961} size={40} color="#f3f5f4" lh={47}>N/A</Pin>
       <Pin x={776} y={984} size={18} color="#76817f" lh={21}>MFS · minutes</Pin>
 
       <At x={953} y={644} w={919} h={388}><div className="panel shell dim" /></At>
       <Pin x={976} y={662} size={24} color="#ffffff" lh={28}>Leak distribution by grade</Pin>
       <Pin x={1723} y={681} size={18} color="#76817f" lh={21}>Source: MFM</Pin>
-      <Pin x={976} y={700} size={18} color="#76817f" lh={21}>Demo categories and counts · population to confirm</Pin>
+      {/*<Pin x={976} y={700} size={18} color="#76817f" lh={21}>Categories and counts · population to confirm</Pin>*/}
       <Pin x={976} y={732} size={18} color="#76817f" lh={21}>Leaks · count</Pin>
-      <Pin x={995} y={791} size={14} color="#7f8b87" lh={16}>10</Pin>
-      <Pin x={1003} y={874} size={18} color="#76817f" lh={21}>5</Pin>
-      <Pin x={1003} y={959} size={18} color="#76817f" lh={21}>0</Pin>
+      {gradeTicks.map((tick, index) => (
+        <Pin key={tick} x={930} y={807 + index * 70} w={90} size={18} color="#76817f" lh={21} align="right">{Number.isInteger(tick) ? tick.toLocaleString("en-US") : tick.toFixed(1)}</Pin>
+      ))}
       <Rule x={1027} y={829} w={802} color="#343a38" />
       <Rule x={1027} y={899} w={802} color="#343a38" />
       <Rule x={1027} y={969} w={802} color="#343a38" />
       {grades.map((bar) => (
         <span key={bar.label}>
-          <At x={bar.x} y={bar.trackY} w={92} h={bar.trackH}>
+          <At x={bar.x} y={829} w={92} h={gradeTrack}>
             <div style={{ height: "100%", borderRadius: 67, background: "rgba(52,87,91,0.51)" }} />
           </At>
           <At x={bar.x} y={bar.fillY} w={92} h={bar.fillH}>
             <div style={{ height: "100%", borderRadius: 67, background: "linear-gradient(to bottom, #34efde, #1d897f)" }} />
           </At>
-          <Pin x={bar.vx} y={bar.vy} size={18} color="#76817f" lh={21}>{bar.value}</Pin>
+          <Pin x={bar.x - 16} y={bar.fillY - 24} w={124} size={18} color="#76817f" lh={21} align="center">{bar.value}</Pin>
           <Pin x={bar.lx} y={984} size={18} color="#76817f" lh={21}>{bar.label}</Pin>
         </span>
       ))}
@@ -1883,7 +2012,7 @@ const bodies: Record<number, (state: WallState) => ReactNode> = {
   5: () => <Screen5 />,
   6: () => <Screen6 />,
   7: () => <Screen7 />,
-  8: (state) => (state.ufgOpen ? <UfgScreen8 /> : <Screen8 />),
+  8: (state) => (state.ufgOpen ? <UfgScreen8 /> : <Screen8 state={state} />),
   9: (state) => (state.ufgOpen ? <UfgScreen9 state={state} /> : <Screen9 />),
   13: () => <Screen13 />,
   14: () => <Screen14 />,
@@ -1893,7 +2022,7 @@ const bodies: Record<number, (state: WallState) => ReactNode> = {
   18: () => <Screen18 />,
   19: () => <Screen19 />,
   20: (state) => <Screen20 state={state} />,
-  21: () => <Screen21 />,
+  21: (state) => <Screen21 state={state} />,
 }
 
 export function screenBody(id: number, state: WallState) {
