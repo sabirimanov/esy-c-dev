@@ -28,10 +28,11 @@ export type UfgSummary = {
   loss: number | null
   closure: number | null
   supply: number
+  consumers: number | null
   extremes: { high: UfgExtreme | null; low: UfgExtreme } | null
 }
 
-const emptySummary: UfgSummary = { current: null, target: 5, loss: null, closure: null, supply: 0, extremes: null }
+const emptySummary: UfgSummary = { current: null, target: 5, loss: null, closure: null, supply: 0, consumers: null, extremes: null }
 
 export type UfgTrend = {
   current: (number | null)[]

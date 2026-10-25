@@ -370,7 +370,7 @@ export function UfgScreen9({ state }: { state: WallState }) {
       <Kpi {...cards[0]} label="SERVICE AREAS" value={areas ? String(areas.total) : "—"} note={areas ? countLine(areas) : "—"} labelColor="#34efde" wide />
       <Kpi {...cards[1]} label="CLUSTERS" value={clusters ? String(clusters.total) : "—"} note={clusters ? countLine(clusters) : "—"} labelColor="#34efde" wide />
       <Kpi {...cards[2]} label="BLOCKED CLUSTERS" value={clusters ? String(clusters.blocked) : "—"} note="Require data or reconciliation review" glow="heat" labelColor="#eb7d5c" wide />
-      <Kpi {...cards[3]} label="P&T CONFIGURED" value="3 / 42" note="Source configuration count" glow="gold" labelColor="#f2a65a" wide />
+      <Kpi {...cards[3]} label="P&T CONFIGURED CLUSTERS" value="3 / 42" note="Source configuration count" glow="gold" labelColor="#f2a65a" wide />
       <Pin x={1280} y={266} w={600} size={15} color="#6e7775" align="right">{snapshot}</Pin>
 
       <Card x={40} y={324} w={1135} h={460}>
@@ -422,7 +422,7 @@ export function UfgScreen9({ state }: { state: WallState }) {
         items={[
           { kicker: "STATUS", color: "#ffffff", title: clusters ? `${clusters.blocked} of ${clusters.total} clusters blocked` : "Cluster status unavailable", note: "Reconciliation remains incomplete" },
           { kicker: "CONTROL", color: "#34efde", title: "Gross UFG ≠ Net UFG", note: "Approved adjustments must be traceable" },
-          { kicker: "QUALITY", color: "#f2a65a", title: "3 / 42 P&T configured", note: "Configuration gaps need validation" },
+          { kicker: "QUALITY", color: "#f2a65a", title: "3 / 42 P&T configured clusters", note: "Configuration gaps need validation" },
         ]}
       />
     </Frame>

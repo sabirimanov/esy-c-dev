@@ -225,7 +225,6 @@ function Screen1({ state }: { state: WallState }) {
   const lossRounded = ufg.loss == null ? null : Math.round(ufg.loss)
   const loss = lossRounded == null ? "—" : lossRounded.toLocaleString("en-US")
   const impact = lossRounded == null ? "—" : compactCount(Math.round(lossRounded * 0.125))
-  const closure = ufg.closure == null ? "—" : ufg.closure.toFixed(1)
   const extremes = state.regionId ? ufg.extremes : null
   const scaleMax = Math.max(5, extremes?.high?.value ?? 0, extremes?.low.value ?? 0)
   const track = 488
@@ -234,6 +233,7 @@ function Screen1({ state }: { state: WallState }) {
   const markerX = barX + (5 / scaleMax) * track - 1
   const shown = ufg.current == null ? null : Number(ufg.current.toFixed(1))
   const gap = shown == null ? null : Number((shown - 5).toFixed(1))
+  const consumers = ufg.consumers == null ? "—" : Math.round(ufg.consumers).toLocaleString("en-US")
   const callout = gap == null ? "—" : gap > 0 ? `UFG ${gap.toFixed(1)} pp above target` : gap < 0 ? `UFG ${Math.abs(gap).toFixed(1)} pp below target` : "UFG at target"
   const calloutColor = gap == null || gap === 0 ? "#a0aaa8" : gap > 0 ? "#f2a65a" : "#34efde"
   return (
@@ -249,8 +249,8 @@ function Screen1({ state }: { state: WallState }) {
       <KpiValue x={537} y={164} value="5.0" unit="%" note="Configured for selected scope" edge={950} />
       <Pin x={1001} y={108} size={24} weight={500} color="#34efde" lh={40}>Loss volume</Pin>
       <KpiValue x={1001} y={164} value={loss} unit="m³" note="Total for selected period" edge={1410} />
-      <Pin x={1465} y={108} size={24} weight={500} color="#34efde" lh={40}>Deviation closure rate</Pin>
-      <KpiValue x={1465} y={164} value={closure} unit="%" note="Target UFG / Current UFG × 100" edge={1880} />
+      <Pin x={1465} y={108} size={24} weight={500} color="#34efde" lh={40}>Total consumers</Pin>
+      <KpiValue x={1465} y={164} value={consumers} unit="" edge={1880} />
       <At x={42} y={321} w={1272} h={681}><div className="panel shell dim" /></At>
       <Pin x={69} y={340} size={32} weight={700} color="#ffffff" lh={40}>UFG trend</Pin>
       <Pin x={70} y={385} size={24} color="#757171" lh={40}>{hourly ? "Hourly values · aligned by hour" : "Daily values · aligned by day of period"}</Pin>

@@ -1,8 +1,10 @@
 const origin = "https://cccdev.esyasoft.app/cccapi/"
 const boardUrl = "http://127.0.0.1:4173/api/ufg"
+const deviceUrl = "http://127.0.0.1:4173/api/query"
 const ttl = 10 * 60 * 1000
 const boardCache = new Map()
 const regionCache = new Map()
+const consumerCache = new Map()
 let hierarchyCache = null
 let alarmCache = null
 
@@ -221,6 +223,52 @@ function readinessOf(clusters, snapshot) {
   return { day: snapshot.day, areas, clusters: { total: counts.ready + counts.qualified + counts.blocked, ...counts } }
 }
 
+function clusterNumber(cluster) {
+  const fromId = /^c_(\d+)$/.exec(cluster.cluster_id || "")
+  if (fromId) return fromId[1]
+  const fromName = /^(\d+)\./.exec(cluster.name_en || "")
+  return fromName ? fromName[1] : ""
+}
+
+function consumerNumbers(clusters, filter) {
+  if (filter.cluster) {
+    const cluster = clusters.find((item) => item.cluster_id === filter.cluster)
+    const number = cluster ? clusterNumber(cluster) : ""
+    return number ? [number] : []
+  }
+  const numbers = []
+  for (const cluster of clusters) {
+    if (cluster.zone_id === "Z_goycay") continue
+    if (filter.region && cluster.region_id !== filter.region) continue
+    if (filter.zone && cluster.zone_id !== filter.zone) continue
+    const number = clusterNumber(cluster)
+    if (number) numbers.push(number)
+  }
+  return numbers
+}
+
+async function loadConsumers(numbers) {
+  const key = numbers == null ? "*" : numbers.slice().sort().join(",")
+  const hit = consumerCache.get(key)
+  if (hit && hit.until > Date.now()) return hit.total
+  const remote = await fetch(deviceUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      database: "meters-signal.duckdb",
+      table: "devices",
+      limit: 1,
+      filters: numbers == null ? [] : [{ column: "Cluster no", op: "in", values: numbers }],
+    }),
+  })
+  if (!remote.ok) throw new Error(String(remote.status))
+  const data = await remote.json()
+  const total = Number(data.total)
+  if (!Number.isFinite(total)) throw new Error("bad total")
+  consumerCache.set(key, { until: Date.now() + ttl, total })
+  return total
+}
+
 function readFilter(url) {
   const region = url.searchParams.get("region") || ""
   const zone = url.searchParams.get("zone") || ""
@@ -286,11 +334,18 @@ export function handleUfg(req, res) {
   hierarchy()
     .then((body) => {
       const names = new Map(body.clusters.map((cluster) => [cluster.cluster_id, cluster.name_en]))
-      return loadBoard(from, to, "").then((rows) => {
+      return loadBoard(from, to, "").then(async (rows) => {
         const summary = summarize(rows.filter((row) => kept(row, filter, body.index)))
         const scope = { region: filter.region, zone: filter.zone, cluster: "" }
         const compared = filter.region ? rows.filter((row) => kept(row, scope, body.index)) : []
-        return { ...summary, extremes: filter.region ? extremes(compared, names) : null }
+        const numbers = filter.region || filter.zone || filter.cluster ? consumerNumbers(body.clusters, filter) : null
+        let consumers = null
+        try {
+          consumers = numbers && numbers.length === 0 ? 0 : await loadConsumers(numbers)
+        } catch {
+          consumers = null
+        }
+        return { ...summary, extremes: filter.region ? extremes(compared, names) : null, consumers }
       })
     })
     .then((body) => send(res, 200, body))
