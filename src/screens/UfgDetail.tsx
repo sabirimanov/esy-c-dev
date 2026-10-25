@@ -268,7 +268,7 @@ export function UfgScreen8() {
   }, null)
   const age = oldest == null ? null : Math.max(0, Math.floor((Date.now() - oldest) / 86400000))
   const critical = list
-    .filter((alarm) => alarm.category === "ufg" && alarm.state === "Active" && alarm.severity === "High")
+    .filter((alarm) => alarm.category === "ufg" && alarm.state === "Active")
     .sort((a, b) => b.id - a.id)
   const ready = alarms != null
   return (
@@ -287,7 +287,7 @@ export function UfgScreen8() {
 
       <Card x={40} y={324} w={1075} h={460}>
         <h2>Critical UFG alarms</h2>
-        <p className="sub">{ready ? `${critical.length} active · high severity · threshold 6.00%` : "—"}</p>
+        <p className="sub">{ready ? `${critical.length} active · threshold 6.00%` : "—"}</p>
         <div className="ufg-alarms">
           <div className="ufg-alarm head">
             <span>ALARM</span>
