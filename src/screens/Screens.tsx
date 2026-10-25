@@ -8,9 +8,10 @@ import { UfgScreen2, UfgScreen8, UfgScreen9 } from "./UfgDetail"
 import { At, Frame, PlaceText } from "../ui/widgets"
 import { useContent } from "../data/live"
 import { useSocPanel } from "../data/socDashboard"
-import { formatRange, iso, monthGrid, monthTitle, parseIso, periodRange, shiftView } from "../wall/dates"
-import { citiesOf, cityById, EXC_REGIONS, regionEnabled, regionLabel } from "../wall/places"
-import { periodLabel, shiftMonth, type WallState } from "../wall/state"
+import { useUfgHierarchy, useUfgSummary, useUfgTrend, type UfgCluster } from "../data/ufg"
+import { addDays, formatRange, iso, monthGrid, monthTitle, parseIso, periodRange, previousSpan, shiftView, trendCaption } from "../wall/dates"
+import { apiRegionId, citiesOf, cityById, EXC_REGIONS, regionEnabled, regionLabel, zoneIdForCity } from "../wall/places"
+import { periodLabel, type WallState } from "../wall/state"
 import { useWall } from "../wall/useWall"
 
 function Pin({
@@ -50,31 +51,191 @@ function Pin({
   )
 }
 
-function UfgChart({ series, previous, target }: { series: number[]; previous: number[]; target: number }) {
-  const points = [...series, ...series, ...series]
-  const xAt = (index: number) => index * (1111.7 / 29)
-  const yAt = (value: number) => (10 - value) * 32.5
-  const line = points.map((value, index) => `${index === 0 ? "M" : "L"}${xAt(index).toFixed(1)} ${yAt(value).toFixed(1)}`).join("")
-  const prev = previous.map((value, index) => `${index === 0 ? "M" : "L"}${xAt(index).toFixed(1)} ${yAt(value).toFixed(1)}`).join("")
+function niceStep(rough: number) {
+  if (!(rough > 0)) return 1
+  const pow = 10 ** Math.floor(Math.log10(rough))
+  const scaled = rough / pow
+  const base = scaled >= 7.5 ? 10 : scaled >= 3.5 ? 5 : scaled >= 1.5 ? 2 : 1
+  return base * pow
+}
+
+function chartScale(values: (number | null)[]) {
+  const nums = values.filter((value): value is number => value != null && Number.isFinite(value))
+  if (!nums.length) return { min: 0, max: 10 }
+  const low = Math.min(0, ...nums)
+  const high = Math.max(5, ...nums)
+  let step = niceStep((high - low) / 5)
+  for (let guard = 0; guard < 8; guard += 1) {
+    const min = Math.floor(low / step) * step
+    const max = min + step * 5
+    if (max >= high) return { min, max }
+    step = niceStep(step * 2)
+  }
+  return { min: low, max: low + step * 5 }
+}
+
+function linePath(values: (number | null)[], xAt: (index: number) => number, yAt: (value: number) => number) {
+  let path = ""
+  let drawing = false
+  values.forEach((value, index) => {
+    if (value == null) {
+      drawing = false
+      return
+    }
+    path += `${drawing ? "L" : "M"}${xAt(index).toFixed(1)} ${yAt(value).toFixed(1)}`
+    drawing = true
+  })
+  return path
+}
+
+function UfgChart({ current, previous, min, max }: { current: (number | null)[]; previous: (number | null)[]; min: number; max: number }) {
+  const count = Math.max(current.length, previous.length, 2)
+  const xAt = (index: number) => (index * 1112) / (count - 1)
+  const yAt = (value: number) => ((max - value) / (max - min)) * 325
   return (
     <svg className="at" viewBox="0 0 1150 325" style={{ left: 126, top: 505, width: 1150, height: 325 }}>
       {[0, 1, 2, 3, 4, 5].map((step) => (
         <line key={step} x1="0" x2="1150" y1={step * 65} y2={step * 65} stroke="#343838" strokeWidth="1" />
       ))}
-      <path d={prev} fill="none" stroke="#34d9e6" strokeWidth="2.5" strokeDasharray="4 5" />
-      <line x1="0" x2="1112" y1={yAt(target)} y2={yAt(target)} stroke="#34eddc" strokeWidth="2" strokeDasharray="8 6" />
-      <path d={line} fill="none" stroke="#f2a65a" strokeWidth="3.5" strokeLinejoin="round" strokeLinecap="round" />
-      {points.map((value, index) => (
-        <circle key={index} cx={xAt(index)} cy={yAt(value)} r="3" fill="#f2a65a" />
+      <path d={linePath(previous, xAt, yAt)} fill="none" stroke="#34d9e6" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+      <line x1="0" x2="1112" y1={yAt(5)} y2={yAt(5)} stroke="#34eddc" strokeWidth="2" strokeDasharray="8 6" />
+      <path d={linePath(current, xAt, yAt)} fill="none" stroke="#f2a65a" strokeWidth="3.5" strokeLinejoin="round" strokeLinecap="round" />
+      {current.map((value, index) => (
+        value == null ? null : <circle key={index} cx={xAt(index)} cy={yAt(value)} r="3" fill="#f2a65a" />
       ))}
     </svg>
   )
 }
 
+function metricWidth(text: string) {
+  let width = 0
+  for (const char of text) width += char === "," || char === "." ? 22 : char === "—" ? 40 : 36
+  return width
+}
+
+function KpiValue({ x, y, value, unit, note, edge }: { x: number; y: number; value: string; unit: string; note?: string; edge: number }) {
+  const noteX = x + metricWidth(value) + (unit ? 8 + unit.length * 16 : 0) + 18
+  const showNote = Boolean(note) && noteX + (note?.length ?? 0) * 8 < edge
+  return (
+    <>
+      <div className="at" style={{ left: x, top: y, display: "flex", alignItems: "baseline", gap: 8, height: 40 }}>
+        <span style={{ fontSize: 60, fontWeight: 700, lineHeight: "40px", color: "#ffffff" }}>{value}</span>
+        {unit && <span style={{ fontSize: 24, lineHeight: "28px", color: "#a0aaa8" }}>{unit}</span>}
+      </div>
+      {showNote && <Pin x={noteX} y={y + 23} size={16} color="#a0aaa8" lh={19}>{note}</Pin>}
+    </>
+  )
+}
+
+// Chart only. A negative UFG point is drawn as the last value at or above zero.
+// Set to false to plot the API value unchanged. The KPI cards stay on the raw figures.
+const smoothNegativeChart = false
+
+// Chart only. A point more than 5 percentage points away from both neighbors
+// is drawn as the previous value. Set to false to plot the series unchanged.
+const smoothChartJumps = true
+const chartJumpLimit = 5
+
+function smoothSeries(values: (number | null)[]) {
+  if (!smoothNegativeChart) return values
+  const normal = values.find((value) => value != null && value >= 0) ?? 0
+  let last = normal
+  return values.map((value) => {
+    if (value == null) return null
+    if (value < 0) return last
+    last = value
+    return value
+  })
+}
+
+function fillGaps(values: (number | null)[]) {
+  let last: number | null = null
+  return values.map((value) => {
+    if (value == null) return last
+    last = value
+    return value
+  })
+}
+
+function smoothJumps(values: (number | null)[]) {
+  if (!smoothChartJumps) return values
+  const out = values.slice()
+  for (let index = 1; index < out.length; index += 1) {
+    const previous = out[index - 1]
+    const value = out[index]
+    const next = values[index + 1]
+    if (previous == null || value == null) continue
+    const farFromPrevious = Math.abs(value - previous) > chartJumpLimit
+    const farFromNext = next == null || Math.abs(value - next) > chartJumpLimit
+    if (farFromPrevious && farFromNext) out[index] = previous
+  }
+  return out
+}
+
+function axisMarks(count: number) {
+  if (count <= 1) return [0]
+  if (count <= 8) return Array.from({ length: count }, (_, index) => index)
+  const step = Math.ceil((count - 1) / 7)
+  const marks = []
+  for (let index = 0; index < count; index += step) marks.push(index)
+  return marks
+}
+
+function clusterName(name: string) {
+  return name.replace(/\(\d+\)\s*$/, "").trim()
+}
+
+function compactCount(value: number) {
+  const sign = value < 0 ? "-" : ""
+  const abs = Math.abs(value)
+  if (abs < 1000) return sign + String(abs)
+  const divisor = abs >= 1_000_000 ? 1_000_000 : 1000
+  const suffix = divisor === 1_000_000 ? "M" : "K"
+  const scaled = Math.round((abs / divisor) * 10) / 10
+  const text = Number.isInteger(scaled) ? String(scaled) : scaled.toFixed(1)
+  return sign + text + suffix
+}
+
+function dayLabel(start: string, index: number) {
+  const { d, m } = parseIso(addDays(start, index))
+  return `${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}`
+}
+
+function tickText(value: number) {
+  const rounded = Math.round(value * 10) / 10
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}%`
+}
+
 function Screen1({ state }: { state: WallState }) {
-  const d = useContent().screen1
-  const period = periodLabel(state.date)
-  const previous = periodLabel(shiftMonth(state.date, -1))
+  const ufg = useUfgSummary(state)
+  const trend = useUfgTrend(state)
+  const earlier = previousSpan(state.date, state.dateTo, state.period)
+  const currentLabel = `${trendCaption(state.date, state.dateTo, state.period)} – Current`
+  const previousLabel = `${trendCaption(earlier.date, earlier.dateTo, state.period)} – Previous`
+  const series = smoothJumps(fillGaps(smoothSeries(trend?.current ?? [])))
+  const previousSeries = smoothJumps(fillGaps(smoothSeries(trend?.previous ?? [])))
+  const count = Math.max(series.length, previousSeries.length, 1)
+  const scale = chartScale([...series, ...previousSeries])
+  const ticks = [0, 1, 2, 3, 4, 5].map((step) => scale.max - ((scale.max - scale.min) / 5) * step)
+  const marks = axisMarks(count)
+  const hourly = Boolean(trend?.hourly)
+  const [hover, setHover] = useState<number | null>(null)
+  const pointX = (index: number) => 126 + (count <= 1 ? 556 : (index * 1112) / (count - 1))
+  const current = ufg.current == null ? "—" : ufg.current.toFixed(1)
+  const lossRounded = ufg.loss == null ? null : Math.round(ufg.loss)
+  const loss = lossRounded == null ? "—" : lossRounded.toLocaleString("en-US")
+  const impact = lossRounded == null ? "—" : compactCount(Math.round(lossRounded * 0.125))
+  const closure = ufg.closure == null ? "—" : ufg.closure.toFixed(1)
+  const extremes = state.regionId ? ufg.extremes : null
+  const scaleMax = Math.max(5, extremes?.high?.value ?? 0, extremes?.low.value ?? 0)
+  const track = 488
+  const barX = 1366
+  const barWidth = (value: number) => Math.max(0, Math.min(track, (value / scaleMax) * track))
+  const markerX = barX + (5 / scaleMax) * track - 1
+  const shown = ufg.current == null ? null : Number(ufg.current.toFixed(1))
+  const gap = shown == null ? null : Number((shown - 5).toFixed(1))
+  const callout = gap == null ? "—" : gap > 0 ? `UFG ${gap.toFixed(1)} pp above target` : gap < 0 ? `UFG ${Math.abs(gap).toFixed(1)} pp below target` : "UFG at target"
+  const calloutColor = gap == null || gap === 0 ? "#a0aaa8" : gap > 0 ? "#f2a65a" : "#34efde"
   return (
     <Frame mirror>
       <PlaceText x={37} y={28} size={32} weight={900}>UFG PERFORMANCE & LOSS MONITORING</PlaceText>
@@ -83,49 +244,59 @@ function Screen1({ state }: { state: WallState }) {
       <At x={974} y={97} w={451} h={150}><div className="kpi surface-glow-strong" /></At>
       <At x={1440} y={97} w={450} h={150}><div className="kpi surface-glow-mid" /></At>
       <Pin x={73} y={108} size={24} weight={500} color="#34efde" lh={40}>Current UFG</Pin>
-      <Pin x={73} y={164} size={60} weight={700} color="#ffffff" lh={40}>{d.current}</Pin>
-      <Pin x={162} y={176} size={24} color="#a0aaa8" lh={28}>%</Pin>
-      <Pin x={244} y={187} size={16} color="#a0aaa8" lh={19}>{d.delta}</Pin>
+      <KpiValue x={73} y={164} value={current} unit="%" edge={470} />
       <Pin x={537} y={108} size={24} weight={500} color="#34efde" lh={40}>Target UFG</Pin>
-      <Pin x={537} y={164} size={60} weight={700} color="#ffffff" lh={40}>{d.target}</Pin>
-      <Pin x={626} y={176} size={24} color="#a0aaa8" lh={28}>%</Pin>
-      <Pin x={694} y={187} size={16} color="#a0aaa8" lh={19}>Configured for selected scope</Pin>
+      <KpiValue x={537} y={164} value="5.0" unit="%" note="Configured for selected scope" edge={950} />
       <Pin x={1001} y={108} size={24} weight={500} color="#34efde" lh={40}>Loss volume</Pin>
-      <Pin x={1001} y={164} size={60} weight={700} color="#ffffff" lh={40}>{d.loss}</Pin>
-      <Pin x={1100} y={176} size={24} color="#a0aaa8" lh={28}>MCM</Pin>
-      <Pin x={1211} y={187} size={16} color="#a0aaa8" lh={19}>Total for selected period</Pin>
+      <KpiValue x={1001} y={164} value={loss} unit="m³" note="Total for selected period" edge={1410} />
       <Pin x={1465} y={108} size={24} weight={500} color="#34efde" lh={40}>Deviation closure rate</Pin>
-      <Pin x={1465} y={164} size={60} weight={700} color="#ffffff" lh={40}>{d.closure}</Pin>
-      <Pin x={1592} y={176} size={24} color="#a0aaa8" lh={28}>%</Pin>
-      <Pin x={1622} y={187} size={16} color="#a0aaa8" lh={19}>Target UFG / Current UFG × 100</Pin>
+      <KpiValue x={1465} y={164} value={closure} unit="%" note="Target UFG / Current UFG × 100" edge={1880} />
       <At x={42} y={321} w={1272} h={681}><div className="panel shell dim" /></At>
       <Pin x={69} y={340} size={32} weight={700} color="#ffffff" lh={40}>UFG trend</Pin>
-      <Pin x={70} y={385} size={24} color="#757171" lh={40}>Daily values · aligned by day of period</Pin>
+      <Pin x={70} y={385} size={24} color="#757171" lh={40}>{hourly ? "Hourly values · aligned by hour" : "Daily values · aligned by day of period"}</Pin>
       <Pin x={70} y={435} size={24} color="#ffffff" lh={40}>UFG (%)</Pin>
-      <At x={1090} y={340} w={195} h={46}><div className="expand-pill">Expand chart</div></At>
-      <UfgChart series={d.series} previous={d.previous} target={Number(d.target)} />
-      {[
-        [70, 479, "10%"],
-        [80, 544, "8%"],
-        [80, 609, "6%"],
-        [80, 675, "4%"],
-        [80, 740, "2%"],
-        [80, 805, "0%"],
-      ].map(([x, y, label]) => (
-        <Pin key={label as string} x={x as number} y={y as number} size={24} color="#757171" lh={40}>{label}</Pin>
+      {/*<At x={1090} y={340} w={195} h={46}><div className="expand-pill">Expand chart</div></At>*/}
+      <UfgChart current={series} previous={previousSeries} min={scale.min} max={scale.max} />
+      {ticks.map((tick, index) => (
+        <Pin key={index} x={24} y={479 + index * 65} w={92} size={24} color="#757171" lh={40} align="right">{tickText(tick)}</Pin>
       ))}
-      {[
-        [123, "1"], [272, "5"], [458, "10"], [650, "15"], [841, "20"], [1033, "25"], [1225, "30"], [1255, "31"],
-      ].map(([x, label]) => (
-        <Pin key={label as string} x={x as number} y={845} size={24} color="#757171" lh={40}>{label}</Pin>
-      ))}
-      <Pin x={607} y={890} size={18} color="#a0aaa8" lh={21}>Day of period</Pin>
-      <At x={105} y={957} w={32} h={2}><div style={{ height: 3, background: "#f2a65a", borderRadius: 2 }} /></At>
-      <At x={608} y={957} w={32} h={2}><div style={{ height: 2, background: "repeating-linear-gradient(90deg, #34d9e6 0 4px, transparent 4px 9px)" }} /></At>
-      <At x={1090} y={957} w={32} h={2}><div style={{ height: 2, background: "repeating-linear-gradient(90deg, #34eddc 0 8px, transparent 8px 14px)" }} /></At>
-      <Pin x={149} y={938} size={24} color="#757171" lh={40}>{`${period} · Current`}</Pin>
-      <Pin x={658} y={938} size={24} color="#757171" lh={40}>{`${previous} · Previous`}</Pin>
-      <Pin x={1138} y={938} size={24} color="#757171" lh={40}>{`Target · ${d.target}%`}</Pin>
+      {marks.map((index) => {
+        const text = hourly ? (trend?.hours[index] || "").slice(0, 2) || String(index + 1) : String(index + 1)
+        return <Pin key={text + index} x={pointX(index) - 28} y={845} w={56} size={24} color="#757171" lh={40} align="center">{text}</Pin>
+      })}
+      <Pin x={607} y={890} size={18} color="#a0aaa8" lh={21}>{hourly ? "Hour" : "Day of period"}</Pin>
+      {Array.from({ length: count }, (_, index) => {
+        const width = count <= 1 ? 48 : Math.max(16, 1112 / (count - 1))
+        return (
+          <div
+            key={index}
+            className="at"
+            style={{ left: pointX(index) - width / 2, top: 505, width, height: 325, zIndex: 2 }}
+            onMouseEnter={() => setHover(index)}
+            onMouseLeave={() => setHover((currentIndex) => (currentIndex === index ? null : currentIndex))}
+          />
+        )
+      })}
+      {hover != null && (
+        <div className="at" style={{ left: Math.min(1120, Math.max(56, pointX(hover) - 78)), top: 448, zIndex: 3, width: 168, padding: "8px 12px", borderRadius: 10, background: "#102022", border: "1px solid #245552", pointerEvents: "none" }}>
+          <div style={{ color: "#f2a65a", fontSize: 16, lineHeight: "22px" }}>{dayLabel(state.date, hover)} · {series[hover] == null ? "—" : `${series[hover].toFixed(1)}%`}</div>
+          <div style={{ color: "#34d9e6", fontSize: 16, lineHeight: "22px" }}>{dayLabel(earlier.date, hover)} · {previousSeries[hover] == null ? "—" : `${previousSeries[hover].toFixed(1)}%`}</div>
+        </div>
+      )}
+      <div className="at" style={{ left: 90, top: 938, width: 1180, height: 40, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 12, color: "#757171", fontSize: 22 }}>
+          <i style={{ width: 32, height: 3, borderRadius: 2, background: "#f2a65a" }} />
+          {currentLabel}
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 12, color: "#757171", fontSize: 22 }}>
+          <i style={{ width: 32, height: 3, borderRadius: 2, background: "#34d9e6" }} />
+          {previousLabel}
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 12, color: "#757171", fontSize: 22 }}>
+          <i style={{ width: 32, height: 2, background: "repeating-linear-gradient(90deg, #34eddc 0 8px, transparent 8px 14px)" }} />
+          Target – 5.0%
+        </span>
+      </div>
       {state.ufgOpen && (
         <Pin x={1480} y={32} w={390} size={18} color="#34efde" align="right" lh={28}>Details open</Pin>
       )}
@@ -133,28 +304,30 @@ function Screen1({ state }: { state: WallState }) {
       <At x={1338} y={321} w={556} h={681}><div className="panel shell dim" /></At>
       <Pin x={1366} y={340} size={32} weight={700} color="#ffffff" lh={40}>Regional comparison</Pin>
       <Pin x={1366} y={385} size={24} color="#757171" lh={40}>Highest and lowest UFG in selected scope</Pin>
-      <Pin x={1366} y={465} size={24} color="#f3f5f4" lh={28}>{d.high.label}</Pin>
-      <Pin x={1779} y={465} size={32} color="#f3f5f4" lh={38}>{d.high.value}</Pin>
-      <At x={1366} y={503} w={488} h={22}><div style={{ height: "100%", borderRadius: 27, background: "#33413f" }} /></At>
-      <At x={1366} y={503} w={d.high.fill} h={22}><div style={{ height: "100%", borderRadius: 27, background: "linear-gradient(to right, #8c6034, #f2a65a)" }} /></At>
-      <At x={1764} y={499} w={2} h={30}><div style={{ height: "100%", background: "#f3f5f4" }} /></At>
-      <Pin x={1366} y={533} size={18} color="#76817f" lh={21}>Same period · Region level</Pin>
-      <Pin x={1366} y={588} size={24} color="#f3f5f4" lh={28}>{d.low.label}</Pin>
-      <Pin x={1779} y={591} size={32} color="#f3f5f4" lh={38}>{d.low.value}</Pin>
-      <At x={1366} y={629} w={488} h={22}><div style={{ height: "100%", borderRadius: 27, background: "#33413f" }} /></At>
-      <At x={1366} y={629} w={d.low.fill} h={22}><div style={{ height: "100%", borderRadius: 27, background: "linear-gradient(to right, #1e897f, #34efde)" }} /></At>
-      <At x={1578} y={625} w={2} h={30}><div style={{ height: "100%", background: "#f3f5f4" }} /></At>
-      <Pin x={1366} y={659} size={18} color="#76817f" lh={21}>Same period · Region level</Pin>
+      <div className="at" title={extremes?.high?.name} style={{ left: 1366, top: 465, width: 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 24, lineHeight: "28px", color: "#f3f5f4" }}>{extremes?.high ? clusterName(extremes.high.name) : "—"}</div>
+      <Pin x={1779} y={465} size={32} color="#f3f5f4" lh={38}>{extremes?.high ? `${extremes.high.value.toFixed(1)}%` : "—"}</Pin>
+      <At x={barX} y={503} w={track} h={22}><div style={{ height: "100%", borderRadius: 27, background: "#33413f" }} /></At>
+      <At x={barX} y={503} w={extremes?.high ? barWidth(extremes.high.value) : 0} h={22}><div style={{ height: "100%", borderRadius: 27, background: "linear-gradient(to right, #8c6034, #f2a65a)" }} /></At>
+      {extremes && <At x={markerX} y={499} w={2} h={30}><div style={{ height: "100%", background: "#f3f5f4" }} /></At>}
+      <Pin x={1366} y={533} size={18} color="#76817f" lh={21}>Highest UFG · same period</Pin>
+      <div className="at" title={extremes?.low.name} style={{ left: 1366, top: 588, width: 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 24, lineHeight: "28px", color: "#f3f5f4" }}>{extremes ? clusterName(extremes.low.name) : "—"}</div>
+      <Pin x={1779} y={591} size={32} color="#f3f5f4" lh={38}>{extremes ? `${extremes.low.value.toFixed(1)}%` : "—"}</Pin>
+      <At x={barX} y={629} w={track} h={22}><div style={{ height: "100%", borderRadius: 27, background: "#33413f" }} /></At>
+      <At x={barX} y={629} w={extremes ? barWidth(extremes.low.value) : 0} h={22}><div style={{ height: "100%", borderRadius: 27, background: "linear-gradient(to right, #1e897f, #34efde)" }} /></At>
+      {extremes && <At x={markerX} y={625} w={2} h={30}><div style={{ height: "100%", background: "#f3f5f4" }} /></At>}
+      <Pin x={1366} y={659} size={18} color="#76817f" lh={21}>Lowest UFG · same period</Pin>
       <At x={1366} y={701} w={488} h={1}><div style={{ height: 1, background: "#343838" }} /></At>
-      <Pin x={1366} y={727} size={18} color="#76817f" lh={21}>{`White marker: target UFG · ${d.target}%`}</Pin>
-      <Pin x={1366} y={766} size={18} color="#a0aaa8" lh={21}>Revenue impact</Pin>
-      <Pin x={1366} y={791} size={42} color="#f3f5f4" lh={49}>{d.impact}</Pin>
-      <Pin x={1429} y={808} size={24} color="#a0aaa8" lh={28}>M AZN</Pin>
-      <Pin x={1366} y={847} size={18} color="#a0aaa8" lh={21}>Selected period · Billing</Pin>
+      <Pin x={1366} y={727} size={18} color="#76817f" lh={21}>White marker: target UFG · 5.0%</Pin>
+      <Pin x={1366} y={766} size={18} color="#a0aaa8" lh={21}>Approximate revenue impact</Pin>
+      <div className="at" style={{ left: 1366, top: 791, display: "flex", alignItems: "baseline", gap: 12, height: 49 }}>
+        <span style={{ fontSize: 42, lineHeight: "49px", color: "#f3f5f4" }}>{impact}</span>
+        {impact !== "—" && <span style={{ fontSize: 24, lineHeight: "28px", color: "#a0aaa8" }}>AZN</span>}
+      </div>
+      <Pin x={1366} y={847} size={18} color="#a0aaa8" lh={21}>Based on residential tariff 0.125 AZN/m³</Pin>
       <At x={1360} y={901} w={512} h={48}>
         <div style={{ height: "100%", borderRadius: 20, background: "linear-gradient(135deg, #2a2a2a, #1c1c1c)", border: "1px solid #282b2a" }} />
       </At>
-      <Pin x={1382} y={912} size={24} color="#f2a65a" lh={28}>{d.callout}</Pin>
+      <Pin x={1382} y={912} size={24} color={calloutColor} lh={28}>{callout}</Pin>
     </Frame>
   )
 }
@@ -291,10 +464,23 @@ function Screen5() {
   const weeks = monthGrid(view.y, view.m)
   const rowH = weeks.length > 5 ? 60 : 72
   const cities = citiesOf(state.regionId)
+  const { zones, clusters } = useUfgHierarchy()
+  const regionApi = apiRegionId(state.regionId)
+  const zoneId = zoneIdForCity(state.cityId)
+  const visible = clusters.filter((cluster) => cluster.zone_id !== "Z_goycay" && (!regionApi || cluster.region_id === regionApi) && (!zoneId || cluster.zone_id === zoneId))
+  const selectedCluster = visible.find((cluster) => cluster.cluster_id === state.clusterId)
+  const zoneName = new Map(zones.map((zone) => [zone.zone_id, zone.name_en]))
+  const grouped = new Map<string, UfgCluster[]>()
+  for (const cluster of visible) {
+    const list = grouped.get(cluster.zone_id) ?? []
+    list.push(cluster)
+    grouped.set(cluster.zone_id, list)
+  }
+  const clusterLabel = selectedCluster ? (selectedCluster.name_en.length > 26 ? `${selectedCluster.name_en.slice(0, 25)}…` : selectedCluster.name_en) : "All clusters"
   const filters = [
     ["Region", regionLabel(state.regionId)],
     ["City", cityById(state.cityId)?.label ?? "All cities"],
-    ["Cluster", "All clusters"],
+    ["Cluster", clusterLabel],
     ["Date Range", formatRange(from, to)],
   ]
   const ox = 20
@@ -390,7 +576,7 @@ function Screen5() {
           <select
             className="region-select"
             value={state.cityId ?? ""}
-            onChange={(event) => patch({ cityId: event.target.value || null })}
+            onChange={(event) => patch({ cityId: event.target.value || null, clusterId: null })}
           >
             <option value="">All cities</option>
             {cities.map((city) => (
@@ -403,7 +589,24 @@ function Screen5() {
       <At x={ox + 78} y={oy + 338} w={420} h={80}>
         <div style={{ height: "100%", borderRadius: 40, background: "#0c1b1c", position: "relative" }}>
           <div style={{ position: "absolute", left: 28, top: 14, fontSize: 13, letterSpacing: 1.4, color: "#798586" }}>CLUSTER</div>
-          <div style={{ position: "absolute", left: 28, top: 36, fontSize: 26, color: "#f2f6f5" }}>All clusters</div>
+          <select
+            className="region-select"
+            value={selectedCluster ? selectedCluster.cluster_id : ""}
+            onChange={(event) => patch({ clusterId: event.target.value || null })}
+          >
+            <option value="">All clusters</option>
+            {grouped.size > 1
+              ? [...grouped.entries()].map(([id, list]) => (
+                <optgroup key={id} label={zoneName.get(id) ?? id}>
+                  {list.map((cluster) => (
+                    <option key={cluster.cluster_id} value={cluster.cluster_id}>{cluster.name_en}</option>
+                  ))}
+                </optgroup>
+              ))
+              : visible.map((cluster) => (
+                <option key={cluster.cluster_id} value={cluster.cluster_id}>{cluster.name_en}</option>
+              ))}
+          </select>
           <div style={{ position: "absolute", right: 28, top: 30, color: "#9aabb0", fontSize: 16, pointerEvents: "none" }}>⌄</div>
         </div>
       </At>
@@ -476,7 +679,7 @@ function Screen5() {
             const range = periodRange("Last 30 Days")
             if (!range) return
             setAnchor(null)
-            patch({ ...range, period: "Last 30 Days", regionId: null, regionSet: true, cityId: null, seed: 0 })
+            patch({ ...range, period: "Last 30 Days", regionId: null, regionSet: true, cityId: null, clusterId: null, seed: 0 })
           }}
           style={{ height: "100%", borderRadius: 32, background: "#102628", color: "#d5e0de", fontSize: 20, lineHeight: "64px", textAlign: "center", cursor: "pointer" }}
         >Reset</div>
@@ -1674,14 +1877,14 @@ function Screen21() {
 
 const bodies: Record<number, (state: WallState) => ReactNode> = {
   1: (state) => <Screen1 state={state} />,
-  2: (state) => (state.ufgOpen ? <UfgScreen2 /> : <Screen2 />),
+  2: (state) => (state.ufgOpen ? <UfgScreen2 state={state} /> : <Screen2 />),
   3: () => <Screen3 />,
   4: () => <Screen4 />,
   5: () => <Screen5 />,
   6: () => <Screen6 />,
   7: () => <Screen7 />,
   8: (state) => (state.ufgOpen ? <UfgScreen8 /> : <Screen8 />),
-  9: (state) => (state.ufgOpen ? <UfgScreen9 /> : <Screen9 />),
+  9: (state) => (state.ufgOpen ? <UfgScreen9 state={state} /> : <Screen9 />),
   13: () => <Screen13 />,
   14: () => <Screen14 />,
   15: () => <Screen15 />,

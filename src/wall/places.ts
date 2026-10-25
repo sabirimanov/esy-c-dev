@@ -2,7 +2,7 @@
 // Map coordinates are the city lat/lon dropped onto the Azerbaijan mesh
 // (simplemaps: Baku 40.3667, 49.8352; Sumqayıt 40.5961, 49.6700;
 // Ağsu 40.5703, 48.4009; Kürdəmir 40.3383, 48.1608; Ucar 40.5183, 47.6542;
-// İsmayıllı 40.7847, 48.1514; Göyçay 40.6553, 47.7389).
+// İsmayıllı 40.7847, 48.1514).
 
 export const EXC_REGIONS = [
   { value: "1", label: "Salyan RQİİ" },
@@ -47,7 +47,6 @@ const cities: Record<string, City[]> = {
     { id: "kurdamir", label: "Kurdamir", mapLabel: "KURDAMIR", x: 0.313, z: -0.072 },
     { id: "ujar", label: "Ujar", mapLabel: "UJAR", x: -0.006, z: -0.208 },
     { id: "ismayilli", label: "Ismayilli", mapLabel: "ISMAYILLI", x: 0.302, z: -0.402 },
-    { id: "goychay", label: "Goychay", mapLabel: "GOYCHAY", x: 0.049, z: -0.298 },
   ],
 }
 
@@ -86,4 +85,32 @@ export function normalizeRegion(id: string | null | undefined) {
 export function normalizeCity(regionId: string | null, cityId: string | null | undefined) {
   if (!cityId) return null
   return citiesOf(regionId).some((city) => city.id === cityId) ? cityId : null
+}
+
+const apiRegions: Record<string, string> = {
+  "11": "R10",
+  "9": "R24",
+  "8": "R01",
+}
+
+const cityZones: Record<string, string> = {
+  baku: "Z_sabuncu",
+  sumgayit: "Z_sumqayit",
+  agsu: "Z_agsu",
+  ismayilli: "Z_ismayilli",
+  kurdamir: "Z_kurdemir",
+  ujar: "Z_ucar",
+}
+
+export function apiRegionId(id: string | null) {
+  return id ? apiRegions[id] ?? null : null
+}
+
+export function zoneIdForCity(id: string | null) {
+  return id ? cityZones[id] ?? null : null
+}
+
+export function normalizeCluster(id: string | null | undefined) {
+  if (!id || !/^[A-Za-z0-9_]{1,80}$/.test(id)) return null
+  return id
 }

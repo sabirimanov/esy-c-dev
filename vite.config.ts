@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from "vite"
 import react from "@vitejs/plugin-react"
 import { handleSync } from "./server/sync.mjs"
+import { handleUfg } from "./server/ufg.mjs"
 import { handleWeather } from "./server/weather.mjs"
 
 function wallSync(): Plugin {
@@ -8,12 +9,12 @@ function wallSync(): Plugin {
     name: "wall-sync",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (!handleWeather(req, res) && !handleSync(req, res)) next()
+        if (!handleUfg(req, res) && !handleWeather(req, res) && !handleSync(req, res)) next()
       })
     },
     configurePreviewServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (!handleWeather(req, res) && !handleSync(req, res)) next()
+        if (!handleUfg(req, res) && !handleWeather(req, res) && !handleSync(req, res)) next()
       })
     },
   }

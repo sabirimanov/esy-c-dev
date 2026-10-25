@@ -59,6 +59,49 @@ export function periodRange(period: string, today = todayIso()) {
   return null
 }
 
+function inclusiveDays(date: string, dateTo: string) {
+  const start = Date.parse(`${date}T00:00:00Z`)
+  const end = Date.parse(`${dateTo}T00:00:00Z`)
+  return Math.round((end - start) / 86400000) + 1
+}
+
+function monthLength(year: number, month: number) {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate()
+}
+
+export function isMonthSelection(date: string, dateTo: string, period: string) {
+  if (period === "This Month" || period === "Last Month") return true
+  const start = parseIso(date)
+  const end = parseIso(dateTo)
+  return start.y === end.y && start.m === end.m && start.d === 1 && end.d === monthLength(start.y, start.m)
+}
+
+export function previousSpan(date: string, dateTo: string, period: string) {
+  if (isMonthSelection(date, dateTo, period)) {
+    const start = parseIso(date)
+    const end = parseIso(dateTo)
+    const prev = shiftView({ y: start.y, m: start.m }, -1)
+    const last = monthLength(prev.y, prev.m)
+    const full = end.d === monthLength(start.y, start.m)
+    return { date: iso(prev.y, prev.m, 1), dateTo: iso(prev.y, prev.m, full ? last : Math.min(end.d, last)) }
+  }
+  const days = inclusiveDays(date, dateTo)
+  return { date: addDays(date, -days), dateTo: addDays(date, -1) }
+}
+
+const longMonths = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+
+export function trendCaption(date: string, dateTo: string, period: string) {
+  const start = parseIso(date)
+  const end = parseIso(dateTo)
+  if (isMonthSelection(date, dateTo, period)) {
+    if (start.y === end.y && start.m === end.m) return `${longMonths[start.m - 1]} ${start.y}`
+    if (start.y === end.y) return `${longMonths[start.m - 1]} – ${longMonths[end.m - 1]} ${start.y}`
+    return `${longMonths[start.m - 1]} ${start.y} – ${longMonths[end.m - 1]} ${end.y}`
+  }
+  return formatRange(date, dateTo)
+}
+
 export function formatRange(date: string, dateTo: string) {
   const a = parseIso(date)
   const b = parseIso(dateTo)

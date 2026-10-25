@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
-import { normalizeCity, normalizeRegion } from "./places"
+import { normalizeCity, normalizeCluster, normalizeRegion } from "./places"
 import { defaultWall, type WallState } from "./state"
 
-type WallPatch = Partial<Pick<WallState, "date" | "dateTo" | "regionId" | "cityId" | "regionSet" | "seed" | "period" | "ufgOpen">>
+type WallPatch = Partial<Pick<WallState, "date" | "dateTo" | "regionId" | "cityId" | "clusterId" | "regionSet" | "seed" | "period" | "ufgOpen">>
 
 type WallApi = {
   state: WallState
@@ -21,6 +21,7 @@ function normalize(raw: Partial<WallState> | null): WallState {
     dateTo: raw.date <= dateTo ? dateTo : raw.date,
     regionId,
     cityId: normalizeCity(regionId, raw.cityId),
+    clusterId: normalizeCluster(raw.clusterId),
     regionSet: Boolean(raw.regionSet),
     rev: Number(raw.rev) || 0,
     seed: Number.isInteger(raw.seed) && (raw.seed as number) >= 0 ? (raw.seed as number) : 0,
@@ -65,7 +66,7 @@ export function WallProvider({ children }: { children: ReactNode }) {
         console.warn("Unknown region:", id)
         return
       }
-      patch({ regionId, regionSet: true, cityId: null })
+      patch({ regionId, regionSet: true, cityId: null, clusterId: null })
     }
   })
 

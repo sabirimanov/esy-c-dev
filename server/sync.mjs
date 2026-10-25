@@ -22,6 +22,11 @@ function cleanCity(regionId, cityId) {
   return cities[regionId]?.has(cityId) ? cityId : null
 }
 
+function cleanCluster(id) {
+  if (id == null || id === "") return null
+  return typeof id === "string" && /^[A-Za-z0-9_]{1,80}$/.test(id) ? id : null
+}
+
 function orderDates(date, dateTo) {
   return date <= dateTo ? [date, dateTo] : [dateTo, date]
 }
@@ -38,6 +43,7 @@ function load() {
         dateTo: end,
         regionId,
         cityId: cleanCity(regionId, raw.cityId),
+        clusterId: cleanCluster(raw.clusterId),
         regionSet: Boolean(raw.regionSet),
         rev: Number(raw.rev) || 1,
         seed: Number.isInteger(raw.seed) && raw.seed >= 0 ? raw.seed : 0,
@@ -53,6 +59,7 @@ function load() {
     dateTo: "2026-09-30",
     regionId: null,
     cityId: null,
+    clusterId: null,
     regionSet: false,
     rev: 1,
     seed: 0,
@@ -123,6 +130,8 @@ export function handleSync(req, res) {
         next.cityId = patch.cityId || null
       }
       next.cityId = cleanCity(next.regionId, next.cityId)
+      if ("clusterId" in patch) next.clusterId = cleanCluster(patch.clusterId)
+      else if ("regionId" in patch || "cityId" in patch) next.clusterId = null
       const [date, dateTo] = orderDates(next.date, next.dateTo || next.date)
       next.date = date
       next.dateTo = dateTo

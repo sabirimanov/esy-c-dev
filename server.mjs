@@ -2,6 +2,7 @@ import fs from "node:fs"
 import http from "node:http"
 import path from "node:path"
 import { handleSync } from "./server/sync.mjs"
+import { handleUfg } from "./server/ufg.mjs"
 import { handleWeather } from "./server/weather.mjs"
 
 const root = path.resolve("dist")
@@ -23,6 +24,7 @@ const types = {
 }
 
 const server = http.createServer((req, res) => {
+  if (handleUfg(req, res)) return
   if (handleWeather(req, res)) return
   if (handleSync(req, res)) return
   const url = new URL(req.url || "/", "http://localhost")
