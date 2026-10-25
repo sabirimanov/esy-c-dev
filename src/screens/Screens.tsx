@@ -938,7 +938,11 @@ function Screen8({ state }: { state: WallState }) {
   const today = todayIso()
   const byDate = new Map(demand?.points.map((point) => [point.date, point.value]) ?? [])
   const series = days.map((date) => (date >= today ? null : byDate.get(date) ?? 0))
-  for (let index = series.length - 1; index >= 0 && !(series[index] > 0); index -= 1) series[index] = null
+  for (let index = series.length - 1; index >= 0; index -= 1) {
+    const value = series[index]
+    if (value != null && value > 0) break
+    series[index] = null
+  }
   const simulated = new Map(demand?.forecast?.simulated.map((point) => [point.date, point.value]) ?? [])
   const predicted = new Map(demand?.forecast?.predicted.map((point) => [point.date, point.value]) ?? [])
   const forecastSeries = demand?.forecast
