@@ -1,8 +1,4 @@
 import { useEffect, useState, type ReactNode } from "react"
-import drillAi from "../assets/drill-ai.png"
-import drillReady from "../assets/drill-ready.png"
-import drillMaint from "../assets/drill-maint.png"
-import drillRisk from "../assets/drill-risk.png"
 import weatherBaku from "../assets/weather-baku.png"
 import { UfgScreen2, UfgScreen8, UfgScreen9 } from "./UfgDetail"
 import { At, Frame, PlaceText } from "../ui/widgets"
@@ -478,23 +474,7 @@ function Screen3() {
 }
 
 function Screen4() {
-  const cards = [
-    { icon: drillAi, x: 168, w: 300, title: "AI RECOMMENDATION CENTER", link: "OPEN DRILLDOWN", color: "#34eddc", titleY: 297, linkY: 332 },
-    { icon: drillReady, x: 613, w: 321, title: "OPERATIONAL READINESS INDEX", link: "OPEN DRILLDOWN", color: "#34eddc", titleY: 291, linkY: 330 },
-    { icon: drillMaint, x: 1079, w: 268, title: "PREDICTIVE MAINTENANCE", link: "OPEN DRILLDOWN", color: "#f3c85b", titleY: 291, linkY: 330 },
-    { icon: drillRisk, x: 1492, w: 261, title: "NATIONAL RISK OVERVIEW", link: "OPEN DRILLDOWN", color: "#eb7d5c", titleY: 291, linkY: 330 },
-  ]
-  return (
-    <div className="screen-body canvas">
-      {/*cards.map((card) => (
-        <span key={card.title}>
-          <img className="at" src={card.icon} alt="" style={{ left: card.x, top: 69, width: card.w, height: 210 }} />
-          <Pin x={card.x} y={card.titleY} w={card.w} size={16} weight={700} color="#e8f4f2" lh={18} align="center">{card.title}</Pin>
-          <Pin x={card.x} y={card.linkY} w={card.w} size={16} weight={700} color={card.color} lh={18} align="center">{card.link}</Pin>
-        </span>
-      ))*/}
-    </div>
-  )
+  return <div className="screen-body canvas" />
 }
 
 function Screen5() {
