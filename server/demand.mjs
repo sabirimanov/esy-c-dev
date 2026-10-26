@@ -3,7 +3,7 @@ import { loadClusterDemand, loadUfgHierarchy } from "./ufg.mjs"
 import { duckdbUrl } from "./duckdb-origin.mjs"
 const ttl = 10 * 60 * 1000
 const cache = new Map()
-const empty = { total: 0, points: [], peak: null, forecast: null }
+const empty = { total: 0, supply: 0, points: [], peak: null, forecast: null }
 
 function send(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" })
@@ -58,14 +58,16 @@ async function loadActual(ids, from, to) {
   const series = await Promise.all(ids.map((id) => loadClusterDemand(id, from, to)))
   const totals = new Map()
   let peak = null
+  let supply = 0
   for (const days of series) {
     for (const [date, value] of days) {
-      totals.set(date, (totals.get(date) || 0) + value)
-      if (peak == null || value > peak) peak = value
+      totals.set(date, (totals.get(date) || 0) + value.demand)
+      supply += value.supply
+      if (peak == null || value.demand > peak) peak = value.demand
     }
   }
   const points = [...totals.keys()].sort().map((date) => ({ date, value: totals.get(date) }))
-  return { total: points.reduce((sum, point) => sum + point.value, 0), points, peak }
+  return { total: points.reduce((sum, point) => sum + point.value, 0), supply, points, peak }
 }
 
 function shiftDay(value, days) {

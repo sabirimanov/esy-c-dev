@@ -3,7 +3,6 @@ import { duckdbUrl } from "./duckdb-origin.mjs"
 const origin = "https://cccdev.esyasoft.app/cccapi/"
 let capacityCache = null
 const ttl = 10 * 60 * 1000
-const boardCache = new Map()
 const regionCache = new Map()
 const consumerCache = new Map()
 const meterCache = new Map()
@@ -43,9 +42,13 @@ export async function loadClusterDemand(clusterId, from, to) {
   const days = new Map()
   for (const row of data.hours || []) {
     const date = String(row.gas_day || "").slice(0, 10)
-    const value = Number(row.supply_kwh)
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(value)) continue
-    days.set(date, (days.get(date) || 0) + value)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+    const bucket = days.get(date) || { supply: 0, demand: 0 }
+    const supply = Number(row.supply_kwh)
+    const demand = Number(row.demand_kwh)
+    if (Number.isFinite(supply)) bucket.supply += supply
+    if (Number.isFinite(demand)) bucket.demand += demand
+    days.set(date, bucket)
   }
   hourlyCache.set(key, { until: Date.now() + ttl, days })
   return days
@@ -78,20 +81,83 @@ async function hierarchy() {
   return body
 }
 
-async function loadBoard(from, to, cluster) {
-  const key = `${from}|${to}|${cluster}`
-  const hit = boardCache.get(key)
-  if (hit && hit.until > Date.now()) return hit.rows
-  const url = duckdbUrl("/api/ufg")
-  url.searchParams.set("from", from)
-  url.searchParams.set("to", to)
-  if (cluster) url.searchParams.set("cluster", cluster)
-  const remote = await fetch(url)
-  if (!remote.ok) throw new Error(String(remote.status))
-  const data = await remote.json()
-  const rows = Array.isArray(data.rows) ? data.rows : []
-  boardCache.set(key, { until: Date.now() + ttl, rows })
-  return rows
+const viewCache = new Map()
+
+async function loadClusterView(clusterId, gasDay) {
+  if (!/^[A-Za-z0-9_]{1,80}$/.test(clusterId)) return null
+  const key = `${clusterId}|${gasDay}`
+  const hit = viewCache.get(key)
+  if (hit && hit.until > Date.now()) return hit.sheet
+  const data = await fetchCcc(`/api/v1/cluster_view/${clusterId}`, { gasDay, version: "1" })
+  const supply = Number(data.sheet?.supply_kwh)
+  const demand = Number(data.sheet?.demand_kwh)
+  const sheet = Number.isFinite(supply) && Number.isFinite(demand) ? { supply, demand } : null
+  viewCache.set(key, { until: Date.now() + ttl, sheet })
+  return sheet
+}
+
+function scopedClusters(clusters, filter) {
+  if (filter.cluster) {
+    const cluster = clusters.find((item) => item.cluster_id === filter.cluster)
+    return cluster ? [cluster] : []
+  }
+  return clusters.filter((cluster) => {
+    if (cluster.zone_id === "Z_goycay") return false
+    if (filter.region && cluster.region_id !== filter.region) return false
+    if (filter.zone && cluster.zone_id !== filter.zone) return false
+    return true
+  })
+}
+
+function ufgPercent(supply, demand) {
+  return supply > 0 ? ((supply - demand) / supply) * 100 : null
+}
+
+async function collectSheets(clusters, days) {
+  const byDay = new Map(days.map((day) => [day, { supply: 0, demand: 0, found: false }]))
+  const byCluster = new Map(clusters.map((cluster) => [cluster.cluster_id, { supply: 0, demand: 0, found: false }]))
+  const jobs = []
+  for (const cluster of clusters) {
+    for (const day of days) jobs.push([cluster.cluster_id, day])
+  }
+  const queue = jobs.slice()
+  async function worker() {
+    while (queue.length) {
+      const next = queue.shift()
+      if (!next) return
+      try {
+        const sheet = await loadClusterView(next[0], next[1])
+        if (!sheet) continue
+        const day = byDay.get(next[1])
+        const cluster = byCluster.get(next[0])
+        day.supply += sheet.supply
+        day.demand += sheet.demand
+        day.found = true
+        cluster.supply += sheet.supply
+        cluster.demand += sheet.demand
+        cluster.found = true
+      } catch {
+        // A missing day stays out of the total.
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, jobs.length) }, () => worker()))
+  return { byDay, byCluster }
+}
+
+function volumeOf(clusters, sheets) {
+  let supply = 0
+  let sale = 0
+  let found = false
+  for (const cluster of clusters) {
+    const bucket = sheets.byCluster.get(cluster.cluster_id)
+    if (!bucket?.found) continue
+    supply += bucket.supply
+    sale += bucket.demand
+    found = true
+  }
+  if (!found) return { supply: 0, sale: null, loss: null, current: null }
+  return { supply, sale, loss: supply - sale, current: ufgPercent(supply, sale) }
 }
 
 function daysOf(from, to) {
@@ -106,92 +172,40 @@ function daysOf(from, to) {
   return days
 }
 
-function kept(row, filter, index) {
-  const id = row["Cluster Number"]
-  if (filter.cluster && id !== filter.cluster) return false
-  if (filter.region && row.Region !== filter.region) return false
-  if (filter.zone) {
-    const known = index.clusters.get(id)
-    if (!known || known.zone_id !== filter.zone) return false
-  }
-  const purchase = Number(row.Purchase)
-  const ufg = Number(row["UFG%"])
-  return purchase > 0 && Number.isFinite(ufg)
-}
-
-function summarize(rows) {
-  let purchase = 0
-  let weighted = 0
-  let loss = 0
-  let sale = 0
-  for (const row of rows) {
-    const bought = Number(row.Purchase)
-    const sold = Number(row.Sale)
-    const ufg = Number(row["UFG%"])
-    purchase += bought
-    weighted += bought * ufg
-    if (Number.isFinite(sold)) {
-      loss += bought - sold
-      sale += sold
-    }
-  }
-  const current = purchase > 0 ? (weighted / purchase) * 100 : null
-  const target = 5
-  const closure = current ? (target / current) * 100 : null
-  return { current, target, loss: purchase > 0 ? loss : null, closure, supply: purchase, sale: purchase > 0 ? sale : null }
-}
-
-function extremes(rows, names) {
-  const buckets = new Map()
-  for (const row of rows) {
-    const id = row["Cluster Number"]
-    const bucket = buckets.get(id) || { purchase: 0, weighted: 0 }
-    const bought = Number(row.Purchase)
-    bucket.purchase += bought
-    bucket.weighted += bought * Number(row["UFG%"])
-    buckets.set(id, bucket)
-  }
+function extremesFrom(clusters, sheets) {
   let high = null
   let low = null
-  for (const [id, bucket] of buckets) {
-    if (!(bucket.purchase > 0)) continue
-    const value = (bucket.weighted / bucket.purchase) * 100
-    const item = { id, name: names.get(id) || id, value }
+  for (const cluster of clusters) {
+    const bucket = sheets.byCluster.get(cluster.cluster_id)
+    if (!bucket?.found) continue
+    const value = ufgPercent(bucket.supply, bucket.demand)
+    if (value == null) continue
+    const item = { id: cluster.cluster_id, name: cluster.name_en, value }
     if (value <= 40 && (!high || value > high.value)) high = item
     if (!low || value < low.value) low = item
   }
   return low ? { high, low } : null
 }
 
-function seriesFor(rows, days) {
-  const buckets = new Map()
-  for (const row of rows) {
-    const day = String(row.Date).slice(0, 10)
-    const bucket = buckets.get(day) || { purchase: 0, weighted: 0 }
-    const bought = Number(row.Purchase)
-    bucket.purchase += bought
-    bucket.weighted += bought * Number(row["UFG%"])
-    buckets.set(day, bucket)
-  }
+function seriesFrom(days, sheets) {
   return days.map((day) => {
-    const bucket = buckets.get(day)
-    return bucket && bucket.purchase > 0 ? (bucket.weighted / bucket.purchase) * 100 : null
+    const bucket = sheets.byDay.get(day)
+    if (!bucket?.found) return null
+    return ufgPercent(bucket.supply, bucket.demand)
   })
 }
 
-async function trend(filter, index, from, to, prevFrom, prevTo) {
+async function trend(filter, clusters, from, to, prevFrom, prevTo) {
   const currentDays = daysOf(from, to)
   const previousDays = daysOf(prevFrom, prevTo)
-  const spanFrom = prevFrom < from ? prevFrom : from
-  const spanTo = prevTo > to ? prevTo : to
-  const loaded = (await loadBoard(spanFrom, spanTo, filter.cluster)).filter((row) => kept(row, filter, index))
-  const on = (row, start, end) => {
-    const day = String(row.Date).slice(0, 10)
-    return day >= start && day <= end
-  }
+  const scope = scopedClusters(clusters, filter)
+  const [currentSheets, previousSheets] = await Promise.all([
+    collectSheets(scope, currentDays),
+    collectSheets(scope, previousDays),
+  ])
   return {
-    current: seriesFor(loaded.filter((row) => on(row, from, to)), currentDays),
-    previous: seriesFor(loaded.filter((row) => on(row, prevFrom, prevTo)), previousDays),
+    current: seriesFrom(currentDays, currentSheets),
+    previous: seriesFrom(previousDays, previousSheets),
     hourly: false,
     hours: [],
   }
@@ -231,13 +245,15 @@ async function loadAlarms() {
   return body
 }
 
-function readinessOf(clusters, snapshot) {
+function readinessOf(clusters, snapshot, filter) {
   const status = new Map()
   for (const row of snapshot.rows) status.set(row.cluster_id, row.run_status?.readiness || "")
   const counts = { ready: 0, qualified: 0, blocked: 0 }
   const zones = new Map()
   for (const cluster of clusters) {
     if (cluster.zone_id === "Z_goycay") continue
+    if (filter.region && cluster.region_id !== filter.region) continue
+    if (filter.zone && cluster.zone_id !== filter.zone) continue
     const readiness = status.get(cluster.cluster_id)
     const bucket = readiness === "Ready" ? "ready" : readiness === "Qualified" ? "qualified" : "blocked"
     counts[bucket] += 1
@@ -455,7 +471,7 @@ export function handleUfg(req, res) {
   }
   if (url.pathname === "/ufg/readiness") {
     hierarchy()
-      .then((body) => latestRegions(days).then((snapshot) => readinessOf(body.clusters, snapshot)))
+      .then((body) => latestRegions(days).then((snapshot) => readinessOf(body.clusters, snapshot, filter)))
       .then((body) => send(res, 200, body))
       .catch(() => res.writeHead(502).end())
     return true
@@ -469,32 +485,48 @@ export function handleUfg(req, res) {
       return true
     }
     hierarchy()
-      .then((body) => trend(filter, body.index, from, to, prevFrom, prevTo))
+      .then((body) => trend(filter, body.clusters, from, to, prevFrom, prevTo))
       .then((body) => send(res, 200, body))
       .catch(() => res.writeHead(502).end())
     return true
   }
   hierarchy()
-    .then((body) => {
-      const names = new Map(body.clusters.map((cluster) => [cluster.cluster_id, cluster.name_en]))
-      return loadBoard(from, to, "").then(async (rows) => {
-        const summary = summarize(rows.filter((row) => kept(row, filter, body.index)))
-        const scope = { region: filter.region, zone: filter.zone, cluster: "" }
-        const compared = filter.region ? rows.filter((row) => kept(row, scope, body.index)) : []
-        const numbers = filter.region || filter.zone || filter.cluster ? consumerNumbers(body.clusters, filter) : null
-        const selected = filter.cluster ? body.clusters.find((item) => item.cluster_id === filter.cluster) : null
-        const regionName = filter.region || filter.zone || filter.cluster ? consumerRegion(filter, selected) : ""
-        let consumers = null
-        try {
-          if (filter.cluster && numbers && numbers.length) consumers = await loadConsumers(numbers)
-          else if (regionName) consumers = await loadConsumers(null, regionName)
-          else if (numbers && numbers.length === 0) consumers = 0
-          else consumers = await loadConsumers(numbers)
-        } catch {
-          consumers = null
-        }
-        return { ...summary, extremes: filter.region ? extremes(compared, names) : null, consumers }
-      })
+    .then(async (body) => {
+      const selectedClusters = scopedClusters(body.clusters, filter)
+      const compared = filter.region ? scopedClusters(body.clusters, { region: filter.region, zone: filter.zone, cluster: "" }) : []
+      const union = []
+      const seen = new Set()
+      for (const cluster of [...selectedClusters, ...compared]) {
+        if (seen.has(cluster.cluster_id)) continue
+        seen.add(cluster.cluster_id)
+        union.push(cluster)
+      }
+      const sheets = await collectSheets(union, days)
+      const volume = volumeOf(selectedClusters, sheets)
+      const target = 5
+      const current = volume.current
+      const numbers = filter.region || filter.zone || filter.cluster ? consumerNumbers(body.clusters, filter) : null
+      const selected = filter.cluster ? body.clusters.find((item) => item.cluster_id === filter.cluster) : null
+      const regionName = filter.region || filter.zone || filter.cluster ? consumerRegion(filter, selected) : ""
+      let consumers = null
+      try {
+        if (filter.cluster && numbers && numbers.length) consumers = await loadConsumers(numbers)
+        else if (regionName) consumers = await loadConsumers(null, regionName)
+        else if (numbers && numbers.length === 0) consumers = 0
+        else consumers = await loadConsumers(numbers)
+      } catch {
+        consumers = null
+      }
+      return {
+        current,
+        target,
+        loss: volume.loss,
+        closure: current ? (target / current) * 100 : null,
+        supply: volume.supply,
+        sale: volume.sale,
+        extremes: filter.region ? extremesFrom(compared, sheets) : null,
+        consumers,
+      }
     })
     .then((body) => send(res, 200, body))
     .catch(() => res.writeHead(502).end())

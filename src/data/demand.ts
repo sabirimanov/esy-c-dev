@@ -6,6 +6,7 @@ export type DemandPoint = { date: string; value: number }
 
 export type DemandStats = {
   total: number
+  supply: number
   points: DemandPoint[]
   peak: number | null
   forecast: { simulated: DemandPoint[]; predicted: DemandPoint[] } | null

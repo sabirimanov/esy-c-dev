@@ -5,7 +5,7 @@ import { useWall } from "../wall/useWall"
 import { screenBody } from "./Screens"
 
 // Screens in this set render gray and dim. Add or remove ids here.
-const offScreens = new Set([6, 7])
+const offScreens = new Set([2, 6, 7, 9, 16])
 const ufgScreens = new Set([2, 8, 9])
 
 export function ScreenView({ id }: { id: number }) {
@@ -16,10 +16,11 @@ export function ScreenView({ id }: { id: number }) {
   }, [id])
 
   const dimmed = state.ufgOpen && id !== 1 && !ufgScreens.has(id)
+  const off = offScreens.has(id) && !(state.ufgOpen && ufgScreens.has(id))
   const className = [
     "screen",
     id === 1 ? "is-toggle" : "",
-    offScreens.has(id) ? "is-off" : "",
+    off ? "is-off" : "",
     dimmed ? "is-ufg-dim" : "",
   ].filter(Boolean).join(" ")
 

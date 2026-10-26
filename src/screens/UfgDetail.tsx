@@ -139,8 +139,9 @@ export function UfgScreen2({ state }: { state: WallState }) {
   const delta = shown == null ? null : Number((shown - 5).toFixed(1))
   const above = delta != null && delta > 0
   const scale = Math.max(shown ?? 0, 5)
-  const sold = ufg.loss == null ? null : ufg.supply - ufg.loss
-  const lossShare = ufg.supply > 0 && ufg.loss != null ? Math.max(0, Math.min(100, (ufg.loss / ufg.supply) * 100)) : 0
+  const sold = ufg.sale
+  const purchased = ufg.sale == null ? null : ufg.supply
+  const lossShare = purchased != null && purchased > 0 && ufg.loss != null ? Math.max(0, Math.min(100, (ufg.loss / purchased) * 100)) : 0
   const high = ufg.extremes?.high
   const gapText = delta == null ? "—" : delta > 0 ? `+${delta.toFixed(1)} pp` : delta < 0 ? `${delta.toFixed(1)} pp` : "0 pp"
   return (
@@ -150,7 +151,7 @@ export function UfgScreen2({ state }: { state: WallState }) {
       <Kpi {...target} label="Target UFG" value="5.0%" note="Configured target" labelColor="#34efde" />
       <Kpi {...gap} label="TARGET GAP" value={gapText} note="Current UFG − target" glow={above ? "heat" : undefined} labelColor="#ffffff" />
       <Kpi {...loss} label="GAS LOSS" value={volume(ufg.loss)} note="Purchase − sale · m³" glow={ufg.loss != null && ufg.loss > 0 ? "heat" : undefined} labelColor="#eb7d5c" />
-      <Kpi {...bought} label="GAS PURCHASED" value={volume(ufg.current == null ? null : ufg.supply)} note="Selected period · m³" labelColor="#34efde" />
+      <Kpi {...bought} label="GAS PURCHASED" value={volume(purchased)} note="Selected period · m³" labelColor="#34efde" />
       <Pin x={1240} y={268} w={640} size={15} color="#6e7775" align="right">{period}</Pin>
 
       <Card x={40} y={324} w={1075} h={460}>
@@ -182,7 +183,7 @@ export function UfgScreen2({ state }: { state: WallState }) {
         <div className="ufg-metric">
           <div className="ufg-metric-top">
             <span>Purchased volume</span>
-            <b>{ufg.current == null ? "—" : `${volume(ufg.supply)} m³`}</b>
+            <b>{purchased == null ? "—" : `${volume(purchased)} m³`}</b>
           </div>
           <div className="ufg-duo">
             <i className="main" style={{ flex: `${Math.max(0, 100 - lossShare)} 1 0` }} />

@@ -193,7 +193,9 @@ export function useUfgReadiness(state: WallState) {
   useEffect(() => {
     let live = true
     setReadiness(null)
-    fetch(`/ufg/readiness?from=${state.date}&to=${state.dateTo}`, { cache: "no-store" })
+    const query = scopeQuery(state, { from: state.date, to: state.dateTo })
+    query.delete("cluster")
+    fetch(`/ufg/readiness?${query}`, { cache: "no-store" })
       .then((res) => {
         if (!res.ok) throw new Error(String(res.status))
         return res.json() as Promise<UfgReadiness>
@@ -207,7 +209,7 @@ export function useUfgReadiness(state: WallState) {
     return () => {
       live = false
     }
-  }, [state.date, state.dateTo])
+  }, [state.date, state.dateTo, state.regionId, state.cityId])
   return readiness
 }
 
