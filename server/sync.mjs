@@ -31,6 +31,23 @@ function orderDates(date, dateTo) {
   return date <= dateTo ? [date, dateTo] : [dateTo, date]
 }
 
+function bakuView() {
+  const date = new Date(Date.now() + 4 * 3600 * 1000)
+  return { y: date.getUTCFullYear(), m: date.getUTCMonth() }
+}
+
+function snocFields(raw) {
+  const view = bakuView()
+  const range = raw?.snocRange === "24h" || raw?.snocRange === "7d" ? raw.snocRange : "7d"
+  const tab = raw?.snocTab === "day" || raw?.snocTab === "month" || raw?.snocTab === "year" || raw?.snocTab === "range" ? raw.snocTab : "range"
+  const quick = raw?.snocQuick === "now" || raw?.snocQuick === "yesterday" || raw?.snocQuick === "custom" ? raw.snocQuick : "now"
+  const viewY = Number.isInteger(raw?.snocViewY) ? raw.snocViewY : view.y
+  const viewM = Number.isInteger(raw?.snocViewM) && raw.snocViewM >= 0 && raw.snocViewM <= 11 ? raw.snocViewM : view.m
+  const storedEnd = Number.isInteger(raw?.snocEnd) && raw.snocEnd > 0 ? raw.snocEnd : null
+  const end = quick === "now" ? Math.floor(Date.now() / 1000) : storedEnd
+  return { snocRange: range, snocEnd: end, snocTab: tab, snocQuick: quick, snocViewY: viewY, snocViewM: viewM }
+}
+
 function load() {
   try {
     const raw = JSON.parse(fs.readFileSync(statePath, "utf8"))
@@ -50,6 +67,7 @@ function load() {
         period: raw.period === "" || periods.has(raw.period) ? raw.period : "Last 30 Days",
         ufgOpen: Boolean(raw.ufgOpen),
         reload: Number.isInteger(raw.reload) && raw.reload >= 0 ? raw.reload : 0,
+        ...snocFields(raw),
       }
     }
   } catch {
@@ -67,6 +85,7 @@ function load() {
     period: "Last 30 Days",
     ufgOpen: false,
     reload: 0,
+    ...snocFields(null),
   }
 }
 
@@ -77,9 +96,18 @@ function persist() {
 }
 
 function broadcast() {
-  const packet = `data: ${JSON.stringify(state)}\n\n`
+  const packet = `data: ${JSON.stringify({ ...state, now: Date.now() })}\n\n`
   for (const res of clients) res.write(packet)
 }
+
+setInterval(() => {
+  if (state.snocQuick !== "now") return
+  const end = Math.floor(Date.now() / 1000)
+  if (state.snocEnd === end) return
+  state = { ...state, snocEnd: end, rev: state.rev + 1 }
+  persist()
+  broadcast()
+}, 10000).unref()
 
 setInterval(() => {
   for (const res of clients) res.write(":\n\n")
@@ -97,7 +125,7 @@ export function handleSync(req, res) {
       "X-Accel-Buffering": "no",
     })
     res.write("retry: 5000\n\n")
-    res.write(`data: ${JSON.stringify(state)}\n\n`)
+    res.write(`data: ${JSON.stringify({ ...state, now: Date.now() })}\n\n`)
     clients.add(res)
     req.on("close", () => clients.delete(res))
     return true
@@ -141,6 +169,13 @@ export function handleSync(req, res) {
       if (Number.isInteger(patch.seed) && patch.seed >= 0 && patch.seed < 1e10) next.seed = patch.seed
       if (typeof patch.period === "string" && (patch.period === "" || periods.has(patch.period))) next.period = patch.period
       if ("ufgOpen" in patch) next.ufgOpen = Boolean(patch.ufgOpen)
+      if (patch.snocRange === "24h" || patch.snocRange === "7d") next.snocRange = patch.snocRange
+      if (patch.snocTab === "day" || patch.snocTab === "month" || patch.snocTab === "year" || patch.snocTab === "range") next.snocTab = patch.snocTab
+      if (patch.snocQuick === "now" || patch.snocQuick === "yesterday" || patch.snocQuick === "custom") next.snocQuick = patch.snocQuick
+      if (Number.isInteger(patch.snocViewY) && patch.snocViewY > 2000 && patch.snocViewY < 3000) next.snocViewY = patch.snocViewY
+      if (Number.isInteger(patch.snocViewM) && patch.snocViewM >= 0 && patch.snocViewM <= 11) next.snocViewM = patch.snocViewM
+      if (patch.snocEnd === null || (Number.isInteger(patch.snocEnd) && patch.snocEnd > 0)) next.snocEnd = patch.snocEnd
+      if (next.snocQuick === "now") next.snocEnd = Math.floor(Date.now() / 1000)
       if (patch.reload === true) next.reload = (Number(state.reload) || 0) + 1
       next.rev = state.rev + 1
       state = next

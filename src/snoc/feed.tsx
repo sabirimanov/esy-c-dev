@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { alertRowMs, useAlertScroll, useSmoothTrack } from "../data/alertScroll"
+import { alertRowMs, useAlertScroll, useSmoothTrack, wallNow } from "../data/alertScroll"
 import { useDash } from "./dashboard"
 import { clock, type Alert } from "./format"
 
@@ -29,13 +29,13 @@ export function tallyAlerts(alerts: Alert[]) {
 }
 
 function useFeedOffset(length: number) {
-  const [tick, setTick] = useState(() => Math.floor(Date.now() / ROW_MS))
+  const [tick, setTick] = useState(() => Math.floor(wallNow() / ROW_MS))
   useEffect(() => {
     let timer = 0
     function arm() {
-      const wait = ROW_MS - (Date.now() % ROW_MS)
+      const wait = ROW_MS - (wallNow() % ROW_MS)
       timer = window.setTimeout(() => {
-        setTick(Math.floor(Date.now() / ROW_MS))
+        setTick(Math.floor(wallNow() / ROW_MS))
         arm()
       }, wait)
     }
@@ -61,7 +61,10 @@ function FeedRow({ alert, band }: { alert: Alert; band: boolean }) {
 
 export function EventsFeed() {
   const { alerts, ready } = useDash()
-  const rows = useMemo(() => [...alerts].sort((a, b) => b.starts - a.starts), [alerts])
+  const rows = useMemo(
+    () => [...alerts].sort((a, b) => b.starts - a.starts || a.name.localeCompare(b.name) || (a.summary || "").localeCompare(b.summary || "")),
+    [alerts],
+  )
   const smooth = useAlertScroll() === "smooth" && rows.length > SLOTS.length
   const offset = useFeedOffset(smooth ? 0 : rows.length)
   const track = useSmoothTrack(smooth, rows.length, ROW_MS, rows.length * ROW_H)

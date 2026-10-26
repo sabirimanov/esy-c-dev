@@ -28,6 +28,6 @@ export function handleDisplay(req, res) {
     return true
   }
   res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" })
-  res.end(JSON.stringify({ alertScroll: alertScrollMode() }))
+  res.end(JSON.stringify({ alertScroll: alertScrollMode(), now: Date.now() }))
   return true
 }

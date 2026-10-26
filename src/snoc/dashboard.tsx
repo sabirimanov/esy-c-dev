@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { noteWallClock } from "../data/alertScroll"
 import { readPanel, type Alert, type Panel, type Reading, type Sample } from "./format"
 
 const POLL_MS = 10_000
@@ -55,6 +56,21 @@ export function endOfBakuDay(y: number, m: number, day: number) {
   return Math.floor(Date.UTC(y, m, day, 23, 59, 59) / 1000) - BAKU
 }
 
+function sameQuery(a: DashQuery, b: DashQuery) {
+  return a.range === b.range && a.end === b.end && a.tab === b.tab && a.quick === b.quick && a.viewY === b.viewY && a.viewM === b.viewM
+}
+
+function snocFromSync(raw: Record<string, unknown>): DashQuery | null {
+  if (raw.snocRange !== "24h" && raw.snocRange !== "7d") return null
+  const tab = raw.snocTab === "day" || raw.snocTab === "month" || raw.snocTab === "year" || raw.snocTab === "range" ? raw.snocTab : "range"
+  const quick = raw.snocQuick === "now" || raw.snocQuick === "yesterday" || raw.snocQuick === "custom" ? raw.snocQuick : "now"
+  const end = raw.snocEnd === null ? null : Number.isInteger(raw.snocEnd) && (raw.snocEnd as number) > 0 ? (raw.snocEnd as number) : null
+  const today = bakuToday()
+  const viewY = Number.isInteger(raw.snocViewY) ? (raw.snocViewY as number) : today.y
+  const viewM = Number.isInteger(raw.snocViewM) && (raw.snocViewM as number) >= 0 && (raw.snocViewM as number) <= 11 ? (raw.snocViewM as number) : today.m
+  return { range: raw.snocRange, end, tab, quick, viewY, viewM }
+}
+
 function readQuery(): DashQuery {
   const today = bakuToday()
   const base: DashQuery = { range: "7d", end: null, tab: "range", quick: "now", viewY: today.y, viewM: today.m }
@@ -80,16 +96,33 @@ export function SnocProvider({ children }: { children: ReactNode }) {
   const [query, setQueryState] = useState<DashQuery>(readQuery)
 
   function setQuery(next: DashQuery) {
-    localStorage.setItem(STORAGE, JSON.stringify(next))
     setQueryState(next)
+    localStorage.setItem(STORAGE, JSON.stringify(next))
+    void fetch("/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        snocRange: next.range,
+        snocEnd: next.end,
+        snocTab: next.tab,
+        snocQuick: next.quick,
+        snocViewY: next.viewY,
+        snocViewM: next.viewM,
+      }),
+    })
   }
 
   useEffect(() => {
-    function onStorage(event: StorageEvent) {
-      if (event.key === STORAGE) setQueryState(readQuery())
+    const source = new EventSource("/sync")
+    source.onmessage = (event) => {
+      const raw = JSON.parse(event.data) as Record<string, unknown>
+      if (typeof raw.now === "number") noteWallClock(raw.now)
+      const next = snocFromSync(raw)
+      if (!next) return
+      localStorage.setItem(STORAGE, JSON.stringify(next))
+      setQueryState((current) => (sameQuery(current, next) ? current : next))
     }
-    window.addEventListener("storage", onStorage)
-    return () => window.removeEventListener("storage", onStorage)
+    return () => source.close()
   }, [])
 
   useEffect(() => {

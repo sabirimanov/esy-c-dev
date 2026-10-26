@@ -71,10 +71,10 @@ function near(x: number, y: number, ax: number, ay: number) {
   return Math.abs(x - ax) < 3 && Math.abs(y - ay) < 3
 }
 
-function hiddenNode(item: Item, liveFeed: boolean) {
+function hiddenNode(item: Item) {
   const x = item[1]
   const y = item[2]
-  if (liveFeed && y >= 1180 && y <= 3240 && x >= 3890 && x <= 5750) return true
+  if (y >= 1180 && y <= 3240 && x >= 3890 && x <= 5750) return true
   if (item[0] === 1 && near(x, y, 4590.5, 310)) return true
   if (item[0] === 0 && (near(x, y, 5452.5, 140) || (Math.abs(y - 339) < 2 && x >= 4939 && x <= 5310))) return true
   if (!SHOW_DATE_SELECTION && item[0] === 0 && Math.abs(x - 4939.5) < 2 && Math.abs(y - 138) < 2) return true
@@ -137,7 +137,7 @@ export function SnocScreen({ id }: { id: number }) {
     <div className="snoc-clip">
       <div className="snoc-wall" style={{ transform: `translate(${-col * 1920}px, ${-row * 1080}px)` }}>
         {items.map((item, index) => {
-          if (hiddenNode(item, ready)) {
+          if (hiddenNode(item)) {
             if (item[0] === 2) labelIndex += 1
             return null
           }

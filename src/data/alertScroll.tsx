@@ -4,15 +4,28 @@ export type AlertScroll = "step" | "smooth"
 
 const AlertScrollContext = createContext<AlertScroll>("step")
 
+let clockSkew = 0
+
+export function wallNow() {
+  return Date.now() + clockSkew
+}
+
+export function noteWallClock(serverNow: number) {
+  if (Number.isFinite(serverNow)) clockSkew = serverNow - Date.now()
+}
+
 export function AlertScrollProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<AlertScroll>("step")
   useEffect(() => {
     let stop = false
     async function load() {
+      const sent = Date.now()
       try {
         const res = await fetch("/display", { cache: "no-store" })
+        const received = Date.now()
         if (!res.ok) return
-        const body = (await res.json()) as { alertScroll?: string }
+        const body = (await res.json()) as { alertScroll?: string; now?: number }
+        if (typeof body.now === "number") clockSkew = body.now - (sent + received) / 2
         if (!stop) setMode(body.alertScroll === "smooth" ? "smooth" : "step")
       } catch {
         /* keep the last mode */
@@ -48,7 +61,7 @@ export function useSmoothTrack(active: boolean, count: number, stepMs: number, s
     function tick() {
       const node = track.current
       if (node) {
-        const y = ((Date.now() % period) / period) * span
+        const y = ((wallNow() % period) / period) * span
         node.style.transform = `translate3d(0, ${-y}px, 0)`
       }
       frame = window.requestAnimationFrame(tick)
