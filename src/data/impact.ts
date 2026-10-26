@@ -17,49 +17,15 @@ export type ImpactStats = {
   fcr: number | null
   answered: number | null
   queue: number | null
-  anomalies: { none: number; low: number; spike: number } | null
-  anomaliesAsOf: string | null
   repeatCalls: number | null
   reopened: number | null
   share: ImpactShare | null
   open: number | null
   calls: number | null
   closed: number | null
+  escalated: number | null
   crmSla: number | null
   heat: { rqii: string; month: string; serviceLevel: number | null }[]
-  calibration: {
-    compliance: number | null
-    overdue: number | null
-    pending: number | null
-    assets: number | null
-    p0_30: number | null
-    p31_60: number | null
-    p61_90: number | null
-    residential: number | null
-    nonResidential: number | null
-    balance: number | null
-    sensors: number | null
-  } | null
-  calibrationAsOf: string | null
-  operations: {
-    calls: number | null
-    firstVisit: number | null
-    leaks24: number | null
-    tamper: number | null
-    pipeKm: number | null
-    leaksPerKm: number | null
-    pipeCoverage: number | null
-    regulators: number | null
-    regulatorCoverage: number | null
-    reconnection: number | null
-    within24: number | null
-    completion: number | null
-    disconnection: number | null
-    within7: number | null
-    meterCut: number | null
-    replacements: number | null
-    replacement24: number | null
-  } | null
 }
 
 export function useImpact(state: WallState) {

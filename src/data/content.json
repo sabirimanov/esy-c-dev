@@ -242,7 +242,7 @@
         "value": "74.8 MCM",
         "note": "Utilization 81%",
         "rows": [
-          { "label": "Peak Flow Today", "value": "82.1 мсм/day" },
+          { "label": "Peak Flow", "value": "82.1 мсм/day" },
           { "label": "Available Capacity", "value": "92.0 мсм/day" },
           { "label": "System Margin", "value": "18.7%" }
         ],
@@ -251,7 +251,7 @@
       {
         "title": "LINE PACK",
         "value": "4.6 m³",
-        "note": "+0.4% variation",
+        "note": "last read",
         "rows": [
           { "label": "Line Pack Variation", "value": "+0.4%" },
           { "label": "Pressure Balance", "value": "Stable" },

@@ -5,7 +5,7 @@ import { useWall } from "../wall/useWall"
 import { screenBody } from "./Screens"
 
 // Screens in this set render gray and dim. Add or remove ids here.
-const offScreens = new Set([2, 6, 7, 9, 16])
+const offScreens = new Set([2, 6, 7, 9])
 const ufgScreens = new Set([2, 8, 9])
 
 export function ScreenView({ id }: { id: number }) {

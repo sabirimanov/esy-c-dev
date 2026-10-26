@@ -7,6 +7,7 @@ import { handleLeaks, handleQuality } from "./server/quality.mjs"
 import { handleDemand } from "./server/demand.mjs"
 import { handleGis } from "./server/gis.mjs"
 import { handleImpact } from "./server/impact.mjs"
+import { handleField } from "./server/field.mjs"
 import { handleReconnect } from "./server/reconnect.mjs"
 import { handleTamper } from "./server/tamper.mjs"
 import { handleWeather } from "./server/weather.mjs"
@@ -24,7 +25,7 @@ function wallSync(): Plugin {
           duckdbApp(req, res)
           return
         }
-        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res)) next()
+        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res)) next()
       })
     },
     configurePreviewServer(server) {
@@ -33,7 +34,7 @@ function wallSync(): Plugin {
           duckdbApp(req, res)
           return
         }
-        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res)) next()
+        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res)) next()
       })
     },
   }

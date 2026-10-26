@@ -10,6 +10,7 @@ import { useDemand } from "../data/demand"
 import { useGis } from "../data/gis"
 import { useQuality } from "../data/quality"
 import { useImpact } from "../data/impact"
+import { useFieldOps } from "../data/field"
 import { useTamper } from "../data/tamper"
 import { useCapacity, useMeterSplit, useUfgHierarchy, useUfgSummary, useUfgTrend, type UfgCluster } from "../data/ufg"
 import { addDays, formatRange, iso, monthGrid, monthTitle, parseIso, periodRange, previousSpan, shiftView, todayIso, trendCaption } from "../wall/dates"
@@ -1219,7 +1220,7 @@ function Screen9() {
 
 const impactRegions = [
   ["Ağsu", "Ağsu RQİİ"],
-  ["BRQİİ / BRQSD", "BRQİİ / BRQSD"],
+  ["Bakı", "Bakı RQİİ"],
   ["Gəncə", "Gəncə RQİİ"],
   ["Lənkəran", "Lənkəran RQİİ"],
   ["Qarabağ", "Qarabağ RQİİ"],
@@ -1260,34 +1261,36 @@ function impactTone(value: number | null | undefined) {
   return `rgb(${rgb.join(",")})`
 }
 
-const complaintBars = [
-  { label: "No\nSupply", percent: 38, paint: "linear-gradient(180deg, #6ff6e8 0%, #14b3a4 100%)" },
-  { label: "Gas\nLeslage", percent: 24, paint: "linear-gradient(180deg, #f6d27a 0%, #c48a2e 100%)" },
-  { label: "Low\nPressure", percent: 17, paint: "linear-gradient(180deg, #ff7a52 0%, #e44528 100%)" },
-  { label: "Billing\nIssue", percent: 12, paint: "linear-gradient(180deg, #ff6844 0%, #e23b2c 100%)" },
-  { label: "Meter\nIssue", percent: 9, paint: "linear-gradient(180deg, #ff5a3c 0%, #d43224 100%)" },
+const complaintPaints = [
+  "linear-gradient(180deg, #6ff6e8 0%, #14b3a4 100%)",
+  "linear-gradient(180deg, #f6d27a 0%, #c48a2e 100%)",
+  "linear-gradient(180deg, #ff7a52 0%, #e44528 100%)",
+  "linear-gradient(180deg, #ff6844 0%, #e23b2c 100%)",
+  "linear-gradient(180deg, #ff5a3c 0%, #d43224 100%)",
 ]
 
-function ComplaintColumns() {
+function ComplaintColumns({ share }: { share: { label: string; count: number }[] }) {
   const track = 220
+  const total = share.reduce((sum, item) => sum + item.count, 0)
   return (
     <At x={46} y={552} w={596} h={330}>
       <div style={{ height: "100%", display: "flex" }}>
-        <div style={{ width: 26, height: track, marginTop: 34, display: "flex", flexDirection: "column", justifyContent: "space-between", color: "#8d9694", fontSize: 15 }}>
-          <span>10</span>
-          <span>5</span>
+        <div style={{ width: 36, height: track, marginTop: 34, display: "flex", flexDirection: "column", justifyContent: "space-between", color: "#8d9694", fontSize: 15 }}>
+          <span>100</span>
+          <span>50</span>
           <span>0</span>
         </div>
         <div style={{ position: "relative", flex: 1, display: "flex", justifyContent: "space-between", paddingRight: 8 }}>
           <div style={{ position: "absolute", left: 0, right: 8, top: 34, height: 1, background: "#3a4442" }} />
           <div style={{ position: "absolute", left: 0, right: 8, top: 34 + track / 2, height: 1, background: "#3a4442" }} />
-          {complaintBars.map((bar) => {
-            const fill = Math.round((bar.percent / 40) * track)
+          {share.map((bar, index) => {
+            const percent = total > 0 ? (bar.count / total) * 100 : 0
+            const fill = Math.round((percent / 100) * track)
             return (
               <div key={bar.label} style={{ width: 96, display: "flex", flexDirection: "column", alignItems: "center", position: "relative" }}>
-                <div style={{ height: 34, color: "#d5dddd", fontSize: 22, lineHeight: "34px" }}>{bar.percent}%</div>
+                <div style={{ height: 34, color: "#d5dddd", fontSize: 22, lineHeight: "34px" }}>{total > 0 ? `${Math.round(percent)}%` : "—"}</div>
                 <div style={{ width: 62, height: track, borderRadius: 31, background: "#1b2b2d", position: "relative" }}>
-                  <div style={{ position: "absolute", left: 7, right: 7, bottom: 7, height: Math.max(36, fill - 10), borderRadius: 24, background: bar.paint }} />
+                  <div style={{ position: "absolute", left: 7, right: 7, bottom: 7, height: Math.max(0, fill - 10), borderRadius: 24, background: complaintPaints[index] }} />
                 </div>
                 <div style={{ marginTop: 12, color: "#c5cece", fontSize: 16, lineHeight: "20px", textAlign: "center", whiteSpace: "pre-line" }}>{bar.label}</div>
               </div>
@@ -1309,24 +1312,19 @@ function Screen13({ state }: { state: WallState }) {
     { x: 649, w: 290, lx: 669, vx: 674, label: "Emergency Complaints", value: countText(impact?.serious) },
     { x: 954, w: 294, lx: 977, vx: 977, label: "FCR", value: percentText(impact?.fcr) },
     { x: 1263, w: 296, lx: 1303, vx: 1299, label: "Calls Answered", value: impact?.answered == null ? "—" : compactCount(Math.round(impact.answered)) },
-    { x: 1574, w: 295, lx: 1602, vx: 1602, label: "Queue Length", value: impact?.queue == null ? "—" : impact.queue.toFixed(2) },
+    { x: 1574, w: 295, lx: 1602, vx: 1602, label: "Open Calls", value: countText(impact?.queue) },
   ]
+  const share = impact?.share
   const barNumbers = impact
-    ? [
-        impact.anomalies ? impact.anomalies.spike : null,
-        impact.anomalies ? impact.anomalies.low : null,
-        impact.anomalies ? impact.anomalies.none : null,
-        impact.repeatCalls,
-        impact.reopened,
-      ]
+    ? [share?.leak ?? null, share?.pressure ?? null, share?.noSupply ?? null, impact.repeatCalls, impact.reopened]
     : [null, null, null, null, null]
   const barMax = Math.max(0, ...barNumbers.filter((value): value is number => value != null))
   const bars = [
-    { y: 298, vx: 1737, paint: "linear-gradient(to right, #80493c, #e6846b)", label: "High consumption (spike)" },
-    { y: 331, vx: 1737, paint: "linear-gradient(to right, #1e897f, #34efde)", label: "Low consumption" },
-    { y: 364, vx: 1737, paint: "linear-gradient(to right, #1e897f, #34efde)", label: "Zero consumption" },
+    { y: 298, vx: 1737, paint: "linear-gradient(to right, #80493c, #e6846b)", label: "Gas leak" },
+    { y: 331, vx: 1737, paint: "linear-gradient(to right, #1e897f, #34efde)", label: "Pressure" },
+    { y: 364, vx: 1737, paint: "linear-gradient(to right, #1e897f, #34efde)", label: "No supply" },
     { y: 397, vx: 1737, paint: "linear-gradient(to right, #926f34, #f8bd58)", label: "Repeat calls" },
-    { y: 430, vx: 1751, paint: "linear-gradient(to right, #80493c, #e6846b)", label: "Reopened issues" },
+    { y: 430, vx: 1751, paint: "linear-gradient(to right, #80493c, #e6846b)", label: "Reopened calls" },
   ].map((item, index) => {
     const value = barNumbers[index]
     const fillW = value == null || barMax <= 0
@@ -1339,12 +1337,18 @@ function Screen13({ state }: { state: WallState }) {
       fillW: Number.isFinite(fillW) && fillW < 100 ? 25 + fillW : fillW,
     };
   })
-  const anomalyTotal = impact?.anomalies == null ? null : impact.anomalies.none + impact.anomalies.low + impact.anomalies.spike
+  const mix = [
+    { label: "No\nSupply", count: share?.noSupply ?? 0 },
+    { label: "Gas\nLeak", count: share?.leak ?? 0 },
+    { label: "Pressure", count: share?.pressure ?? 0 },
+    { label: "Meter", count: share?.meter ?? 0 },
+    { label: "Other", count: share?.other ?? 0 },
+  ]
   const heatX = Array.from({ length: 12 }, (_, index) => 884 + index * 69)
   const heatY = Array.from({ length: 11 }, (_, index) => 612 + index * 24)
   const heat = new Map((impact?.heat ?? []).map((cell) => [`${cell.rqii}|${cell.month}`, cell.serviceLevel]))
   const regions: [number, number][] = [
-    [815, 615], [738, 639], [806, 663], [783, 687], [789, 712], [804, 735],
+    [815, 615], [822, 639], [806, 663], [783, 687], [789, 712], [804, 735],
     [801, 760], [781, 784], [808, 809], [791, 833], [786, 857],
   ]
   const monthLabels: [number, string][] = [
@@ -1355,12 +1359,12 @@ function Screen13({ state }: { state: WallState }) {
     { x: 335, paint: "linear-gradient(to right, #854735, #eb7e5d)", label: "Open CRM cases", value: countText(impact?.open) },
     { x: 641, paint: "linear-gradient(to right, #187a72, #2ce0d2)", label: "New cases", value: countText(impact?.calls) },
     { x: 947, paint: "linear-gradient(to right, #187a72, #2ce0d2)", label: "Resolved cases", value: countText(impact?.closed) },
-    { x: 1253, paint: "linear-gradient(to right, #6b943b, #b4fa63)", label: "Escalated (serious)", value: countText(impact?.serious) },
-    { x: 1559, paint: "linear-gradient(to right, #6b943b, #b4fa63)", label: "Repeat complaints", value: countText(impact?.reopened) },
+    { x: 1253, paint: "linear-gradient(to right, #6b943b, #b4fa63)", label: "Sent to repair", value: countText(impact?.escalated) },
+    { x: 1559, paint: "linear-gradient(to right, #6b943b, #b4fa63)", label: "Reopened calls", value: countText(impact?.reopened) },
   ]
   return (
     <Frame>
-      <Pin x={37} y={28} size={30} weight={700} color="#2de1d0" lh={35}>CUSTOMER IMPACT & CALL CENTER</Pin>
+      <Pin x={37} y={28} size={30} weight={700} color="#2de1d0" lh={35}>CUSTOMER IMPACT & ACCIDENT CALLS</Pin>
       {cards.map((card) => (
         <At key={card.label} x={card.x} y={97} w={card.w} h={165}>
           <div className="kpi surface-glow" />
@@ -1368,14 +1372,14 @@ function Screen13({ state }: { state: WallState }) {
       ))}
       {cards.map((card) => (
         <span key={`${card.label}-t`}>
-          <Pin x={card.lx} y={card.label === "Calls Answered" || card.label === "Queue Length" ? 120 : 119} size={24} weight={500} color="#34efde" lh={40}>{card.label}</Pin>
-          <Pin x={card.vx} y={card.label === "Calls Answered" || card.label === "Queue Length" ? 184 : 183} size={60} weight={400} color="#dff9f7" lh={40}>{card.value}</Pin>
+          <Pin x={card.lx} y={card.label === "Calls Answered" || card.label === "Open Calls" ? 120 : 119} size={24} weight={500} color="#34efde" lh={40}>{card.label}</Pin>
+          <Pin x={card.vx} y={card.label === "Calls Answered" || card.label === "Open Calls" ? 184 : 183} size={60} weight={400} color="#dff9f7" lh={40}>{card.value}</Pin>
         </span>
       ))}
       <At x={29} y={287} w={1840} h={184}><div className="panel shell dim" /></At>
-      <Pin x={54} y={297} size={26} weight={700} color="#f2f4f4" lh={30}>CUSTOMER IMPACT & ANOMALIES</Pin>
-      <Pin x={54} y={335} size={20} weight={400} color="#a4adad" lh={23}>{impact?.anomaliesAsOf ? "Consumption anomalies · Aug 2026" : "Consumption anomalies"}</Pin>
-      <Pin x={54} y={364} size={70} weight={400} color="#ffffff" lh={85}>{anomalyTotal == null ? "—" : compactCount(anomalyTotal)}</Pin>
+      <Pin x={54} y={297} size={26} weight={700} color="#f2f4f4" lh={30}>ACCIDENT CALLS</Pin>
+      <Pin x={54} y={335} size={20} weight={400} color="#a4adad" lh={23}>Registered in the selected period</Pin>
+      <Pin x={54} y={364} size={70} weight={400} color="#ffffff" lh={85}>{impact?.calls == null ? "—" : compactCount(impact.calls)}</Pin>
       {bars.map((bar) => (
         <span key={bar.label}>
           <Pin x={565} y={bar.y} size={24} weight={400} color="#dce3e3" lh={28}>{bar.label}</Pin>
@@ -1386,10 +1390,10 @@ function Screen13({ state }: { state: WallState }) {
       ))}
       <At x={29} y={479} w={633} h={422}><div className="panel shell dim" /></At>
       <At x={678} y={479} w={1191} h={422}><div className="panel shell dim" /></At>
-      <Pin x={52} y={498} w={580} size={26} weight={700} color="#f4f6f6" lh={32} wrap>Collection by Consumer Category</Pin>
-      <ComplaintColumns />
-      <Pin x={740} y={502} size={26} weight={700} color="#f1f4f4" lh={30}>SERVICE LEVEL BY REGION & MONTH (2026)</Pin>
-      <Pin x={740} y={540} size={18} weight={400} color="#a4adad" lh={21}>Calls answered within 20 seconds</Pin>
+      <Pin x={52} y={498} w={580} size={26} weight={700} color="#f4f6f6" lh={32} wrap>Complaint mix</Pin>
+      <ComplaintColumns share={mix} />
+      <Pin x={740} y={502} size={26} weight={700} color="#f1f4f4" lh={30}>SERVICE LEVEL BY REGION & MONTH ({state.date.slice(0, 4)})</Pin>
+      <Pin x={740} y={540} size={18} weight={400} color="#a4adad" lh={21}>Completed accident calls</Pin>
       {monthLabels.map(([x, label]) => (
         <Pin key={label} x={x} y={581} size={18} weight={400} color="#a4adad" lh={21}>{label}</Pin>
       ))}
@@ -1401,11 +1405,11 @@ function Screen13({ state }: { state: WallState }) {
           <div style={{ height: "100%", background: impactTone(heat.get(`${impactRegions[row][1]}|${impactMonths[column]}`)) }} />
         </At>
       )))}
-      <At x={1718} y={600} w={36} h={270}>
+      <At x={1735} y={610} w={36} h={270}>
         <div style={{ height: "100%", borderRadius: 4, background: "linear-gradient(to bottom, #c6f25a 0%, #3fd4c6 20%, #f0b15c 40%, #e98b70 60%, #e15d45 80%, #e23b2c 100%)" }} />
       </At>
       {["100%", "80%", "60%", "40%", "20%", "0%"].map((label, index) => (
-        <Pin key={label} x={1762} y={590 + index * 54} size={16} weight={400} color="#a4adad" lh={20}>{label}</Pin>
+        <Pin key={label} x={1782} y={600 + index * 54} size={16} weight={400} color="#a4adad" lh={20}>{label}</Pin>
       ))}
       <At x={29} y={913} w={1840} h={145}><div className="panel shell dim" /></At>
       <Pin x={60} y={927} size={32} weight={400} color="#ffffff" lh={39}>CRM SLA</Pin>
@@ -1608,8 +1612,16 @@ function RevenueChart({ cyan, gold }: { cyan: string; gold: string }) {
   )
 }
 
-function Screen15() {
+function Screen15({ state }: { state: WallState }) {
   const d = useContent().screen15
+  const field = useFieldOps(state)
+  const within24 = fieldShare(field?.reconnectionSameDay, field?.reconnection)
+  const pending = field == null ? null : field.reconnection - field.reconnectionDone
+  const ops = [
+    fieldCount(field?.disconnection),
+    fieldCount(field?.reconnection),
+    fieldCount(pending),
+  ]
   const kpis = [
     { x: 34, w: 446, lx: 69, vx: 69 },
     { x: 498, w: 447, lx: 530, vx: 530 },
@@ -1657,36 +1669,61 @@ function Screen15() {
       <At x={34} y={701} w={1846} h={339}><div className="panel shell dim" /></At>
       <Pin x={67} y={733} size={32} weight={900} color="#ffffff" lh={40}>CONNECT / DISCONNECT OPERATIONS</Pin>
       <Pin x={67} y={811} size={32} color="#ffffff" lh={39}>Reconnect SLA</Pin>
-      <Pin x={67} y={863} size={70} color="#ffffff" lh={85}>{d.reconnect}</Pin>
+      <Pin x={67} y={863} size={70} color="#ffffff" lh={85}>{fieldPercent(within24)}</Pin>
       <Pin x={67} y={977} size={18} color="#76817f" lh={21}>Opening orders done within 24 h</Pin>
-      {bars.map((bar) => (
+      {bars.map((bar, index) => (
         <span key={bar.label}>
           <At x={bar.x} y={829} w={bar.w} h={18}>
             <div style={{ height: "100%", borderRadius: 131, background: bar.fill }} />
           </At>
           <Pin x={bar.lx} y={863} size={24} color="#ffffff" lh={40}>{bar.label}</Pin>
-          <Pin x={bar.vx} y={903} size={32} color="#f3f5f4" lh={38}>{bar.value}</Pin>
+          <Pin x={bar.vx} y={903} size={32} color="#f3f5f4" lh={38}>{ops[index] ?? bar.value}</Pin>
         </span>
       ))}
     </Frame>
   )
 }
 
+function fieldCount(value: number | null | undefined) {
+  return value == null ? "—" : value.toLocaleString("en-US")
+}
+
+function fieldShare(part: number | null | undefined, total: number | null | undefined) {
+  if (part == null || total == null || total <= 0) return null
+  return (part / total) * 100
+}
+
+function fieldPercent(value: number | null) {
+  return value == null ? "—" : `${value.toFixed(1)}%`
+}
+
+function fieldFill(value: number | null, track: number) {
+  if (value == null) return 0
+  return Math.max(0, Math.min(track, Math.round((value / 100) * track)))
+}
+
 function Screen16({ state }: { state: WallState }) {
+  const field = useFieldOps(state)
+  const within24 = fieldShare(field?.reconnectionSameDay, field?.reconnection)
+  const completion = fieldShare(field?.reconnectionDone, field?.reconnection)
+  const within7 = fieldShare(field?.disconnectionWithin7, field?.disconnection)
+  const meterCut = fieldShare(field?.meterCut, field?.disconnection)
+  const replacement24 = fieldShare(field?.replacementSameDay, field?.replacements)
+  const regulators = fieldCount(field?.regulators)
   const kpis = [
-    { x: 34, w: 446, label: "Accident calls", lx: 72, vx: 71, value: "0", note: "Selected reporting period", nx: 274 },
-    { x: 498, w: 447, label: "Resolved on first visit", lx: 539, vx: 542, value: "N/A", note: "Accident calls", nx: 820 },
-    { x: 964, w: 445, label: "Leaks sent to repair within 24h", lx: 1001, vx: 1000, value: "N/A", note: "Dispatch to repair", nx: 1272 },
-    { x: 1423, w: 446, label: "Suspected tamper / revenue loss", lx: 1455, vx: 1458, value: "0", note: "Suspected cases · not confirmed", nx: 1625 },
+    { x: 34, w: 446, label: "Accident calls", lx: 72, vx: 71, value: fieldCount(field?.calls), note: "Selected reporting period", nx: 274 },
+    { x: 498, w: 447, label: "Resolved on first visit", lx: 539, vx: 542, value: fieldCount(field?.resolved), note: "Accident calls", nx: 820 },
+    { x: 964, w: 445, label: "Leaks sent to repair within 24h", lx: 1001, vx: 1000, value: fieldCount(field?.leaks), note: "Dispatch to repair", nx: 1272 },
+    { x: 1423, w: 446, label: "Suspected tamper / revenue loss", lx: 1455, vx: 1458, value: fieldCount(field?.tamper), note: "Suspected cases · not confirmed", nx: 1625 },
   ]
   const bars = [
     { x: 79, y: 602, track: 672, fill: 0 },
     { x: 79, y: 927, track: 672, fill: 0 },
-    { x: 1146, y: 548, track: 320, fill: 0 },
-    { x: 1520, y: 548, track: 320, fill: 0 },
-    { x: 1146, y: 754, track: 320, fill: 0 },
-    { x: 1520, y: 754, track: 320, fill: 0 },
-    { x: 1146, y: 923, track: 320, fill: 0 },
+    { x: 1146, y: 548, track: 320, fill: fieldFill(within24, 320) },
+    { x: 1520, y: 548, track: 320, fill: fieldFill(completion, 320) },
+    { x: 1146, y: 754, track: 320, fill: fieldFill(within7, 320) },
+    { x: 1520, y: 754, track: 320, fill: fieldFill(meterCut, 320) },
+    { x: 1146, y: 923, track: 320, fill: fieldFill(replacement24, 320) },
   ]
   const rules = [
     [79, 656, 672],
@@ -1722,32 +1759,32 @@ function Screen16({ state }: { state: WallState }) {
       <Pin x={79} y={559} size={18} color="#a3aeab" lh={23}>Pipeline inspection coverage</Pin>
       <Pin x={650} y={547} size={32} color="#f3f5f4" lh={38}>N/A</Pin>
       <Pin x={79} y={698} size={24} color="#f3f5f4" lh={28}>Regulator inspection</Pin>
-      <Pin x={79} y={811} size={43} color="#f3f5f4" lh={55}>0</Pin>
-      <Pin x={165} y={836} size={16} color="#a3aeab" lh={21}>Regulators inspected</Pin>
+      <Pin x={79} y={811} size={43} color="#f3f5f4" lh={55}>{regulators}</Pin>
+      <Pin x={79 + Math.max(86, regulators.length * 22 + 12)} y={836} size={16} color="#a3aeab" lh={21}>Regulators inspected</Pin>
       <Pin x={79} y={878} size={24} color="#a3aeab" lh={28}>Regulator inspection coverage</Pin>
       <Pin x={650} y={877} size={32} color="#f3f5f4" lh={38}>N/A</Pin>
       <Pin x={79} y={963} size={18} color="#7f8b87" lh={21}>Coverage uses the corresponding inspection scope.</Pin>
       <Pin x={836} y={278} size={32} weight={700} color="#ffffff" lh={40}>Meter service operations</Pin>
       <Pin x={836} y={329} size={18} color="#a3aeab" lh={21}>Work volumes and completion measures</Pin>
       <Pin x={836} y={419} size={24} color="#f3f5f4" lh={28}>Reconnection</Pin>
-      <Pin x={836} y={497} size={41} color="#f3f5f4" lh={48}>0</Pin>
+      <Pin x={836} y={497} size={41} color="#f3f5f4" lh={48}>{fieldCount(field?.reconnection)}</Pin>
       <Pin x={836} y={548} size={15} color="#a3aeab" lh={18}>Recorded operations</Pin>
       <Pin x={1146} y={423} size={17} color="#a3aeab" lh={20}>Within 24h</Pin>
-      <Pin x={1377} y={489} size={33} color="#f3f5f4" lh={39}>N/A</Pin>
+      <Pin x={1377} y={489} size={33} color="#f3f5f4" lh={39}>{fieldPercent(within24)}</Pin>
       <Pin x={1520} y={423} size={17} color="#a3aeab" lh={20}>Completion</Pin>
-      <Pin x={1751} y={489} size={33} color="#f3f5f4" lh={39}>N/A</Pin>
+      <Pin x={1751} y={489} size={33} color="#f3f5f4" lh={39}>{fieldPercent(completion)}</Pin>
       <Pin x={836} y={665} size={24} color="#f3f5f4" lh={28}>Disconnection</Pin>
-      <Pin x={836} y={706} size={41} color="#f3f5f4" lh={48}>0</Pin>
+      <Pin x={836} y={706} size={41} color="#f3f5f4" lh={48}>{fieldCount(field?.disconnection)}</Pin>
       <Pin x={836} y={762} size={15} color="#a3aeab" lh={18}>Recorded operations</Pin>
       <Pin x={1146} y={669} size={17} color="#a3aeab" lh={20}>Within 7 days</Pin>
-      <Pin x={1377} y={695} size={33} color="#f3f5f4" lh={39}>N/A</Pin>
+      <Pin x={1377} y={695} size={33} color="#f3f5f4" lh={39}>{fieldPercent(within7)}</Pin>
       <Pin x={1520} y={669} size={17} color="#a3aeab" lh={20}>Meter cut off</Pin>
-      <Pin x={1751} y={695} size={33} color="#f3f5f4" lh={39}>N/A</Pin>
+      <Pin x={1751} y={695} size={33} color="#f3f5f4" lh={39}>{fieldPercent(meterCut)}</Pin>
       <Pin x={836} y={834} size={24} color="#f3f5f4" lh={28}>Replacement acts</Pin>
-      <Pin x={836} y={875} size={41} color="#f3f5f4" lh={48}>0</Pin>
+      <Pin x={836} y={875} size={41} color="#f3f5f4" lh={48}>{fieldCount(field?.replacements)}</Pin>
       <Pin x={836} y={931} size={15} color="#a3aeab" lh={18}>Acts recorded</Pin>
       <Pin x={1146} y={838} size={17} color="#a3aeab" lh={20}>Done within 24h</Pin>
-      <Pin x={1377} y={864} size={33} color="#f3f5f4" lh={39}>N/A</Pin>
+      <Pin x={1377} y={864} size={33} color="#f3f5f4" lh={39}>{fieldPercent(replacement24)}</Pin>
       {bars.map((bar) => (
         <span key={`${bar.x}-${bar.y}`}>
           <At x={bar.x} y={bar.y} w={bar.track} h={22}><div style={{ height: "100%", borderRadius: 38, background: "#33413f" }} /></At>
@@ -1786,8 +1823,10 @@ function Screen17({ state }: { state: WallState }) {
   const quality = useQuality(state)
   const capacity = useCapacity(state)
   const coverageShare = quality && quality.total > 0 && quality.days > 0 ? quality.received.overall / (quality.total * quality.days) : null
-  const systemMargin = demand && capacity != null && capacity > 0 ? 100 - (demand.total / capacity) * 100 : null
-  const utilization = systemMargin == null ? null : 100 - systemMargin
+  const dayCount = spanDays(state.date, state.dateTo).length
+  const dailyVolume = demand && dayCount > 0 ? demand.total / dayCount : null
+  const utilization = dailyVolume != null && capacity != null && capacity > 0 ? (dailyVolume / capacity) * 100 : null
+  const systemMargin = utilization == null ? null : 100 - utilization
   const volume = demand ? `${compactCount(Math.round(demand.total))} m³` : "—"
   const peak = demand?.peak == null ? "—" : `${compactCount(Math.round(demand.peak))} m³/day`
   const percentText = (value: number) => `${value < 0 ? "−" : ""}${Math.abs(value).toFixed(1)}%`
@@ -1813,7 +1852,7 @@ function Screen17({ state }: { state: WallState }) {
       : index === 0
         ? (utilization == null ? "—" : `Utilization ${percentText(utilization)}`)
         : card.title === "LINE PACK"
-          ? (variation == null ? "—" : `${variationText} variation`)
+          ? (variation == null ? "—" : `last read`)
           : card.note,
     bar: !card.bar
       ? card.bar
@@ -1830,11 +1869,15 @@ function Screen17({ state }: { state: WallState }) {
               fill: utilization == null ? 0 : Math.max(0, Math.min(card.bar.track, Math.round((utilization / 100) * card.bar.track))),
             }
           : card.bar,
-    rows: card.rows.map((row) => {
-      if (index === 0 && row.label === "Peak Flow Today") return { ...row, value: peak }
-      if (index === 0 && row.label === "Available Capacity") return { ...row, value: capacity == null ? "—" : `${compactCount(Math.round(capacity))} m³/day` }
-      if (index === 0 && row.label === "System Margin") return { ...row, value: systemMargin == null ? "—" : percentText(systemMargin) }
-      if (card.title === "LINE PACK" && row.label === "Line Pack Variation") return { ...row, value: variationText }
+    rows: index === 0
+      ? [
+          { label: "Peak Flow", value: peak },
+          { label: "Available Capacity", value: capacity == null ? "—" : `${compactCount(Math.round(capacity))} m³/day` },
+          { label: "Utilization", value: utilization == null ? "—" : percentText(utilization) },
+          { label: "System Margin", value: systemMargin == null ? "—" : percentText(systemMargin) },
+        ]
+      : card.rows.map((row) => {
+      if (card.title === "LINE PACK" && row.label === "Line Pack Variation") return { ...row, value: pack == null ? "N/A" : variationText}
       if (row.label === "Active Smart Metered") return { ...row, value: meterText(meters?.smart) }
       if (row.label === "Active Retrofited") return { ...row, value: meterText(meters?.retrofit) }
       if (card.title !== "PIPELINE INFRA") return row
@@ -1860,15 +1903,21 @@ function Screen17({ state }: { state: WallState }) {
           {card.rows.map((row, index) => (
             <span key={row.label}>
               <Pin x={card.x + 39} y={rowY[index]} size={24} color="#ffffff" lh={40}>{row.label}</Pin>
-              <Pin x={card.x + 39} y={valueY[index]} size={30} color="#339b9a" lh={40}>{row.value}</Pin>
+              <Pin x={row.label === "Utilization" ? card.x + 291 : card.x + 39} y={valueY[index]} size={30} color="#339b9a" lh={40}>{row.value}</Pin>
             </span>
           ))}
-          {card.bar && (
+          {card.bar && card.title !== "GAS SALE VOLUME" && (
             <span>
               <Pin x={card.x + 39} y={790} size={24} color="#ffffff" lh={40}>{card.bar.label}</Pin>
               <Pin x={card.x + 291} y={837} size={30} color="#339b9a" lh={40}>{card.bar.value}</Pin>
               <At x={card.x + 39} y={847} w={235} h={21}><div style={{ height: "100%", borderRadius: 63, background: "#34575b" }} /></At>
               <At x={card.x + 39} y={847} w={card.bar.fill} h={21}><div style={{ height: "100%", borderRadius: 38, background: "linear-gradient(to right, #1e897f, #34efde)" }} /></At>
+            </span>
+          )}
+          {card.bar && card.title === "GAS SALE VOLUME" && (
+            <span>
+              <At x={card.x + 39} y={737} w={235} h={21}><div style={{ height: "100%", borderRadius: 63, background: "#34575b" }} /></At>
+              <At x={card.x + 39} y={737} w={card.bar.fill} h={21}><div style={{ height: "100%", borderRadius: 38, background: "linear-gradient(to right, #1e897f, #34efde)" }} /></At>
             </span>
           )}
         </span>
@@ -2221,22 +2270,19 @@ function Screen21({ state }: { state: WallState }) {
       <Pin x={56} y={758} size={18} color="#76817f" lh={21}>Counts and handling times for the selected context</Pin>
       <Pin x={56} y={812} size={18} color="#76817f" lh={21}>Suspected leaks</Pin>
       <Pin x={56} y={851} size={40} color="#f3f5f4" lh={47}>{leaks ? leaks.suspected.toLocaleString("en-US") : "—"}</Pin>
-      <Pin x={399} y={864} size={18} color="#76817f" lh={21}>MDMS</Pin>
+      
       <Pin x={486} y={812} size={18} color="#76817f" lh={21}>Confirmed leaks</Pin>
       <Pin x={486} y={851} size={40} color="#f3f5f4" lh={47}>N/A</Pin>
-      <Pin x={869} y={864} size={18} color="#76817f" lh={21}>LD</Pin>
+      
       <Rule x={56} y={924} w={850} />
       <Rule x={471} y={825} w={1} h={183} />
       <Pin x={56} y={934} size={18} color="#76817f" lh={21}>Avg. leak response time</Pin>
       <Pin x={56} y={971} size={40} color="#f3f5f4" lh={47}>N/A</Pin>
-      <Pin x={338} y={984} size={18} color="#76817f" lh={21}>MFS · minutes</Pin>
       <Pin x={486} y={934} size={18} color="#76817f" lh={21}>Avg. leak repair time</Pin>
       <Pin x={486} y={961} size={40} color="#f3f5f4" lh={47}>N/A</Pin>
-      <Pin x={776} y={984} size={18} color="#76817f" lh={21}>MFS · minutes</Pin>
 
       <At x={953} y={644} w={919} h={388}><div className="panel shell dim" /></At>
       <Pin x={976} y={662} size={24} color="#ffffff" lh={28}>Leak distribution by grade</Pin>
-      <Pin x={1723} y={681} size={18} color="#76817f" lh={21}>Source: MFM</Pin>
       {/*<Pin x={976} y={700} size={18} color="#76817f" lh={21}>Categories and counts · population to confirm</Pin>*/}
       <Pin x={976} y={732} size={18} color="#76817f" lh={21}>Leaks · count</Pin>
       {gradeTicks.map((tick, index) => (
@@ -2273,7 +2319,7 @@ const bodies: Record<number, (state: WallState) => ReactNode> = {
   9: (state) => (state.ufgOpen ? <UfgScreen9 state={state} /> : <Screen9 />),
   13: (state) => <Screen13 state={state} />,
   14: (state) => <Screen14 state={state} />,
-  15: () => <Screen15 />,
+  15: (state) => <Screen15 state={state} />,
   16: (state) => <Screen16 state={state} />,
   17: (state) => <Screen17 state={state} />,
   18: () => <Screen18 />,

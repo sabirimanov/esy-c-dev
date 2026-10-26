@@ -8,6 +8,7 @@ import { handleLeaks, handleQuality } from "./server/quality.mjs"
 import { handleDemand } from "./server/demand.mjs"
 import { handleGis } from "./server/gis.mjs"
 import { handleImpact } from "./server/impact.mjs"
+import { handleField } from "./server/field.mjs"
 import { handleReconnect } from "./server/reconnect.mjs"
 import { handleTamper } from "./server/tamper.mjs"
 import { handleWeather } from "./server/weather.mjs"
@@ -45,6 +46,7 @@ const server = http.createServer((req, res) => {
   if (handleDemand(req, res)) return
   if (handleGis(req, res)) return
   if (handleImpact(req, res)) return
+  if (handleField(req, res)) return
   if (handleReconnect(req, res)) return
   if (handleTamper(req, res)) return
   if (handleWeather(req, res)) return

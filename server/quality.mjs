@@ -20,7 +20,7 @@ function deviceRegion(region, zone) {
   if (!place) return ""
   if (place === "R01" || place === "Z_sumqayit") return "Sumgayit/Sumgayit"
   if (place === "R10" || place === "Z_sabuncu") return "Baku"
-  if (place === "R24" || place === "Z_agsu") return "Agsu"
+  if (place === "R24" || place === "Z_agsu" || place === "Z_ismayilli" || place === "Z_kurdemir" || place === "Z_ucar" || place === "Z_goycay") return "Agsu"
   return "none"
 }
 
@@ -37,9 +37,10 @@ function scopeOf(clusters, filter) {
     const cluster = clusters.find((item) => item.cluster_id === filter.cluster)
     if (!cluster) return { deviceRegion: "none", clusterNo: "", balance: "none", sites: [] }
     const number = clusterNumber(cluster)
+    const named = deviceRegion(filter.region, filter.zone) || deviceRegion(cluster.region_id, cluster.zone_id)
     return {
-      deviceRegion: deviceRegion(filter.region, filter.zone),
-      clusterNo: number || cluster.cluster_id,
+      deviceRegion: named || "none",
+      clusterNo: number,
       balance: "sites",
       sites: [number ? `Cluster ${number}` : cluster.name_en || ""],
     }

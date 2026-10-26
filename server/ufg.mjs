@@ -327,13 +327,15 @@ async function loadConsumers(numbers, region = "") {
   return total
 }
 
-async function loadMeterSplit(numbers) {
-  if (numbers && numbers.length === 0) return { smart: 0, retrofit: 0 }
-  const key = numbers == null ? "*" : numbers.slice().sort().join(",")
+async function loadMeterSplit(numbers, region = "") {
+  const byRegion = Boolean(region) && !(numbers && numbers.length)
+  if (numbers && numbers.length === 0 && !byRegion) return { smart: 0, retrofit: 0 }
+  const key = byRegion ? `region:${region}` : numbers == null ? "*" : numbers.slice().sort().join(",")
   const hit = meterCache.get(key)
   if (hit && hit.until > Date.now()) return hit.body
   const url = duckdbUrl("/api/meters")
-  if (numbers) url.searchParams.set("clusters", numbers.join(","))
+  if (byRegion) url.searchParams.set("region", region)
+  else if (numbers) url.searchParams.set("clusters", numbers.join(","))
   const remote = await fetch(url)
   if (!remote.ok) throw new Error(String(remote.status))
   const data = await remote.json()
@@ -443,8 +445,11 @@ export function handleUfg(req, res) {
     }
     hierarchy()
       .then((body) => {
-        const numbers = filter.region || filter.zone || filter.cluster ? consumerNumbers(body.clusters, filter) : null
-        return loadMeterSplit(numbers)
+        const scoped = Boolean(filter.region || filter.zone || filter.cluster)
+        const numbers = scoped ? consumerNumbers(body.clusters, filter) : null
+        const selected = filter.cluster ? body.clusters.find((item) => item.cluster_id === filter.cluster) : null
+        const regionName = scoped && !(numbers && numbers.length) ? consumerRegion(filter, selected) : ""
+        return loadMeterSplit(numbers, regionName)
       })
       .then((body) => send(res, 200, body))
       .catch(() => res.writeHead(502).end())

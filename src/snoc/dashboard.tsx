@@ -1,8 +1,22 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { readPanel, type Alert, type Panel, type Reading, type Sample } from "./format"
 
-const URL = "/socnoc/monitoring/screen1/api/dashboard?range=now"
 const POLL_MS = 10_000
+const STORAGE = "snoc-dashboard-query"
+const BAKU = 4 * 3600
+
+export type DashRange = "24h" | "7d"
+export type DashTab = "day" | "month" | "year" | "range"
+export type DashQuick = "now" | "yesterday" | "custom"
+
+export type DashQuery = {
+  range: DashRange
+  end: number | null
+  tab: DashTab
+  quick: DashQuick
+  viewY: number
+  viewM: number
+}
 
 type Payload = {
   live?: boolean
@@ -15,6 +29,8 @@ type Dash = {
   ready: boolean
   live: boolean
   alerts: Alert[]
+  query: DashQuery
+  setQuery: (next: DashQuery) => void
   read: (key: string, match?: Record<string, string>) => Reading
   samples: (key: string) => Sample[]
   series: (key: string) => [number, number][]
@@ -22,14 +38,66 @@ type Dash = {
 
 const DashContext = createContext<Dash | null>(null)
 
+export function bakuNow() {
+  return Math.floor(Date.now() / 1000)
+}
+
+export function bakuParts(unix: number) {
+  const date = new Date((unix + BAKU) * 1000)
+  return { y: date.getUTCFullYear(), m: date.getUTCMonth(), d: date.getUTCDate() }
+}
+
+export function bakuToday() {
+  return bakuParts(bakuNow())
+}
+
+export function endOfBakuDay(y: number, m: number, day: number) {
+  return Math.floor(Date.UTC(y, m, day, 23, 59, 59) / 1000) - BAKU
+}
+
+function readQuery(): DashQuery {
+  const today = bakuToday()
+  const base: DashQuery = { range: "7d", end: null, tab: "range", quick: "now", viewY: today.y, viewM: today.m }
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORAGE) || "") as Partial<DashQuery>
+    const tab = raw.tab === "day" || raw.tab === "month" || raw.tab === "year" || raw.tab === "range" ? raw.tab : base.tab
+    const quick = raw.quick === "now" || raw.quick === "yesterday" || raw.quick === "custom" ? raw.quick : base.quick
+    return {
+      range: raw.range === "24h" || raw.range === "7d" ? raw.range : base.range,
+      end: Number.isInteger(raw.end) && (raw.end as number) > 0 ? (raw.end as number) : null,
+      tab,
+      quick,
+      viewY: Number.isInteger(raw.viewY) ? (raw.viewY as number) : base.viewY,
+      viewM: Number.isInteger(raw.viewM) && (raw.viewM as number) >= 0 && (raw.viewM as number) <= 11 ? (raw.viewM as number) : base.viewM,
+    }
+  } catch {
+    return base
+  }
+}
+
 export function SnocProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<Payload | null>(null)
+  const [query, setQueryState] = useState<DashQuery>(readQuery)
+
+  function setQuery(next: DashQuery) {
+    localStorage.setItem(STORAGE, JSON.stringify(next))
+    setQueryState(next)
+  }
+
+  useEffect(() => {
+    function onStorage(event: StorageEvent) {
+      if (event.key === STORAGE) setQueryState(readQuery())
+    }
+    window.addEventListener("storage", onStorage)
+    return () => window.removeEventListener("storage", onStorage)
+  }, [])
 
   useEffect(() => {
     let stop = false
     async function load() {
+      const end = query.end ?? bakuNow()
       try {
-        const res = await fetch(URL, { cache: "no-store" })
+        const res = await fetch(`/socnoc/monitoring/screen1/api/dashboard?range=${query.range}&end=${end}`, { cache: "no-store" })
         if (!res.ok) throw new Error(String(res.status))
         const body = (await res.json()) as Payload
         if (!stop) setData(body)
@@ -43,7 +111,7 @@ export function SnocProvider({ children }: { children: ReactNode }) {
       stop = true
       clearInterval(id)
     }
-  }, [])
+  }, [query.range, query.end])
 
   const value = useMemo<Dash>(() => {
     const panels = data?.panels ?? {}
@@ -51,11 +119,13 @@ export function SnocProvider({ children }: { children: ReactNode }) {
       ready: data !== null,
       live: Boolean(data?.live),
       alerts: data?.alerts ?? [],
+      query,
+      setQuery,
       read: (key, match) => readPanel(panels[key], match),
       samples: (key) => panels[key]?.samples ?? [],
       series: (key) => panels[key]?.series?.[0]?.points ?? [],
     }
-  }, [data])
+  }, [data, query])
 
   return <DashContext.Provider value={value}>{children}</DashContext.Provider>
 }
