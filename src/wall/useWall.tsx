@@ -42,13 +42,39 @@ export function WallProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<WallState>(readStored)
 
   useEffect(() => {
+    let reloadId = 0
+    let ready = false
     const source = new EventSource("/sync")
     source.onmessage = (event) => {
-      const next = normalize(JSON.parse(event.data) as WallState)
+      const raw = JSON.parse(event.data) as WallState & { reload?: number }
+      const nextReload = Number(raw.reload) || 0
+      if (ready && nextReload !== reloadId) {
+        window.location.reload()
+        return
+      }
+      ready = true
+      reloadId = nextReload
+      const next = normalize(raw)
       localStorage.setItem(storageKey, JSON.stringify(next))
       setState(next)
     }
-    return () => source.close()
+    function onKey(event: KeyboardEvent) {
+      const target = event.target
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
+      const held = (event.metaKey || event.ctrlKey) && event.altKey && !event.shiftKey
+      if (!held || event.key.toLowerCase() !== "r") return
+      event.preventDefault()
+      void fetch("/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reload: true }),
+      })
+    }
+    window.addEventListener("keydown", onKey)
+    return () => {
+      source.close()
+      window.removeEventListener("keydown", onKey)
+    }
   }, [])
 
   function patch(partial: WallPatch) {

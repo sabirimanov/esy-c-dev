@@ -49,6 +49,7 @@ function load() {
         seed: Number.isInteger(raw.seed) && raw.seed >= 0 ? raw.seed : 0,
         period: raw.period === "" || periods.has(raw.period) ? raw.period : "Last 30 Days",
         ufgOpen: Boolean(raw.ufgOpen),
+        reload: Number.isInteger(raw.reload) && raw.reload >= 0 ? raw.reload : 0,
       }
     }
   } catch {
@@ -65,6 +66,7 @@ function load() {
     seed: 0,
     period: "Last 30 Days",
     ufgOpen: false,
+    reload: 0,
   }
 }
 
@@ -139,6 +141,7 @@ export function handleSync(req, res) {
       if (Number.isInteger(patch.seed) && patch.seed >= 0 && patch.seed < 1e10) next.seed = patch.seed
       if (typeof patch.period === "string" && (patch.period === "" || periods.has(patch.period))) next.period = patch.period
       if ("ufgOpen" in patch) next.ufgOpen = Boolean(patch.ufgOpen)
+      if (patch.reload === true) next.reload = (Number(state.reload) || 0) + 1
       next.rev = state.rev + 1
       state = next
       persist()

@@ -45,8 +45,8 @@
     "cards": [
       { "label": "CURRENT DEMAND", "value": "74.8 MCM", "down": true, "amount": "10%" },
       { "label": "UFG", "value": "6.4%", "down": true, "amount": "10%" },
-      { "label": "CUSTOMERS AFFECTED", "value": "12,450", "down": true, "amount": "10%" },
-      { "label": "REVENUE COLLECTION", "value": "91.3%", "down": true, "amount": "10%" }
+      { "label": "CUSTOMERS AVAILABLE", "value": "12,450", "down": true, "amount": "10%" },
+      { "label": "REVENUE COLLECTION", "value": "N/A", "down": true, "amount": "10%" }
     ]
   },
   "screen5": {
@@ -93,7 +93,7 @@
       { "label": "Predicted Leak Risk Zones", "value": "0" },
       { "label": "Asset Failure Prediction", "value": "0" },
       { "label": "Theft Probability Cases", "value": "0" },
-      { "label": "Peak Demand Risk", "value": "Medium" },
+      { "label": "Peak Demand Risk", "value": "-" },
       { "label": "Battery EOL Projections", "value": "0" }
     ],
     "tamperAlerts": "0",
@@ -129,7 +129,7 @@
       { "label": "Repair", "value": "98.6%", "fill": 230, "track": 247 }
     ],
     "billing": [
-      { "label": "Billing Sync", "value": "99.7%" },
+      { "label": "Billing Sync", "value": "N/A" },
       { "label": "Open CRM", "value": "1,284" },
       { "label": "New Cases", "value": "187" },
       { "label": "Escalated", "value": "18" }
@@ -177,32 +177,32 @@
   },
   "screen14": {
     "ufg": "9.9%",
-    "collection": "107.2%",
-    "balance": "15.3M",
+    "collection": "N/A",
+    "balance": "N/A",
     "response": "26",
     "reconnect": "81.1%",
     "meters": "94.9%",
     "tamper": [
-      { "label": "Running backwards", "value": "3,677", "fill": 276, "track": 295 },
-      { "label": "Seal broken or missing", "value": "2,425", "fill": 162, "track": 295 },
-      { "label": "Not recording", "value": "1,996", "fill": 108, "track": 295 },
-      { "label": "Interference", "value": "802", "fill": 61, "track": 295 },
-      { "label": "Display pierced", "value": "98", "fill": 33, "track": 295 }
+      { "label": "Tampering", "value": "3,677", "fill": 206, "track": 295 },
+      { "label": "Disassembly", "value": "2,425", "fill": 162, "track": 295 },
+      { "label": "Unathorized interference", "value": "1,996", "fill": 108, "track": 295 },
+      { "label": "Magnetic interference", "value": "802", "fill": 61, "track": 295 },
+      { "label": "Unauthorized battery removal", "value": "98", "fill": 33, "track": 295 }
     ],
     "alerts": [
-      { "title": "UFG hotspot", "note": "24.4% UFG", "region": "Goychay", "tone": "Critical", "action": "Check network balance and meters" },
-      { "title": "Outstanding balance", "note": "34.3M AZN", "region": "Sumqayit", "tone": "Critical", "action": "Collections and disconnection plan" },
-      { "title": "Reconnection delay", "note": "69% within 24 h", "region": "Agstafa", "tone": "Critical", "action": "Clear reconnection backlog" },
-      { "title": "Slow emergency response", "note": "35 min median", "region": "Ujar", "tone": "Warning", "action": "Dispatch crew capacity review" },
-      { "title": "Meter tampering", "note": "36.7 per 100 replacements", "region": "Tartar", "tone": "Warning", "action": "Field verification and SOC review" },
-      { "title": "Pressure violation", "note": "20.6% sense-months", "region": "Naftalan", "tone": "Warning", "action": "Inspect regulators, reduce load" }
+      { "title": "UFG hotspot", "note": "> 35.4% UFG", "region": "Baku", "tone": "Critical", "action": "Commercial meters telemetry" },
+      { "title": "Tampering attempts", "note": "189 during last 30 days", "region": "Sumqayit", "tone": "Critical", "action": "Arrange field visit" },
+      { "title": "Non-communicating devices", "note": "213 devices > 3 days", "region": "Sumgayit, Agsu", "tone": "Critical", "action": "Field verification and NOC review" },
+      { "title": "G4 meter overload", "note": "334 meters > Qmax", "region": "Baku", "tone": "Warning", "action": "Analyze meter capacity upgrade" },
+      { "title": "Min/Nil consumption", "note": "1K+ meters", "region": "Sumgayit", "tone": "Warning", "action": "O&M team visit" },
+      { "title": "Suspected leaks", "note": "520 leaks detected", "region": "Sumgayit", "tone": "Warning", "action": "Investigate and repair" }
     ]
   },
   "screen15": {
     "cards": [
       { "label": "Revenue Realization", "value": "0%" },
       { "label": "Collection Efficiency", "value": "0%" },
-      { "label": "Outstanding Balance", "value": "0 AZN" },
+      { "label": "Outstanding Balance", "value": "0" },
       { "label": "Recovery Rate", "value": "0%" }
     ],
     "reconnect": "0%",
@@ -250,12 +250,12 @@
       },
       {
         "title": "LINE PACK",
-        "value": "18.6 MCM",
-        "note": "+2.4% variation",
+        "value": "4.6 m³",
+        "note": "+0.4% variation",
         "rows": [
-          { "label": "Line Pack Variation", "value": "+2.4%" },
+          { "label": "Line Pack Variation", "value": "+0.4%" },
           { "label": "Pressure Balance", "value": "Stable" },
-          { "label": "Low Pressure Corridors", "value": "2" }
+          { "label": "Low Pressure Corridors", "value": "0" }
         ]
       },
       {
@@ -263,32 +263,31 @@
         "value": "34,850 km",
         "note": "248/252 active",
         "rows": [
-          { "label": "Transmission Lines", "value": "4,200 km" },
-          { "label": "Distribution Network", "value": "30,650 km" },
+          { "label": "Distribution Lines", "value": "4,200 km" },
+          { "label": "Service Lines", "value": "30,650 km" },
           { "label": "Active Stations", "value": "248/252" },
-          { "label": "Main Valves", "value": "8,420" }
+          { "label": "Valves", "value": "8,420" }
         ]
       },
       {
         "title": "COVERAGE",
-        "value": "2.18M",
+        "value": "28.5K",
         "rows": [
           { "label": "Active Smart Metered", "value": "2.12 M" },
-          { "label": "Customers Affected", "value": "12,450" },
-          { "label": "High Impact Regions", "value": "3" }
+          { "label": "Active Retrofited", "value": "12,450" },
+          { "label": "High Impact Regions", "value": "2" }
         ],
         "bar": { "label": "Service Coverage", "value": "92.4%", "fill": 217, "track": 235 }
       }
     ]
   },
   "screen18": {
-    "total": "3,412",
+    "total": "29,222",
     "rows": [
-      { "label": "High Consumption", "value": "1,248", "fill": 60, "track": 645 },
-      { "label": "Low Consumption", "value": "2,317", "fill": 524, "track": 645 },
-      { "label": "Zero Consumption", "value": "3,412", "fill": 282, "track": 645 },
-      { "label": "Sudden Drop", "value": "684", "fill": 404, "track": 645 },
-      { "label": "Repeated Anomaly", "value": "420", "fill": 291, "track": 645 }
+      { "label": "High Consumption", "value": "302", "fill": 30, "track": 645 },
+      { "label": "Low Consumption", "value": "24,899", "fill": 550, "track": 645 },
+      { "label": "Zero Consumption", "value": "4,006", "fill": 88, "track": 645 },
+      { "label": "Over Flow", "value": "15", "fill": 20, "track": 645 }
     ],
     "city": "Baku",
     "temp": "21°",

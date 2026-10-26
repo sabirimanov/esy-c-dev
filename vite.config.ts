@@ -5,19 +5,35 @@ import { handleUfg } from "./server/ufg.mjs"
 import { handlePressure } from "./server/pressure.mjs"
 import { handleLeaks, handleQuality } from "./server/quality.mjs"
 import { handleDemand } from "./server/demand.mjs"
+import { handleGis } from "./server/gis.mjs"
+import { handleImpact } from "./server/impact.mjs"
+import { handleReconnect } from "./server/reconnect.mjs"
+import { handleTamper } from "./server/tamper.mjs"
 import { handleWeather } from "./server/weather.mjs"
+import { app as duckdbApp } from "./duckdb/server.js"
+import { isDuckdbRequest, setDuckdbOrigin } from "./server/duckdb-origin.mjs"
+
+setDuckdbOrigin("http://127.0.0.1:4317")
 
 function wallSync(): Plugin {
   return {
     name: "wall-sync",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleWeather(req, res) && !handleSync(req, res)) next()
+        if (isDuckdbRequest(req.url)) {
+          duckdbApp(req, res)
+          return
+        }
+        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res)) next()
       })
     },
     configurePreviewServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleWeather(req, res) && !handleSync(req, res)) next()
+        if (isDuckdbRequest(req.url)) {
+          duckdbApp(req, res)
+          return
+        }
+        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res)) next()
       })
     },
   }

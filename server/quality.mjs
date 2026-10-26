@@ -1,7 +1,5 @@
 import { loadUfgHierarchy } from "./ufg.mjs"
-
-const qualityUrl = "http://127.0.0.1:4173/api/quality"
-const leaksUrl = "http://127.0.0.1:4173/api/leaks"
+import { duckdbUrl } from "./duckdb-origin.mjs"
 const ttl = 10 * 60 * 1000
 const cache = new Map()
 
@@ -61,7 +59,7 @@ async function loadQuality(scope, from, to) {
   const key = JSON.stringify({ ...scope, from, to })
   const hit = cache.get(key)
   if (hit && hit.until > Date.now()) return hit.body
-  const url = new URL(qualityUrl)
+  const url = duckdbUrl("/api/quality")
   url.searchParams.set("from", from)
   url.searchParams.set("to", to)
   url.searchParams.set("deviceRegion", scope.deviceRegion)
@@ -124,7 +122,7 @@ async function loadLeaks(clusters, from, to) {
   const key = `leaks|${from}|${to}|${clusters == null ? "*" : clusters.slice().sort().join(",")}`
   const hit = cache.get(key)
   if (hit && hit.until > Date.now()) return hit.body
-  const url = new URL(leaksUrl)
+  const url = duckdbUrl("/api/leaks")
   url.searchParams.set("from", from)
   url.searchParams.set("to", to)
   if (clusters) url.searchParams.set("clusters", clusters.join(","))

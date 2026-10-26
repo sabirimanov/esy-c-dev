@@ -1,6 +1,6 @@
 import { loadUfgHierarchy } from "./ufg.mjs"
 
-const pressureUrl = "http://127.0.0.1:4173/api/pressure"
+import { duckdbUrl } from "./duckdb-origin.mjs"
 const ttl = 10 * 60 * 1000
 const cache = new Map()
 
@@ -23,7 +23,7 @@ function scopeOf(clusters, filter) {
     const number = clusterNumber(cluster)
     return {
       lowRegion: lowRegion(filter.region, filter.zone),
-      clusterName: cluster.name_en || cluster.cluster_id,
+      cluster: cluster.cluster_id,
       medium: "sites",
       sites: [number ? `Cluster ${number}` : cluster.name_en || ""],
     }
@@ -60,12 +60,12 @@ async function loadPressure(scope, from, to) {
   const key = JSON.stringify({ ...scope, from, to })
   const hit = cache.get(key)
   if (hit && hit.until > Date.now()) return hit.body
-  const url = new URL(pressureUrl)
+  const url = duckdbUrl("/api/pressure")
   url.searchParams.set("from", from)
   url.searchParams.set("to", to)
   url.searchParams.set("lowRegion", scope.lowRegion)
   url.searchParams.set("medium", scope.medium)
-  if (scope.clusterName) url.searchParams.set("clusterName", scope.clusterName)
+  if (scope.cluster) url.searchParams.set("cluster", scope.cluster)
   for (const site of scope.sites) url.searchParams.append("site", site)
   const remote = await fetch(url)
   if (!remote.ok) throw new Error(String(remote.status))

@@ -1,9 +1,9 @@
 import { loadClusterDemand, loadUfgHierarchy } from "./ufg.mjs"
 
-const demandUrl = "http://127.0.0.1:4173/api/demand"
+import { duckdbUrl } from "./duckdb-origin.mjs"
 const ttl = 10 * 60 * 1000
 const cache = new Map()
-const empty = { total: 0, points: [], forecast: null }
+const empty = { total: 0, points: [], peak: null, forecast: null }
 
 function send(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" })
@@ -57,11 +57,15 @@ function readFilter(url) {
 async function loadActual(ids, from, to) {
   const series = await Promise.all(ids.map((id) => loadClusterDemand(id, from, to)))
   const totals = new Map()
+  let peak = null
   for (const days of series) {
-    for (const [date, value] of days) totals.set(date, (totals.get(date) || 0) + value)
+    for (const [date, value] of days) {
+      totals.set(date, (totals.get(date) || 0) + value)
+      if (peak == null || value > peak) peak = value
+    }
   }
   const points = [...totals.keys()].sort().map((date) => ({ date, value: totals.get(date) }))
-  return { total: points.reduce((sum, point) => sum + point.value, 0), points }
+  return { total: points.reduce((sum, point) => sum + point.value, 0), points, peak }
 }
 
 function shiftDay(value, days) {
@@ -71,7 +75,7 @@ function shiftDay(value, days) {
 
 async function loadForecast(forecast, from, to) {
   if (!forecast) return null
-  const url = new URL(demandUrl)
+  const url = duckdbUrl("/api/demand")
   url.searchParams.set("from", from)
   url.searchParams.set("to", shiftDay(to, 120))
   url.searchParams.set("balance", "none")

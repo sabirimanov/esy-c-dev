@@ -1,10 +1,12 @@
+import { duckdbUrl } from "./duckdb-origin.mjs"
+
 const origin = "https://cccdev.esyasoft.app/cccapi/"
-const boardUrl = "http://127.0.0.1:4173/api/ufg"
-const deviceUrl = "http://127.0.0.1:4173/api/query"
+let capacityCache = null
 const ttl = 10 * 60 * 1000
 const boardCache = new Map()
 const regionCache = new Map()
 const consumerCache = new Map()
+const meterCache = new Map()
 const hourlyCache = new Map()
 let hierarchyCache = null
 let alarmCache = null
@@ -80,7 +82,7 @@ async function loadBoard(from, to, cluster) {
   const key = `${from}|${to}|${cluster}`
   const hit = boardCache.get(key)
   if (hit && hit.until > Date.now()) return hit.rows
-  const url = new URL(boardUrl)
+  const url = duckdbUrl("/api/ufg")
   url.searchParams.set("from", from)
   url.searchParams.set("to", to)
   if (cluster) url.searchParams.set("cluster", cluster)
@@ -121,18 +123,22 @@ function summarize(rows) {
   let purchase = 0
   let weighted = 0
   let loss = 0
+  let sale = 0
   for (const row of rows) {
     const bought = Number(row.Purchase)
     const sold = Number(row.Sale)
     const ufg = Number(row["UFG%"])
     purchase += bought
     weighted += bought * ufg
-    if (Number.isFinite(sold)) loss += bought - sold
+    if (Number.isFinite(sold)) {
+      loss += bought - sold
+      sale += sold
+    }
   }
   const current = purchase > 0 ? (weighted / purchase) * 100 : null
   const target = 5
   const closure = current ? (target / current) * 100 : null
-  return { current, target, loss: purchase > 0 ? loss : null, closure, supply: purchase }
+  return { current, target, loss: purchase > 0 ? loss : null, closure, supply: purchase, sale: purchase > 0 ? sale : null }
 }
 
 function extremes(rows, names) {
@@ -273,18 +279,28 @@ function consumerNumbers(clusters, filter) {
   return numbers
 }
 
-async function loadConsumers(numbers) {
-  const key = numbers == null ? "*" : numbers.slice().sort().join(",")
+function consumerRegion(filter, cluster) {
+  const place = filter.zone || filter.region || cluster?.region_id || ""
+  if (place === "R01" || place === "Z_sumqayit") return "Sumgayit/Sumgayit"
+  if (place === "R10" || place === "Z_sabuncu") return "Baku"
+  if (place === "R24" || place === "Z_agsu" || place === "Z_ismayilli" || place === "Z_kurdemir" || place === "Z_ucar" || place === "Z_goycay") return "Agsu"
+  return ""
+}
+
+async function loadConsumers(numbers, region = "") {
+  const key = region ? `region:${region}` : numbers == null ? "*" : numbers.slice().sort().join(",")
   const hit = consumerCache.get(key)
   if (hit && hit.until > Date.now()) return hit.total
-  const remote = await fetch(deviceUrl, {
+  const remote = await fetch(duckdbUrl("/api/query"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       database: "meters-signal.duckdb",
       table: "devices",
       limit: 1,
-      filters: numbers == null ? [] : [{ column: "Cluster no", op: "in", values: numbers }],
+      filters: region
+        ? [{ column: "Region", op: "eq", value: region }]
+        : numbers == null ? [] : [{ column: "Cluster no", op: "in", values: numbers }],
     }),
   })
   if (!remote.ok) throw new Error(String(remote.status))
@@ -293,6 +309,76 @@ async function loadConsumers(numbers) {
   if (!Number.isFinite(total)) throw new Error("bad total")
   consumerCache.set(key, { until: Date.now() + ttl, total })
   return total
+}
+
+async function loadMeterSplit(numbers) {
+  if (numbers && numbers.length === 0) return { smart: 0, retrofit: 0 }
+  const key = numbers == null ? "*" : numbers.slice().sort().join(",")
+  const hit = meterCache.get(key)
+  if (hit && hit.until > Date.now()) return hit.body
+  const url = duckdbUrl("/api/meters")
+  if (numbers) url.searchParams.set("clusters", numbers.join(","))
+  const remote = await fetch(url)
+  if (!remote.ok) throw new Error(String(remote.status))
+  const data = await remote.json()
+  const smart = Number(data.smart)
+  const retrofit = Number(data.retrofit)
+  if (!Number.isFinite(smart) || !Number.isFinite(retrofit)) throw new Error("bad meters")
+  const body = { smart, retrofit }
+  meterCache.set(key, { until: Date.now() + ttl, body })
+  return body
+}
+
+const bakuCapacitySite = "Hacı Seyfəlli xətti (Nardaran QPS)"
+
+async function loadCapacityMap() {
+  if (capacityCache && capacityCache.until > Date.now()) return capacityCache.sheet
+  const remote = await fetch(duckdbUrl("/api/query"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ database: "evc.duckdb", table: "Master Sheet", limit: 50, filters: [] }),
+  })
+  if (!remote.ok) throw new Error(String(remote.status))
+  const data = await remote.json()
+  const clusters = new Map()
+  let baku = null
+  for (const row of data.rows || []) {
+    const site = String(row["Site Name / QPS ID/ Cluster ID / Customer ID"] || "")
+    const value = Number(row.max_capacity)
+    if (!Number.isFinite(value)) continue
+    const daily = value * 24
+    const match = /^Cluster (\d+)$/.exec(site)
+    if (match) clusters.set(match[1], daily)
+    else if (site === bakuCapacitySite) baku = daily
+  }
+  const sheet = { clusters, baku }
+  capacityCache = { until: Date.now() + ttl, sheet }
+  return sheet
+}
+
+function capacityTotal(map, numbers) {
+  const keys = numbers == null ? [...map.keys()] : numbers
+  let sum = 0
+  let found = false
+  for (const key of keys) {
+    const value = map.get(key)
+    if (value == null) continue
+    sum += value
+    found = true
+  }
+  return found ? sum : null
+}
+
+function capacityFor(sheet, filter, numbers) {
+  const bakuPlace = filter.region === "R10" || filter.zone === "Z_sabuncu"
+  const sumgayitPlace = filter.region === "R01" || filter.zone === "Z_sumqayit"
+  if (filter.cluster || sumgayitPlace) return capacityTotal(sheet.clusters, numbers)
+  if (bakuPlace) return sheet.baku
+  if (!filter.region && !filter.zone) {
+    const clusters = capacityTotal(sheet.clusters, null) ?? 0
+    return sheet.baku == null ? clusters || null : clusters + sheet.baku
+  }
+  return null
 }
 
 function readFilter(url) {
@@ -305,7 +391,7 @@ function readFilter(url) {
 
 export function handleUfg(req, res) {
   const url = new URL(req.url || "/", "http://localhost")
-  if (url.pathname !== "/ufg/hierarchy" && url.pathname !== "/ufg/summary" && url.pathname !== "/ufg/trend" && url.pathname !== "/ufg/readiness" && url.pathname !== "/ufg/alarms") return false
+  if (url.pathname !== "/ufg/hierarchy" && url.pathname !== "/ufg/summary" && url.pathname !== "/ufg/trend" && url.pathname !== "/ufg/readiness" && url.pathname !== "/ufg/alarms" && url.pathname !== "/ufg/meters" && url.pathname !== "/ufg/capacity") return false
   if (req.method !== "GET") {
     res.writeHead(405).end()
     return true
@@ -315,6 +401,37 @@ export function handleUfg(req, res) {
       (body) => send(res, 200, { alarms: body }),
       () => res.writeHead(502).end(),
     )
+    return true
+  }
+  if (url.pathname === "/ufg/capacity") {
+    const filter = readFilter(url)
+    if (!filter) {
+      send(res, 400, { error: "bad filter" })
+      return true
+    }
+    hierarchy()
+      .then(async (body) => {
+        const numbers = filter.region || filter.zone || filter.cluster ? consumerNumbers(body.clusters, filter) : null
+        const sheet = await loadCapacityMap()
+        return { capacity: capacityFor(sheet, filter, numbers) }
+      })
+      .then((body) => send(res, 200, body))
+      .catch(() => res.writeHead(502).end())
+    return true
+  }
+  if (url.pathname === "/ufg/meters") {
+    const filter = readFilter(url)
+    if (!filter) {
+      send(res, 400, { error: "bad filter" })
+      return true
+    }
+    hierarchy()
+      .then((body) => {
+        const numbers = filter.region || filter.zone || filter.cluster ? consumerNumbers(body.clusters, filter) : null
+        return loadMeterSplit(numbers)
+      })
+      .then((body) => send(res, 200, body))
+      .catch(() => res.writeHead(502).end())
     return true
   }
   if (url.pathname === "/ufg/hierarchy") {
@@ -365,9 +482,14 @@ export function handleUfg(req, res) {
         const scope = { region: filter.region, zone: filter.zone, cluster: "" }
         const compared = filter.region ? rows.filter((row) => kept(row, scope, body.index)) : []
         const numbers = filter.region || filter.zone || filter.cluster ? consumerNumbers(body.clusters, filter) : null
+        const selected = filter.cluster ? body.clusters.find((item) => item.cluster_id === filter.cluster) : null
+        const regionName = filter.region || filter.zone || filter.cluster ? consumerRegion(filter, selected) : ""
         let consumers = null
         try {
-          consumers = numbers && numbers.length === 0 ? 0 : await loadConsumers(numbers)
+          if (filter.cluster && numbers && numbers.length) consumers = await loadConsumers(numbers)
+          else if (regionName) consumers = await loadConsumers(null, regionName)
+          else if (numbers && numbers.length === 0) consumers = 0
+          else consumers = await loadConsumers(numbers)
         } catch {
           consumers = null
         }

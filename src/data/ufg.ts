@@ -28,11 +28,12 @@ export type UfgSummary = {
   loss: number | null
   closure: number | null
   supply: number
+  sale: number | null
   consumers: number | null
   extremes: { high: UfgExtreme | null; low: UfgExtreme } | null
 }
 
-const emptySummary: UfgSummary = { current: null, target: 5, loss: null, closure: null, supply: 0, consumers: null, extremes: null }
+const emptySummary: UfgSummary = { current: null, target: 5, loss: null, closure: null, supply: 0, sale: null, consumers: null, extremes: null }
 
 export type UfgTrend = {
   current: (number | null)[]
@@ -69,6 +70,56 @@ export function useUfgHierarchy() {
     }
   }, [])
   return { zones, clusters }
+}
+
+export function useCapacity(state: WallState) {
+  const [capacity, setCapacity] = useState<number | null>(null)
+  useEffect(() => {
+    const query = scopeQuery(state, {})
+    let live = true
+    setCapacity(null)
+    fetch(`/ufg/capacity?${query}`, { cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error(String(res.status))
+        return res.json() as Promise<{ capacity: number | null }>
+      })
+      .then((body) => {
+        if (live) setCapacity(typeof body.capacity === "number" ? body.capacity : null)
+      })
+      .catch(() => {
+        if (live) setCapacity(null)
+      })
+    return () => {
+      live = false
+    }
+  }, [state.regionId, state.cityId, state.clusterId])
+  return capacity
+}
+
+export type MeterSplit = { smart: number; retrofit: number }
+
+export function useMeterSplit(state: WallState) {
+  const [split, setSplit] = useState<MeterSplit | null>(null)
+  useEffect(() => {
+    const query = scopeQuery(state, {})
+    let live = true
+    setSplit(null)
+    fetch(`/ufg/meters?${query}`, { cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error(String(res.status))
+        return res.json() as Promise<MeterSplit>
+      })
+      .then((body) => {
+        if (live) setSplit(body)
+      })
+      .catch(() => {
+        if (live) setSplit(null)
+      })
+    return () => {
+      live = false
+    }
+  }, [state.regionId, state.cityId, state.clusterId])
+  return split
 }
 
 export function useUfgSummary(state: WallState) {

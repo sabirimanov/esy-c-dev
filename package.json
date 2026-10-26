@@ -8,8 +8,10 @@
     "start": "node server.mjs"
   },
   "dependencies": {
+    "@duckdb/node-api": "^2.0.0-r.1",
     "@fontsource/inter": "^5.2.8",
     "@fontsource/roboto": "^5.2.6",
+    "express": "^4.22.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.2",

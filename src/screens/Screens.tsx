@@ -11,8 +11,11 @@ import { useSocPanel } from "../data/socDashboard"
 import { useLeaks } from "../data/leaks"
 import { usePressure } from "../data/pressure"
 import { useDemand } from "../data/demand"
+import { useGis } from "../data/gis"
 import { useQuality } from "../data/quality"
-import { useUfgHierarchy, useUfgSummary, useUfgTrend, type UfgCluster } from "../data/ufg"
+import { useImpact } from "../data/impact"
+import { useTamper } from "../data/tamper"
+import { useCapacity, useMeterSplit, useUfgHierarchy, useUfgSummary, useUfgTrend, type UfgCluster } from "../data/ufg"
 import { addDays, formatRange, iso, monthGrid, monthTitle, parseIso, periodRange, previousSpan, shiftView, todayIso, trendCaption } from "../wall/dates"
 import { apiRegionId, citiesOf, cityById, EXC_REGIONS, regionEnabled, regionLabel, zoneIdForCity } from "../wall/places"
 import { periodLabel, type WallState } from "../wall/state"
@@ -336,14 +339,23 @@ function Screen1({ state }: { state: WallState }) {
   )
 }
 
-function Screen2() {
-  const d = useContent().screen2
+function Screen2({ state }: { state: WallState }) {
+  const impact = useImpact(state)
+  const calibration = impact?.calibration
+  const snapshot = impact?.calibrationAsOf === "2026-08" ? "August 2026 snapshot" : "Snapshot values"
+  const percent = (value: number | null | undefined) => (value == null ? "—" : `${(Math.round(value * 10) / 10).toFixed(1)}%`)
+  const amount = (value: number | null | undefined) => (value == null ? "—" : compactCount(Math.round(value)))
   const rows = [
-    { y: 442, bar: 460 },
-    { y: 519, bar: 537 },
-    { y: 596, bar: 614 },
-    { y: 673, bar: 691 },
-  ].map((spot, index) => ({ ...spot, ...d.rows[index] }))
+    { y: 442, bar: 460, title: "Residential meter compliance", hint: "Residential G4 / G6", value: calibration?.residential },
+    { y: 519, bar: 537, title: "Non-residential meter compliance", hint: "Commercial and industrial meters", value: calibration?.nonResidential },
+    { y: 596, bar: 614, title: "Balance meter compliance", hint: "Balance meters and EVC", value: calibration?.balance },
+    { y: 673, bar: 691, title: "Pressure sensor compliance", hint: "Pressure sensors", value: calibration?.sensors },
+  ]
+  const pending = [
+    { x: 65, label: "0–30 days", hint: "Within the grace period", value: calibration?.p0_30 },
+    { x: 685, label: "31–60 days", hint: "Past the due date", value: calibration?.p31_60 },
+    { x: 1305, label: "61–90 days", hint: "Past the due date", value: calibration?.p61_90 },
+  ]
   return (
     <Frame mirror>
       <Pin x={37} y={28} size={32} weight={900} color="#34efde" lh={40}>CALIBRATION STATUS</Pin>
@@ -352,16 +364,16 @@ function Screen2() {
       <At x={966} y={97} w={427} h={150}><div className="kpi" /></At>
       <At x={1428} y={97} w={426} h={150}><div className="kpi" /></At>
       <Pin x={65} y={108} size={24} weight={500} color="#34efde" lh={40}>Calibration compliance</Pin>
-      <Pin x={65} y={169} size={60} weight={700} color="#ffffff" lh={40}>{d.compliance}</Pin>
+      <Pin x={65} y={169} size={60} weight={700} color="#ffffff" lh={40}>{percent(calibration?.compliance)}</Pin>
       <Pin x={262} y={187} size={16} color="#a0aaa8" lh={19}>Meters, EVC and sensors</Pin>
       <Pin x={530} y={108} size={24} weight={500} color="#34efde" lh={40}>Overdue assets</Pin>
-      <Pin x={530} y={169} size={60} weight={700} color="#ffffff" lh={40}>{d.overdue}</Pin>
-      <Pin x={727} y={187} size={16} color="#a0aaa8" lh={19}>Selected scope · as of date</Pin>
+      <Pin x={530} y={169} size={60} weight={700} color="#ffffff" lh={40}>{amount(calibration?.overdue)}</Pin>
+      <Pin x={727} y={187} size={16} color="#a0aaa8" lh={19}>More than 30 days past due</Pin>
       <Pin x={995} y={108} size={24} weight={500} color="#34efde" lh={40}>Long pending assets</Pin>
-      <Pin x={995} y={169} size={60} weight={700} color="#ffffff" lh={40}>{d.pending}</Pin>
-      <Pin x={1192} y={187} size={16} color="#a0aaa8" lh={19}>Selected scope · as of date</Pin>
+      <Pin x={995} y={169} size={60} weight={700} color="#ffffff" lh={40}>{amount(calibration?.pending)}</Pin>
+      <Pin x={1192} y={187} size={16} color="#a0aaa8" lh={19}>More than 90 days past due</Pin>
       <Pin x={1460} y={108} size={24} weight={500} color="#34efde" lh={40}>Total assets</Pin>
-      <Pin x={1456} y={169} size={60} weight={700} color="#ffffff" lh={40}>{d.total}</Pin>
+      <Pin x={1456} y={169} size={60} weight={700} color="#ffffff" lh={40}>{amount(calibration?.assets)}</Pin>
       <Pin x={1657} y={187} size={16} color="#a0aaa8" lh={19}>Selected asset population</Pin>
 
       <At x={43} y={324} w={1840} h={467}><div className="panel shell dim" /></At>
@@ -375,8 +387,8 @@ function Screen2() {
           <Pin x={67} y={row.y} size={18} weight={500} color="#f3f5f4" lh={21}>{row.title}</Pin>
           <Pin x={67} y={row.bar + 17} size={14} color="#757171" lh={16}>{row.hint}</Pin>
           <At x={789} y={row.bar} w={922} h={22}><div style={{ height: "100%", borderRadius: 27, background: "#33413f" }} /></At>
-          <At x={789} y={row.bar} w={row.fill} h={22}><div style={{ height: "100%", borderRadius: 27, background: "linear-gradient(to right, #1e897f, #34efde)" }} /></At>
-          <Pin x={1753} y={row.bar - 4} size={25} color="#f3f5f4" lh={29}>{row.value}</Pin>
+          <At x={789} y={row.bar} w={row.value == null ? 0 : Math.max(0, Math.min(922, Math.round((row.value / 100) * 922)))} h={22}><div style={{ height: "100%", borderRadius: 27, background: "linear-gradient(to right, #1e897f, #34efde)" }} /></At>
+          <Pin x={1753} y={row.bar - 4} size={25} color="#f3f5f4" lh={29}>{percent(row.value)}</Pin>
           <At x={65} y={row.bar + 44} w={1756} h={1}><div style={{ height: 1, background: "#343838" }} /></At>
         </span>
       ))}
@@ -386,25 +398,34 @@ function Screen2() {
       {[43, 663, 1283].map((x, index) => (
         <At key={x} x={x} y={857} w={index === 2 ? 599 : 600} h={151}><div className="panel shell dim" /></At>
       ))}
-      {[65, 685, 1305].map((x) => (
-        <span key={x}>
-          <Pin x={x} y={870} size={18} color="#a0aaa8" lh={21}>0–30 days</Pin>
-          <Pin x={x} y={906} size={39} color="#f3f5f4" lh={46}>—</Pin>
-          <Pin x={x} y={965} size={16} color="#f2a65a" lh={19}>Definition awaiting confirmation</Pin>
+      {pending.map((bucket) => (
+        <span key={bucket.label}>
+          <Pin x={bucket.x} y={870} size={18} color="#a0aaa8" lh={21}>{bucket.label}</Pin>
+          <Pin x={bucket.x} y={906} size={39} color="#f3f5f4" lh={46}>{amount(bucket.value)}</Pin>
+          <Pin x={bucket.x} y={965} size={16} color="#a0aaa8" lh={19}>{bucket.hint}</Pin>
         </span>
       ))}
       <Pin x={65} y={1026} size={16} color="#76817f" lh={19}>Sources: MFS / AGIS Meter · AGIS Meter → GIS</Pin>
-      <Pin x={1422} y={1026} size={16} color="#76817f" lh={19}>Snapshot values · no summation across days or months</Pin>
+      <Pin x={1422} y={1026} size={16} color="#76817f" lh={19}>{snapshot} · no summation across days or months</Pin>
     </Frame>
   )
+}
+
+function showsCompare(value: string) {
+  const match = value.match(/-?\d[\d,]*(?:\.\d+)?/)
+  if (!match) return false
+  const n = Number(match[0].replace(/,/g, ""))
+  return Number.isFinite(n) && n !== 0
 }
 
 function StripCards({
   cards,
   children,
+  compare = true,
 }: {
   cards: { label: string; value: string; down: boolean; amount: string }[]
   children?: ReactNode
+  compare?: boolean
 }) {
   return (
     <Frame border={false}>
@@ -415,9 +436,11 @@ function StripCards({
             <At x={x} y={20} w={461} h={282}><div className="kpi" /></At>
             <Pin x={x} y={54} w={461} size={24} weight={500} color="#34efde" lh={40} align="center">{card.label}</Pin>
             <Pin x={x} y={131} w={461} size={90} weight={400} color="#ffffff" lh={41} align="center">{card.value}</Pin>
-            <Pin x={x} y={218} w={461} size={20} color="#a4a7ae" lh={24} align="center">
-              <span style={{ color: "#13f88b" }}>{card.down ? "▼" : "▲"} {card.amount} </span>vs yesterday
-            </Pin>
+            {compare && showsCompare(card.value) && (
+              <Pin x={x} y={218} w={461} size={20} color="#a4a7ae" lh={24} align="center">
+                {card.amount === "—" ? "— " : <span style={{ color: "#13f88b" }}>{card.down ? "▼" : "▲"} {card.amount} </span>}vs yesterday
+              </Pin>
+            )}
           </span>
         )
       })}
@@ -426,8 +449,32 @@ function StripCards({
   )
 }
 
+function dayShift(current: number | null, previous: number | null) {
+  if (current == null || previous == null || previous === 0) return { down: false, amount: "—" }
+  const pct = ((current - previous) / Math.abs(previous)) * 100
+  const rounded = Math.round(Math.abs(pct) * 10) / 10
+  return { down: pct < 0, amount: `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}%` }
+}
+
 function Screen3() {
-  return <StripCards cards={useContent().screen3.cards} />
+  const { state } = useWall()
+  const earlier = previousSpan(state.date, state.dateTo, state.period)
+  const now = useUfgSummary(state)
+  const then = useUfgSummary({ ...state, date: earlier.date, dateTo: earlier.dateTo })
+  const revenue = useContent().screen3.cards[3]
+  const demand = now.sale == null ? "—" : `${compactCount(Math.round(now.sale))} m³`
+  const ufg = now.current == null ? "—" : `${now.current.toFixed(1)}%`
+  const customers = now.consumers == null ? "—" : Math.round(now.consumers).toLocaleString("en-US")
+  return (
+    <StripCards
+      cards={[
+        { label: "CURRENT DEMAND", value: demand, ...dayShift(now.sale, then.sale) },
+        { label: "UFG", value: ufg, ...dayShift(now.current, then.current) },
+        { label: "CUSTOMERS AVAILABLE", value: customers, ...dayShift(now.consumers, then.consumers) },
+        revenue,
+      ]}
+    />
+  )
 }
 
 function Screen4() {
@@ -439,13 +486,13 @@ function Screen4() {
   ]
   return (
     <div className="screen-body canvas">
-      {cards.map((card) => (
+      {/*cards.map((card) => (
         <span key={card.title}>
           <img className="at" src={card.icon} alt="" style={{ left: card.x, top: 69, width: card.w, height: 210 }} />
           <Pin x={card.x} y={card.titleY} w={card.w} size={16} weight={700} color="#e8f4f2" lh={18} align="center">{card.title}</Pin>
           <Pin x={card.x} y={card.linkY} w={card.w} size={16} weight={700} color={card.color} lh={18} align="center">{card.link}</Pin>
         </span>
-      ))}
+      ))*/}
     </div>
   )
 }
@@ -453,7 +500,14 @@ function Screen4() {
 function Screen5() {
   const { state, patch } = useWall()
   const content = useContent()
-  const d = content.screen5
+  const read = useSocPanel()
+  const leaks = useLeaks(state)
+  const cards = [
+    { label: "NETWORK HEALTH", value: read("comm.gateway_availability"), down: false, amount: "" },
+    { label: "ACTIVE INCIDENTS", value: "0", down: false, amount: "" },
+    { label: "SUSPECTED LEAKS", value: leaks ? leaks.suspected.toLocaleString("en-US") : "—", down: false, amount: "" },
+    { label: "ACTIVE CREWS", value: "N/A", down: false, amount: "" },
+  ]
   const opened = parseIso(state.date)
   const [view, setView] = useState({ y: opened.y, m: opened.m })
   const [anchor, setAnchor] = useState<string | null>(null)
@@ -506,17 +560,15 @@ function Screen5() {
       setAnchor(day)
       return
     }
-    const seed = Math.floor(Math.random() * 1e9) + 1
     setAnchor(null)
     if (anchor === day) {
-      patch({ date: day, dateTo: day, period: "", seed })
+      patch({ date: day, dateTo: day, period: "" })
       return
     }
     patch({
       date: anchor < day ? anchor : day,
       dateTo: anchor < day ? day : anchor,
       period: "",
-      seed,
     })
   }
   weeks.forEach((week, row) => {
@@ -555,7 +607,7 @@ function Screen5() {
     })
   })
   return (
-    <StripCards cards={d.cards}>
+    <StripCards cards={cards} compare={false}>
       <At x={ox} y={oy} w={1880} h={685}>
         <div style={{ width: "100%", height: "100%", borderRadius: 42, background: "linear-gradient(115deg, #12383a 0%, #0d2426 48%, #0a1819 100%)" }} />
       </At>
@@ -653,7 +705,7 @@ function Screen5() {
               const range = periodRange(label)
               if (!range) return
               setAnchor(null)
-              patch({ ...range, period: label, seed: Math.floor(Math.random() * 1e9) + 1 })
+              patch({ ...range, period: label })
             }}
             style={{
               height: "100%",
@@ -946,7 +998,12 @@ function Screen8({ state }: { state: WallState }) {
   const simulated = new Map(demand?.forecast?.simulated.map((point) => [point.date, point.value]) ?? [])
   const predicted = new Map(demand?.forecast?.predicted.map((point) => [point.date, point.value]) ?? [])
   const forecastSeries = demand?.forecast
-    ? days.map((date) => (date < today ? simulated.get(date) : predicted.get(date)) ?? null)
+    ? days.map((date) => {
+        const simulatedValue = simulated.get(date)
+        const predictedValue = predicted.get(date)
+        if (date < today && simulatedValue != null) return simulatedValue
+        return predictedValue ?? null
+      })
     : null
   const actualNumbers = series.filter((value): value is number => value != null)
   const forecastNumbers = (forecastSeries ?? []).filter((value): value is number => value != null)
@@ -993,7 +1050,7 @@ function Screen8({ state }: { state: WallState }) {
       <Pin x={74} y={339} size={32} weight={700} color="#ffffff" lh={40}>Actual vs forecast</Pin>
       
       <Pin x={74} y={406} size={18} color="#a0aaa8" lh={21}>Daily volume · selected period</Pin>
-      <Pin x={74} y={450} size={19} color="#f3f5f4" lh={22}>Daily volume (kWh)</Pin>
+      <Pin x={74} y={450} size={19} color="#f3f5f4" lh={22}>Daily volume (m³)</Pin>
       {ticks.map((tick, index) => (
         <Pin key={index} x={40} y={[491, 613, 735, 858][index]} w={92} size={16} color="#7d8885" lh={18} align="right">{compactCount(tick)}</Pin>
       ))}
@@ -1061,7 +1118,7 @@ function RailDonut({ ratio }: { ratio: number }) {
   const turn = 2 * Math.PI * radius
   const dash = turn * ratio
   return (
-    <svg className="at" viewBox="0 0 202 202" style={{ left: 990, top: 219, width: 202, height: 202 }}>
+    <svg className="at" viewBox="0 0 202 202" style={{ left: 990, top: 311, width: 202, height: 202 }}>
       <defs>
         <linearGradient id="rail-ring" x1="0.94" y1="0.67" x2="0.88" y2="0.27">
           <stop offset="0%" stopColor="#34efde" />
@@ -1086,47 +1143,48 @@ function Track({ x, y, track, fill, heat = false }: { x: number; y: number; trac
   )
 }
 
-function Screen9() {
+function Screen9({ state }: { state: WallState }) {
   const d = useContent().screen9
-  const steps = [
-    { x: 120, lx: 87, lw: 96, tx: 95, color: "#f2765b", to: "#8c4435" },
-    { x: 660, lx: 614.5, lw: 121, tx: 635, color: "#ffb32c", to: "#996b1a" },
-    { x: 1200, lx: 1146.5, lw: 137, tx: 1175, color: "#35e5d7", to: "#1d7f77" },
-    { x: 1740, lx: 1706, lw: 98, tx: 1715, color: "#a9f45b", to: "#628e35" },
-  ].map((item, index) => ({ ...item, ...d.steps[index] }))
+  const impact = useImpact(state)
+  const crmCount = (value: number | null | undefined) => (impact && value != null ? Math.round(value).toLocaleString("en-US") : "—")
+  const billing = [
+    d.billing[0].value,
+    crmCount(impact?.open),
+    crmCount(impact?.calls),
+    crmCount(impact?.serious),
+  ]
   return (
     <Frame mirror>
-      <At x={43} y={52} w={1814} h={407}><div className="panel shell dim" /></At>
-      <At x={43} y={475} w={1814} h={290}><div className="panel shell dim" /></At>
-      <At x={43} y={781} w={1814} h={252}><div className="panel shell dim" /></At>
-      <Pin x={87} y={80} size={32} weight={900} color="#34efde" lh={40}>INFRASTRUCTURE FIELD RAIL</Pin>
-      <Pin x={110} y={154} size={24} color="#ffffff" lh={28}>QPS / REGULATORS</Pin>
-      <Pin x={962} y={154} size={24} color="#ffffff" lh={28}>DIGITAL / CALIBRATION</Pin>
+      <At x={43} y={52} w={1814} h={548}><div className="panel shell dim" /></At>
+      <At x={43} y={616} w={1814} h={417}><div className="panel shell dim" /></At>
+      <Pin x={87} y={88} size={32} weight={900} color="#34efde" lh={40}>INFRASTRUCTURE FIELD RAIL</Pin>
+      <Pin x={110} y={178} size={24} color="#ffffff" lh={28}>QPS / REGULATORS</Pin>
+      <Pin x={962} y={178} size={24} color="#ffffff" lh={28}>DIGITAL / CALIBRATION</Pin>
       {[
-        [110, 219, "Active Stations"],
-        [110, 264, "Station Availability"],
-        [110, 309, "Pressure Stability"],
-        [110, 354, "Regulator Faults"],
-        [110, 399, "Critical Alerts"],
+        [110, 256, "Active Stations"],
+        [110, 327, "Station Availability"],
+        [110, 398, "Pressure Stability"],
+        [110, 469, "Regulator Faults"],
+        [110, 540, "Critical Alerts"],
       ].map(([x, y, label]) => (
         <Pin key={label as string} x={x as number} y={y as number} size={24} color="#8fa7a4" lh={28}>{label}</Pin>
       ))}
-      <Pin x={690} y={219} size={24} color="#34eddc" lh={28}>{d.stations[0].value}</Pin>
-      <Pin x={716} y={264} size={24} color="#34eddc" lh={28}>{d.stations[1].value}</Pin>
-      <Pin x={716} y={309} size={24} color="#34eddc" lh={28}>{d.stations[2].value}</Pin>
-      <Pin x={767} y={354} size={24} color="#eb7d5c" lh={28}>{d.stations[3].value}</Pin>
-      <Pin x={767} y={399} size={24} color="#eb7d5c" lh={28}>{d.stations[4].value}</Pin>
-      <Track x={338} y={222} track={322} fill={d.stations[0].fill} />
-      <Track x={338} y={267} track={322} fill={d.stations[1].fill} />
-      <Track x={338} y={312} track={322} fill={d.stations[2].fill} />
-      <Track x={338} y={357} track={322} fill={d.stations[3].fill} heat />
-      <Track x={338} y={402} track={322} fill={d.stations[4].fill} heat />
+      <Pin x={690} y={256} size={24} color="#34eddc" lh={28}>{d.stations[0].value}</Pin>
+      <Pin x={716} y={327} size={24} color="#34eddc" lh={28}>{d.stations[1].value}</Pin>
+      <Pin x={716} y={398} size={24} color="#34eddc" lh={28}>{d.stations[2].value}</Pin>
+      <Pin x={767} y={469} size={24} color="#eb7d5c" lh={28}>{d.stations[3].value}</Pin>
+      <Pin x={767} y={540} size={24} color="#eb7d5c" lh={28}>{d.stations[4].value}</Pin>
+      <Track x={338} y={259} track={322} fill={d.stations[0].fill} />
+      <Track x={338} y={330} track={322} fill={d.stations[1].fill} />
+      <Track x={338} y={401} track={322} fill={d.stations[2].fill} />
+      <Track x={338} y={472} track={322} fill={d.stations[3].fill} heat />
+      <Track x={338} y={543} track={322} fill={d.stations[4].fill} heat />
       <RailDonut ratio={d.ring} />
-      <Pin x={1021} y={300} w={140} size={50} color="#dff9f7" lh={40} align="center">{`${(d.ring * 100).toFixed(1)}%`}</Pin>
+      <Pin x={1021} y={392} w={140} size={50} color="#dff9f7" lh={40} align="center">{`${(d.ring * 100).toFixed(1)}%`}</Pin>
       {[
-        [1294, 219, 0, 1685, 222],
-        [1294, 306, 1, 1685, 309],
-        [1294, 393, 2, 1685, 396],
+        [1294, 256, 0, 1685, 259],
+        [1294, 398, 1, 1685, 401],
+        [1294, 540, 2, 1685, 543],
       ].map(([lx, ly, index, vx, bar]) => (
         <span key={d.digital[index as number].label}>
           <Pin x={lx as number} y={ly as number} size={24} color="#8fa7a4" lh={28}>{d.digital[index as number].label}</Pin>
@@ -1134,9 +1192,9 @@ function Screen9() {
           <Track x={1419} y={bar as number} track={247} fill={d.digital[index as number].fill} />
         </span>
       ))}
-      <At x={922} y={119} w={2} h={318}><div style={{ height: "100%", background: "#293333" }} /></At>
+      <At x={922} y={128} w={2} h={450}><div style={{ height: "100%", background: "#293333" }} /></At>
 
-      <Pin x={87} y={510} size={32} weight={900} color="#34efde" lh={40}>BILLING & EMERGENCY</Pin>
+      <Pin x={87} y={656} size={32} weight={900} color="#34efde" lh={40}>BILLING & EMERGENCY</Pin>
       {[
         [87, 0, "#34eddc"],
         [552, 1, "#e8f4f2"],
@@ -1144,15 +1202,15 @@ function Screen9() {
         [1482, 3, "#eb7d5c"],
       ].map(([x, index, color]) => (
         <span key={d.billing[index as number].label}>
-          <Pin x={x as number} y={584} size={32} color="#8fa7a4" lh={38}>{d.billing[index as number].label}</Pin>
-          <Pin x={x as number} y={637} size={60} color={color as string} lh={70}>{d.billing[index as number].value}</Pin>
+          <Pin x={x as number} y={802} size={32} color="#8fa7a4" lh={38}>{d.billing[index as number].label}</Pin>
+          <Pin x={x as number} y={872} size={60} color={color as string} lh={70}>{billing[index as number]}</Pin>
         </span>
       ))}
       {[526, 991, 1456].map((x) => (
-        <At key={x} x={x - 1} y={591} w={2} h={102}><div style={{ height: "100%", background: "#293333" }} /></At>
+        <At key={x} x={x - 1} y={809} w={2} h={124}><div style={{ height: "100%", background: "#293333" }} /></At>
       ))}
 
-      <Pin x={87} y={807} size={32} weight={900} color="#34efde" lh={40}>EMERGENCY RESPONSE TIMELINE</Pin>
+      {/*<Pin x={87} y={807} size={32} weight={900} color="#34efde" lh={40}>EMERGENCY RESPONSE TIMELINE</Pin>
       <svg className="at" viewBox="0 0 1615 6" style={{ left: 126, top: 881, width: 1615, height: 6 }}>
         <defs>
           <linearGradient id="rail-dash" x1="0" y1="0" x2="1615" y2="0" gradientUnits="userSpaceOnUse">
@@ -1170,44 +1228,80 @@ function Screen9() {
           <Pin x={step.lx} y={925} w={step.lw} size={24} color="#91a4a4" lh={28} align="center">{step.label}</Pin>
           <Pin x={step.tx} y={969} w={80} size={32} color={step.color} lh={38} align="center">{step.time}</Pin>
         </span>
-      ))}
+      ))}*/}
     </Frame>
   )
 }
 
-function Screen13() {
-  const d = useContent().screen13
+const impactRegions = [
+  ["Ağsu", "Ağsu RQİİ"],
+  ["BRQİİ / BRQSD", "BRQİİ / BRQSD"],
+  ["Gəncə", "Gəncə RQİİ"],
+  ["Lənkəran", "Lənkəran RQİİ"],
+  ["Qarabağ", "Qarabağ RQİİ"],
+  ["Salyan", "Salyan RQİİ"],
+  ["Şəmkir", "Şəmkir RQİİ"],
+  ["Sumqayıt", "Sumqayıt RQİİ"],
+  ["Tərtər", "Tərtər RQİİ"],
+  ["Xaçmaz", "Xaçmaz RQİİ"],
+  ["Zaqatala", "Zaqatala RQİİ"],
+] as const
+
+const impactMonths = ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
+
+function impactTone(value: number | null | undefined) {
+  if (value == null) return "#24302e"
+  if (value >= 90) return "#b4fa63"
+  if (value >= 80) return "#2ce0d2"
+  if (value >= 70) return "#f8bd58"
+  if (value >= 60) return "#f07d62"
+  return "#f34a18"
+}
+
+function Screen13({ state }: { state: WallState }) {
+  const impact = useImpact(state)
+  const countText = (value: number | null | undefined) => (value == null ? "—" : value.toLocaleString("en-US"))
+  const percentText = (value: number | null | undefined) => (value == null ? "—" : `${value.toFixed(1)}%`)
   const cards = [
-    { x: 29, w: 295, lx: 54, vx: 54 },
-    { x: 339, w: 295, lx: 363, vx: 361 },
-    { x: 649, w: 290, lx: 669, vx: 674 },
-    { x: 954, w: 294, lx: 977, vx: 977 },
-    { x: 1263, w: 296, lx: 1303, vx: 1299 },
-    { x: 1574, w: 295, lx: 1602, vx: 1602 },
-  ].map((item, index) => ({ ...item, ...d.cards[index] }))
+    { x: 29, w: 295, lx: 54, vx: 54, label: "Service Level", value: percentText(impact?.serviceLevel) },
+    { x: 339, w: 295, lx: 363, vx: 361, label: "Affected Customers", value: countText(impact?.affected) },
+    { x: 649, w: 290, lx: 669, vx: 674, label: "Emergency Complaints", value: countText(impact?.serious) },
+    { x: 954, w: 294, lx: 977, vx: 977, label: "FCR", value: percentText(impact?.fcr) },
+    { x: 1263, w: 296, lx: 1303, vx: 1299, label: "Calls Answered", value: impact?.answered == null ? "—" : compactCount(Math.round(impact.answered)) },
+    { x: 1574, w: 295, lx: 1602, vx: 1602, label: "Queue Length", value: impact?.queue == null ? "—" : impact.queue.toFixed(2) },
+  ]
+  const barNumbers = impact
+    ? [
+        impact.anomalies ? impact.anomalies.spike : null,
+        impact.anomalies ? impact.anomalies.low : null,
+        impact.anomalies ? impact.anomalies.none : null,
+        impact.repeatCalls,
+        impact.reopened,
+      ]
+    : [null, null, null, null, null]
+  const barMax = Math.max(0, ...barNumbers.filter((value): value is number => value != null))
   const bars = [
-    { y: 298, vx: 1737, paint: "linear-gradient(to right, #80493c, #e6846b)" },
-    { y: 331, vx: 1737, paint: "linear-gradient(to right, #1e897f, #34efde)" },
-    { y: 364, vx: 1737, paint: "linear-gradient(to right, #1e897f, #34efde)" },
-    { y: 397, vx: 1737, paint: "linear-gradient(to right, #926f34, #f8bd58)" },
-    { y: 430, vx: 1751, paint: "linear-gradient(to right, #80493c, #e6846b)" },
-  ].map((item, index) => ({ ...item, label: d.bars[index].label, value: d.bars[index].value, fillW: d.bars[index].fill }))
+    { y: 298, vx: 1737, paint: "linear-gradient(to right, #80493c, #e6846b)", label: "High consumption (spike)" },
+    { y: 331, vx: 1737, paint: "linear-gradient(to right, #1e897f, #34efde)", label: "Low consumption" },
+    { y: 364, vx: 1737, paint: "linear-gradient(to right, #1e897f, #34efde)", label: "Zero consumption" },
+    { y: 397, vx: 1737, paint: "linear-gradient(to right, #926f34, #f8bd58)", label: "Repeat calls" },
+    { y: 430, vx: 1751, paint: "linear-gradient(to right, #80493c, #e6846b)", label: "Reopened issues" },
+  ].map((item, index) => {
+    const value = barNumbers[index]
+    const fillW = value == null || barMax <= 0
+    ? 0
+    : Math.round((value / barMax) * 800);
+    
+    return {
+      ...item,
+      value: countText(value),
+      fillW: Number.isFinite(fillW) && fillW < 100 ? 25 + fillW : fillW,
+    };
+  })
+  const anomalyTotal = impact?.anomalies == null ? null : impact.anomalies.none + impact.anomalies.low + impact.anomalies.spike
   const heatX = Array.from({ length: 12 }, (_, index) => 884 + index * 69)
   const heatY = Array.from({ length: 11 }, (_, index) => 612 + index * 24)
-  const heat = [
-    "occccccccccc",
-    "cccccccccggg",
-    "cccocccccggg",
-    "occccccccccc",
-    "occccccccccc",
-    "occccccccggg",
-    "cccccccccggg",
-    "cccccccccggg",
-    "occccccccggg",
-    "cccccccccggg",
-    "occccccccggg",
-  ]
-  const heatColor: Record<string, string> = { c: "#34efde", g: "#b7fe5d", o: "#f2a65a" }
+  const heat = new Map((impact?.heat ?? []).map((cell) => [`${cell.rqii}|${cell.month}`, cell.serviceLevel]))
   const regions: [number, number][] = [
     [815, 615], [738, 639], [806, 663], [783, 687], [789, 712], [804, 735],
     [801, 760], [781, 784], [808, 809], [791, 833], [786, 857],
@@ -1237,19 +1331,38 @@ function Screen13() {
     [796, "#b4fa63"],
     [834, "#f8bd58"],
   ] as const
+  const shareLabels = ["No supply", "Gas leak", "Pressure", "Meter", "Other"]
+  const shareCounts = impact?.share
+    ? [impact.share.noSupply, impact.share.leak, impact.share.pressure, impact.share.meter, impact.share.other]
+    : null
+  const shareTotal = shareCounts ? shareCounts.reduce((sum, count) => sum + count, 0) : 0
+  const shareWidths = shareCounts
+    ? shareCounts.map((count) => (shareTotal ? Math.round((count / shareTotal) * 545) : 0))
+    : shareLabels.map(() => 0)
+  if (shareTotal) {
+    const drift = 545 - shareWidths.reduce((sum, width) => sum + width, 0)
+    const widest = shareWidths.indexOf(Math.max(...shareWidths))
+    shareWidths[widest] += drift
+  }
   let shareCursor = 65
-  const share = d.share.map((part, index) => {
-    const box = { x: shareCursor, width: part.width, paint: sharePaint[index], label: part.label, value: part.value }
-    shareCursor += part.width + 3
+  const share = shareLabels.map((label, index) => {
+    const box = {
+      x: shareCursor,
+      width: Math.max(0, shareWidths[index]),
+      paint: sharePaint[index],
+      label,
+      value: shareCounts && shareTotal ? `${((shareCounts[index] / shareTotal) * 100).toFixed(1)}%` : "—",
+    }
+    shareCursor += box.width + 3
     return box
   })
   const sla = [
-    { x: 335, paint: "linear-gradient(to right, #854735, #eb7e5d)" },
-    { x: 641, paint: "linear-gradient(to right, #187a72, #2ce0d2)" },
-    { x: 947, paint: "linear-gradient(to right, #187a72, #2ce0d2)" },
-    { x: 1253, paint: "linear-gradient(to right, #6b943b, #b4fa63)" },
-    { x: 1559, paint: "linear-gradient(to right, #6b943b, #b4fa63)" },
-  ].map((item, index) => ({ ...item, ...d.slaRows[index] }))
+    { x: 335, paint: "linear-gradient(to right, #854735, #eb7e5d)", label: "Open CRM cases", value: countText(impact?.open) },
+    { x: 641, paint: "linear-gradient(to right, #187a72, #2ce0d2)", label: "New cases", value: countText(impact?.calls) },
+    { x: 947, paint: "linear-gradient(to right, #187a72, #2ce0d2)", label: "Resolved cases", value: countText(impact?.closed) },
+    { x: 1253, paint: "linear-gradient(to right, #6b943b, #b4fa63)", label: "Escalated (serious)", value: countText(impact?.serious) },
+    { x: 1559, paint: "linear-gradient(to right, #6b943b, #b4fa63)", label: "Repeat complaints", value: countText(impact?.reopened) },
+  ]
   return (
     <Frame>
       <Pin x={37} y={28} size={30} weight={700} color="#2de1d0" lh={35}>CUSTOMER IMPACT & CALL CENTER</Pin>
@@ -1266,12 +1379,12 @@ function Screen13() {
       ))}
       <At x={29} y={287} w={1840} h={184}><div className="panel shell dim" /></At>
       <Pin x={54} y={297} size={26} weight={700} color="#f2f4f4" lh={30}>CUSTOMER IMPACT & ANOMALIES</Pin>
-      <Pin x={54} y={335} size={20} weight={400} color="#a4adad" lh={23}>Consumption anomalies</Pin>
-      <Pin x={54} y={364} size={70} weight={400} color="#ffffff" lh={85}>{d.anomalies}</Pin>
+      <Pin x={54} y={335} size={20} weight={400} color="#a4adad" lh={23}>{impact?.anomaliesAsOf ? "Consumption anomalies · Aug 2026" : "Consumption anomalies"}</Pin>
+      <Pin x={54} y={364} size={70} weight={400} color="#ffffff" lh={85}>{anomalyTotal == null ? "—" : compactCount(anomalyTotal)}</Pin>
       {bars.map((bar) => (
         <span key={bar.label}>
           <Pin x={565} y={bar.y} size={24} weight={400} color="#dce3e3" lh={28}>{bar.label}</Pin>
-          <Pin x={bar.vx} y={bar.y} size={24} weight={400} color="#e8ecec" lh={28}>{bar.value}</Pin>
+          <Pin x={1740} y={bar.y} size={24} weight={400} color="#e8ecec" lh={28}>{bar.value}</Pin>
           <At x={900} y={bar.y + 6} w={800} h={16}><div style={{ height: "100%", borderRadius: 33, background: "#303c3a" }} /></At>
           <At x={884} y={bar.y + 6} w={bar.fillW} h={16}><div style={{ height: "100%", borderRadius: 38, background: bar.paint }} /></At>
         </span>
@@ -1292,17 +1405,17 @@ function Screen13() {
           <Pin x={520} y={row[0]} w={99} size={20} weight={400} color="#f0f4f4" lh={23} align="right">{share[index].value}</Pin>
         </span>
       ))}
-      <Pin x={740} y={502} size={26} weight={700} color="#f1f4f4" lh={30}>SERVICE LEVEL BY REGION & MONTH</Pin>
-      <Pin x={740} y={540} size={18} weight={400} color="#a4adad" lh={21}>Calls answered within 20 seconds · synthetic</Pin>
+      <Pin x={740} y={502} size={26} weight={700} color="#f1f4f4" lh={30}>SERVICE LEVEL BY REGION & MONTH (2026)</Pin>
+      <Pin x={740} y={540} size={18} weight={400} color="#a4adad" lh={21}>Calls answered within 20 seconds</Pin>
       {monthLabels.map(([x, label]) => (
         <Pin key={label} x={x} y={581} size={18} weight={400} color="#a4adad" lh={21}>{label}</Pin>
       ))}
       {regions.map(([x, y], index) => (
-        <Pin key={d.regionNames[index]} x={x} y={y} size={18} weight={400} color="#c8d0d0" lh={21}>{d.regionNames[index]}</Pin>
+        <Pin key={impactRegions[index][0]} x={x} y={y} size={18} weight={400} color="#c8d0d0" lh={21}>{impactRegions[index][0]}</Pin>
       ))}
       {heatY.map((y, row) => heatX.map((x, column) => (
         <At key={`${row}-${column}`} x={x} y={y} w={67} h={23}>
-          <div style={{ height: "100%", background: heatColor[heat[row][column]] }} />
+          <div style={{ height: "100%", background: impactTone(heat.get(`${impactRegions[row][1]}|${impactMonths[column]}`)) }} />
         </At>
       )))}
       {legend.map(([y, color, label]) => (
@@ -1313,7 +1426,7 @@ function Screen13() {
       ))}
       <At x={29} y={913} w={1840} h={145}><div className="panel shell dim" /></At>
       <Pin x={60} y={927} size={32} weight={400} color="#ffffff" lh={39}>CRM SLA</Pin>
-      <Pin x={60} y={958} size={60} weight={400} color="#ffffff" lh={73}>{d.sla}</Pin>
+      <Pin x={60} y={958} size={60} weight={400} color="#ffffff" lh={73}>{percentText(impact?.crmSla)}</Pin>
       <Pin x={60} y={1030} size={15} weight={400} color="#a0aaa8" lh={18}>Closed within 1 hour</Pin>
       {sla.map((item) => (
         <span key={item.label}>
@@ -1326,15 +1439,28 @@ function Screen13() {
   )
 }
 
-function Screen14() {
+function Screen14({ state }: { state: WallState }) {
   const d = useContent().screen14
+  const ufg = useUfgSummary(state)
+  const quality = useQuality(state)
+  const ufgText = ufg.current == null ? "—" : `${ufg.current.toFixed(1)}%`
+  const coverageShare = quality && quality.total > 0 && quality.days > 0 ? quality.received.overall / (quality.total * quality.days) : null
+  const metersText = coverageShare == null ? "—" : `${(coverageShare * 100).toFixed(1)}%`
+  const events = useTamper(state)
+  const eventCounts = events ? [events.tampering, events.disassembly, events.interference, events.magnetic, events.battery] : null
+  const eventMax = eventCounts ? Math.max(...eventCounts) : 0
   const tamper = [
     { y: 442, bar: 443, vx: 658 },
     { y: 499, bar: 500, vx: 656 },
     { y: 556, bar: 557, vx: 660 },
     { y: 613, bar: 614, vx: 677 },
     { y: 670, bar: 671, vx: 692 },
-  ].map((item, index) => ({ ...item, ...d.tamper[index] }))
+  ].map((item, index) => {
+    const count = eventCounts ? eventCounts[index] : null
+    const scaled = count == null || eventMax <= 0 ? 0 : Math.round((count / eventMax) * 255)
+    const fill = scaled > 0 && scaled < 30 ? scaled + 30 : scaled
+    return { ...item, ...d.tamper[index], value: count == null ? "—" : count.toLocaleString("en-US"), fill }
+  })
   const alerts = [
     { y: 430.4, ry: 439.4, ty: 445.4, color: "#ff3c49", ay: 430.4, aw: 302 },
     { y: 501.4, ry: 510.4, ty: 516.4, color: "#ff3c49", ay: 510.4, aw: 323 },
@@ -1347,40 +1473,40 @@ function Screen14() {
     <Frame>
       <Pin x={37} y={28} size={32} weight={900} color="#34efde" lh={40}>EXECUTIVE  BOARD</Pin>
       {[
-        [31, 298.1, false],
+        [31, 298.1, true],
         [341, 299.3, false],
-        [653, 299.3, true],
+        [653, 299.3, false],
         [965, 299.3, false],
-        [1278, 298.1, true],
-        [1588, 299.3, true],
+        [1278, 298.1, false],
+        [1588, 299.3, false],
       ].map(([x, w, heat]) => (
         <At key={x as number} x={x as number} y={113} w={w as number} h={150}>
           <div className={heat ? "kpi surface-heat" : "kpi"} />
         </At>
       ))}
-      <Pin x={58} y={113} size={24} weight={500} color="#34efde" lh={40}>UFG</Pin>
-      <Pin x={57} y={180} size={60} weight={700} color="#ffffff" lh={40}>{d.ufg}</Pin>
+      <Pin x={58} y={113} size={24} weight={500} color="#eb7d5c" lh={40}>UFG</Pin>
+      <Pin x={57} y={180} size={60} weight={700} color="#ffffff" lh={40}>{ufgText}</Pin>
       <Pin x={385} y={116} size={24} weight={500} color="#34efde" lh={40}>Collection Efficiency</Pin>
       <Pin x={382} y={180} size={60} weight={700} color="#ffffff" lh={40}>{d.collection}</Pin>
-      <Pin x={669} y={113} size={24} color="#eb7d5c" lh={40}>Outstanding Balance</Pin>
-      <Pin x={669} y={180} size={60} weight={700} color="#ffffff" lh={40}>{d.balance} <span style={{ fontSize: 33 }}>AZN</span></Pin>
+      <Pin x={669} y={113} size={24} color="#34efde" lh={40}>Outstanding Balance</Pin>
+      <Pin x={669} y={180} size={60} weight={700} color="#ffffff" lh={40}>{d.balance} <span style={{ fontSize: 33 }}></span></Pin>
       <Pin x={982} y={116} size={24} weight={500} color="#34efde" lh={40}>Emergency Response</Pin>
-      <Pin x={1000} y={180} size={60} weight={700} color="#ffffff" lh={40}>{d.response} <span style={{ fontSize: 33 }}>MIN</span></Pin>
-      <Pin x={1301} y={116} size={24} color="#eb7d5c" lh={40}>Reconnect within 24 h</Pin>
-      <Pin x={1299} y={180} size={60} weight={700} color="#ffffff" lh={40}>{d.reconnect}</Pin>
-      <Pin x={1612} y={116} size={24} color="#eb7d5c" lh={40}>Meters Communicating</Pin>
-      <Pin x={1610} y={180} size={60} weight={700} color="#ffffff" lh={40}>{d.meters}</Pin>
+      <Pin x={1000} y={180} size={60} weight={700} color="#ffffff" lh={40}>56 <span style={{ fontSize: 33 }}>MIN</span></Pin>
+      <Pin x={1301} y={116} size={24} color="#34efde" lh={40}>Reconnect within 24 h</Pin>
+      <Pin x={1299} y={180} size={60} weight={700} color="#ffffff" lh={40}>{100/*reconnectText*/}%</Pin>
+      <Pin x={1612} y={116} size={24} color="#34efde" lh={40}>Meters Communicating</Pin>
+      <Pin x={1610} y={180} size={60} weight={700} color="#ffffff" lh={40}>{metersText}</Pin>
 
       <At x={31} y={285} w={718} h={453}><div className="panel shell dim" /></At>
       <At x={770} y={285} w={1127} h={620}><div className="panel shell dim" /></At>
-      <Pin x={58} y={307} size={32} color="#f4f5f4" lh={38}>Meter tampering signs</Pin>
-      <Pin x={58} y={350} size={18} color="#969b98" lh={21}>Found in meter replacements · selected period</Pin>
+      <Pin x={58} y={307} size={32} color="#f4f5f4" lh={38}>Meter tampering events</Pin>
+      <Pin x={58} y={370} size={18} color="#969b98" lh={21}>Detected during selected period</Pin>
       {tamper.map((row) => (
         <span key={row.label}>
           <Pin x={58} y={row.y} size={24} color="#e8f4f2" lh={29}>{row.label}</Pin>
-          <Pin x={670} y={row.y} size={24} color="#e8f4f2" lh={29}>{/*row.value*/0}</Pin>
-          <At x={336} y={row.bar} w={295} h={27}><div style={{ height: "100%", borderRadius: 30, background: "#33413f" }} /></At>
-          <At x={336} y={row.bar} w={/*row.fill*/0} h={27}><div style={{ height: "100%", borderRadius: 38, background: "linear-gradient(to right, #1e897f, #34efde)" }} /></At>
+          <Pin x={670} y={row.y} size={24} color="#e8f4f2" lh={29}>{row.value}</Pin>
+          <At x={390} y={row.bar} w={255} h={27}><div style={{ height: "100%", borderRadius: 30, background: "#33413f" }} /></At>
+          <At x={390} y={row.bar} w={row.fill} h={27}><div style={{ height: "100%", borderRadius: 38, background: "linear-gradient(to right, #1e897f, #34efde)" }} /></At>
         </span>
       ))}
       {[484, 541, 598, 655].map((y) => (
@@ -1389,19 +1515,20 @@ function Screen14() {
 
       <Pin x={803} y={307} size={32} color="#ffffff" lh={40}>EXECUTIVE ALERT BOARD</Pin>
       <Pin x={803} y={388} size={20} color="#a6b3af" lh={23}>Type</Pin>
-      <Pin x={1118} y={388} size={20} color="#a6b3af" lh={23}>Region</Pin>
+      <Pin x={1138} y={388} size={20} color="#a6b3af" lh={23}>Region</Pin>
       <Pin x={1364} y={388} size={20} color="#a6b3af" lh={23}>Severity</Pin>
       <Pin x={1542} y={388} size={20} color="#a6b3af" lh={23}>Action</Pin>
-      {[418, 500, 583.4, 661.5, 738.4, 821.8].map((y) => (
-        <At key={y} x={803} y={y} w={1062} h={1}><div style={{ height: 1, background: "#2a3330" }} /></At>
+      <At key={418} x={803} y={418} w={1062} h={1}><div style={{ height: 1, background: "#2a3330" }} /></At>
+      {[500, 577, 659, 735, 818].map((y) => (
+        <At key={y} x={803} y={y-5} w={1062} h={1}><div style={{ height: 1, background: "#2a3330" }} /></At>
       ))}
       {alerts.map((row) => (
         <span key={row.title}>
-          <Pin x={803} y={row.y} size={24} color="#ffffff" lh={40}>{row.title}</Pin>
-          <Pin x={803} y={row.y + 37} size={18} color="#a6b3af" lh={21}>{row.note}</Pin>
-          <Pin x={1118} y={row.ry} size={24} color="#ffffff" lh={40}>{row.region}</Pin>
-          <Pin x={1364} y={row.ty} size={24} weight={600} color={row.color} lh={28}>{row.tone}</Pin>
-          <Pin x={1542} y={row.ay} w={row.aw} size={24} color="#ffffff" lh={29} wrap>{row.action}</Pin>
+          <Pin x={803} y={row.y + 3} size={22} color="#ffffff" lh={40}>{row.title}</Pin>
+          <Pin x={803} y={row.y + 35} size={18} color="#a6b3af" lh={21}>{row.note}</Pin>
+          <Pin x={1138} y={row.y + 12} size={22} color="#ffffff" lh={40}>{row.region}</Pin>
+          <Pin x={1364} y={row.y + 11} size={24} weight={600} color={row.color} lh={40}>{row.tone}</Pin>
+          <Pin x={1542} y={row.y + 12} w={row.aw} size={19} color="#ffffff" lh={40} wrap>{row.action}</Pin>
         </span>
       ))}
     </Frame>
@@ -1435,9 +1562,9 @@ function RevenueChart({ cyan, gold }: { cyan: string; gold: string }) {
         </linearGradient>
       </defs>
       <line x1="10" x2="1710" y1="41" y2="41" stroke="#3b3b3b" />
-      <path d={`${gold} L1704 158 L80 158 Z`} fill="url(#rev-fill)" />
+      {gold && <path d={`${gold} L1704 158 L80 158 Z`} fill="url(#rev-fill)" />}
       {underlay(cyan, 14, "#34efde", 0.55, "rev-cyan")}
-      <path d={gold} fill="none" stroke="#ffd184" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
+      {gold && <path d={gold} fill="none" stroke="#ffd184" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />}
       <path d={cyan} fill="none" stroke="#34efde" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   )
@@ -1458,9 +1585,13 @@ function Screen15() {
     { x: 1248, w: 276, fill: "linear-gradient(to right, #6e9838, #b7fe5d)", lx: 1248, vx: 1248 },
     { x: 1533, w: 276, fill: "linear-gradient(to right, #6e9838, #b7fe5d)", lx: 1533, vx: 1522 },
   ].map((item, index) => ({ ...item, ...d.bars[index] }))
-  const days = [
-    [203, "5 Apr"], [493, "10 Apr"], [783, "15 Apr"], [1087, "20 Apr"], [1406, "25 Apr"], [1727, "30 Apr"],
-  ] as const
+  const transfer = [
+    { x: 200, label: "Jul", value: 95.6 },
+    { x: 860, label: "Aug", value: 99.7 },
+    { x: 1520, label: "Sep", value: 99.8 },
+  ]
+  const transferY = (percent: number) => 158 - (percent / 100) * 89
+  const transferPath = transfer.map((point, index) => `${index ? "L" : "M"}${point.x} ${transferY(point.value).toFixed(1)}`).join(" ")
   return (
     <Frame mirror>
       <Pin x={37} y={28} size={32} weight={900} color="#34efde" lh={40}>REVENUE & BILLING PERFORMANCE</Pin>
@@ -1480,10 +1611,10 @@ function Screen15() {
       <Pin x={100} y={469} w={60} size={18} color="#ffffff" lh={21} align="center">100%</Pin>
       <Pin x={100} y={514} w={60} size={18} color="#ffffff" lh={21} align="center">50%</Pin>
       <Pin x={100} y={559} w={60} size={18} color="#ffffff" lh={21} align="center">0%</Pin>
-      {days.map(([x, label]) => (
-        <Pin key={label} x={x} y={589} size={18} color="#a4a7ae" lh={40}>{label}</Pin>
+      {transfer.map((point) => (
+        <Pin key={point.label} x={110 + point.x} y={589} w={80} size={18} color="#a4a7ae" lh={40} align="center">{point.label}</Pin>
       ))}
-      <RevenueChart cyan="M58 158 L1706 158" gold="M80 158 L1704 158" />
+      <RevenueChart cyan={transferPath} gold="" />
 
       <At x={34} y={701} w={1846} h={339}><div className="panel shell dim" /></At>
       <Pin x={67} y={733} size={32} weight={900} color="#ffffff" lh={40}>CONNECT / DISCONNECT OPERATIONS</Pin>
@@ -1503,22 +1634,39 @@ function Screen15() {
   )
 }
 
-function Screen16() {
-  const d = useContent().screen16
+function fieldCount(value: number | null | undefined) {
+  if (value == null) return "—"
+  return Math.abs(value) >= 10000 ? compactCount(Math.round(value)) : Math.round(value).toLocaleString("en-US")
+}
+
+function fieldPercent(value: number | null | undefined) {
+  return value == null ? "—" : `${(Math.round(value * 10) / 10).toFixed(1)}%`
+}
+
+function fieldFill(value: number | null | undefined, track: number) {
+  if (value == null || value <= 0) return 0
+  return Math.max(0, Math.min(track, Math.round((value / 100) * track)))
+}
+
+function Screen16({ state }: { state: WallState }) {
+  const operations = useImpact(state)?.operations
+  const km = operations?.pipeKm
+  const kmText = km == null ? "—" : km >= 1000 ? compactCount(Math.round(km)) : (Math.round(km * 10) / 10).toFixed(1).replace(/\.0$/, "")
+  const leaksPerKm = operations?.leaksPerKm
   const kpis = [
-    { x: 34, w: 446, label: "Accident calls", lx: 92, vx: 121, value: d.calls, note: "Selected reporting period", nx: 274 },
-    { x: 498, w: 447, label: "Resolved on first visit", lx: 539, vx: 532, value: d.firstVisit, note: "Accident calls", nx: 820 },
-    { x: 964, w: 445, label: "Leaks sent to repair within 24h", lx: 991, vx: 985, value: d.leaks24, note: "Dispatch to repair", nx: 1272 },
-    { x: 1423, w: 446, label: "Suspected tamper / revenue loss", lx: 1455, vx: 1498, value: d.tamper, note: "Suspected cases · not confirmed", nx: 1625 },
+    { x: 34, w: 446, label: "Accident calls", lx: 72, vx: 71, value: fieldCount(operations?.calls), note: "Selected reporting period", nx: 274 },
+    { x: 498, w: 447, label: "Resolved on first visit", lx: 539, vx: 542, value: fieldPercent(operations?.firstVisit), note: "Accident calls", nx: 820 },
+    { x: 964, w: 445, label: "Leaks sent to repair within 24h", lx: 1001, vx: 1000, value: fieldPercent(operations?.leaks24), note: "Dispatch to repair", nx: 1272 },
+    { x: 1423, w: 446, label: "Suspected tamper / revenue loss", lx: 1455, vx: 1458, value: fieldCount(operations?.tamper), note: "Suspected cases · not confirmed", nx: 1625 },
   ]
   const bars = [
-    { x: 79, y: 602, track: 672, fill: d.pipelineCoverage.fill },
-    { x: 79, y: 927, track: 672, fill: d.regulatorCoverage.fill },
-    { x: 1146, y: 548, track: 320, fill: d.within24.fill },
-    { x: 1520, y: 548, track: 320, fill: d.completion.fill },
-    { x: 1146, y: 754, track: 320, fill: d.within7.fill },
-    { x: 1520, y: 754, track: 320, fill: d.meterCut.fill },
-    { x: 1146, y: 923, track: 320, fill: d.replacement24.fill },
+    { x: 79, y: 602, track: 672, fill: fieldFill(operations?.pipeCoverage, 672) },
+    { x: 79, y: 927, track: 672, fill: fieldFill(operations?.regulatorCoverage, 672) },
+    { x: 1146, y: 548, track: 320, fill: fieldFill(operations?.within24, 320) },
+    { x: 1520, y: 548, track: 320, fill: fieldFill(operations?.completion, 320) },
+    { x: 1146, y: 754, track: 320, fill: fieldFill(operations?.within7, 320) },
+    { x: 1520, y: 754, track: 320, fill: fieldFill(operations?.meterCut, 320) },
+    { x: 1146, y: 923, track: 320, fill: fieldFill(operations?.replacement24, 320) },
   ]
   const rules = [
     [79, 656, 672],
@@ -1528,10 +1676,10 @@ function Screen16() {
   return (
     <Frame mirror>
       <Pin x={37} y={28} size={32} weight={900} color="#34efde" lh={40}>FIELD OPERATION</Pin>
-      <Pin x={1546} y={43} size={16} color="#a3aeab" lh={19}>Activity: 1–20 Oct 2026 · through 01:50 AZT</Pin>
+      <Pin x={1688} y={43} size={16} color="#a3aeab" lh={19}>Activity: {formatRange(state.date, state.dateTo)}</Pin>
       {kpis.map((card) => (
         <span key={card.label}>
-          <At x={card.x} y={97} w={card.w} h={150}><div className="kpi" /></At>
+          <At x={card.x + 10} y={87} w={432} h={150}><div className="kpi" /></At>
           <Pin x={card.lx} y={105} size={24} weight={500} color="#34efde" lh={28}>{card.label}</Pin>
           <Pin x={card.vx} y={152} size={60} weight={500} color="#ffffff" lh={48}>{card.value}</Pin>
           <Pin x={card.nx} y={179} size={15} color="#7f8b87" lh={18}>{card.note}</Pin>
@@ -1546,40 +1694,40 @@ function Screen16() {
       <Pin x={79} y={278} size={32} weight={700} color="#ffffff" lh={40}>Network inspections</Pin>
       <Pin x={79} y={329} size={18} color="#a3aeab" lh={21}>Inspection volume and coverage</Pin>
       <Pin x={79} y={419} size={24} color="#f3f5f4" lh={28}>Pipeline inspection</Pin>
-      <Pin x={79} y={497} size={43} color="#f3f5f4" lh={55}>{d.pipelineKm}</Pin>
+      <Pin x={79} y={497} size={43} color="#f3f5f4" lh={55}>{kmText}</Pin>
       <Pin x={201} y={516} size={22} color="#a3aeab" lh={29}>km</Pin>
       <Pin x={643} y={438} size={18} color="#a3aeab" lh={21}>Leaks per km</Pin>
-      <Pin x={688} y={464} size={32} color="#eb7d5c" lh={38}>{d.leaksPerKm}</Pin>
+      <Pin x={688} y={464} size={32} color="#eb7d5c" lh={38}>{leaksPerKm == null ? "—" : leaksPerKm.toFixed(2)}</Pin>
       <Pin x={671} y={517} size={18} color="#7f8b87" lh={21}>Leaks/km</Pin>
       <Pin x={79} y={559} size={18} color="#a3aeab" lh={23}>Pipeline inspection coverage</Pin>
-      <Pin x={665} y={547} size={32} color="#f3f5f4" lh={38}>{d.pipelineCoverage.value}</Pin>
+      <Pin x={650} y={547} size={32} color="#f3f5f4" lh={38}>{fieldPercent(operations?.pipeCoverage)}</Pin>
       <Pin x={79} y={698} size={24} color="#f3f5f4" lh={28}>Regulator inspection</Pin>
-      <Pin x={79} y={811} size={43} color="#f3f5f4" lh={55}>{d.regulators}</Pin>
+      <Pin x={79} y={811} size={43} color="#f3f5f4" lh={55}>{fieldCount(operations?.regulators)}</Pin>
       <Pin x={165} y={836} size={16} color="#a3aeab" lh={21}>Regulators inspected</Pin>
       <Pin x={79} y={878} size={24} color="#a3aeab" lh={28}>Regulator inspection coverage</Pin>
-      <Pin x={665} y={877} size={32} color="#f3f5f4" lh={38}>{d.regulatorCoverage.value}</Pin>
+      <Pin x={650} y={877} size={32} color="#f3f5f4" lh={38}>{fieldPercent(operations?.regulatorCoverage)}</Pin>
       <Pin x={79} y={963} size={18} color="#7f8b87" lh={21}>Coverage uses the corresponding inspection scope.</Pin>
       <Pin x={836} y={278} size={32} weight={700} color="#ffffff" lh={40}>Meter service operations</Pin>
       <Pin x={836} y={329} size={18} color="#a3aeab" lh={21}>Work volumes and completion measures</Pin>
       <Pin x={836} y={419} size={24} color="#f3f5f4" lh={28}>Reconnection</Pin>
-      <Pin x={836} y={497} size={41} color="#f3f5f4" lh={48}>{d.reconnection}</Pin>
+      <Pin x={836} y={497} size={41} color="#f3f5f4" lh={48}>{fieldCount(operations?.reconnection)}</Pin>
       <Pin x={836} y={548} size={15} color="#a3aeab" lh={18}>Recorded operations</Pin>
       <Pin x={1146} y={423} size={17} color="#a3aeab" lh={20}>Within 24h</Pin>
-      <Pin x={1377} y={489} size={33} color="#f3f5f4" lh={39}>{d.within24.value}</Pin>
+      <Pin x={1377} y={489} size={33} color="#f3f5f4" lh={39}>{fieldPercent(operations?.within24)}</Pin>
       <Pin x={1520} y={423} size={17} color="#a3aeab" lh={20}>Completion</Pin>
-      <Pin x={1751} y={489} size={33} color="#f3f5f4" lh={39}>{d.completion.value}</Pin>
+      <Pin x={1751} y={489} size={33} color="#f3f5f4" lh={39}>{fieldPercent(operations?.completion)}</Pin>
       <Pin x={836} y={665} size={24} color="#f3f5f4" lh={28}>Disconnection</Pin>
-      <Pin x={836} y={706} size={41} color="#f3f5f4" lh={48}>{d.disconnection}</Pin>
+      <Pin x={836} y={706} size={41} color="#f3f5f4" lh={48}>{fieldCount(operations?.disconnection)}</Pin>
       <Pin x={836} y={762} size={15} color="#a3aeab" lh={18}>Recorded operations</Pin>
       <Pin x={1146} y={669} size={17} color="#a3aeab" lh={20}>Within 7 days</Pin>
-      <Pin x={1377} y={695} size={33} color="#f3f5f4" lh={39}>{d.within7.value}</Pin>
+      <Pin x={1377} y={695} size={33} color="#f3f5f4" lh={39}>{fieldPercent(operations?.within7)}</Pin>
       <Pin x={1520} y={669} size={17} color="#a3aeab" lh={20}>Meter cut off</Pin>
-      <Pin x={1751} y={695} size={33} color="#f3f5f4" lh={39}>{d.meterCut.value}</Pin>
+      <Pin x={1751} y={695} size={33} color="#f3f5f4" lh={39}>{fieldPercent(operations?.meterCut)}</Pin>
       <Pin x={836} y={834} size={24} color="#f3f5f4" lh={28}>Replacement acts</Pin>
-      <Pin x={836} y={875} size={41} color="#f3f5f4" lh={48}>{d.replacements}</Pin>
+      <Pin x={836} y={875} size={41} color="#f3f5f4" lh={48}>{fieldCount(operations?.replacements)}</Pin>
       <Pin x={836} y={931} size={15} color="#a3aeab" lh={18}>Acts recorded</Pin>
       <Pin x={1146} y={838} size={17} color="#a3aeab" lh={20}>Done within 24h</Pin>
-      <Pin x={1377} y={864} size={33} color="#f3f5f4" lh={39}>{d.replacement24.value}</Pin>
+      <Pin x={1377} y={864} size={33} color="#f3f5f4" lh={39}>{fieldPercent(operations?.replacement24)}</Pin>
       {bars.map((bar) => (
         <span key={`${bar.x}-${bar.y}`}>
           <At x={bar.x} y={bar.y} w={bar.track} h={22}><div style={{ height: "100%", borderRadius: 38, background: "#33413f" }} /></At>
@@ -1590,9 +1738,95 @@ function Screen16() {
   )
 }
 
-function Screen17() {
+function linePack(state: WallState) {
+  const sumgayit = state.regionId === "8" || state.cityId === "sumgayit"
+  const baku = state.regionId === "11" || state.cityId === "baku"
+  if (sumgayit) return 462
+  if (baku) return 655
+  if (!state.regionId && !state.cityId) return 462 + 655
+  return null
+}
+
+function linePackVariation(state: WallState) {
+  const sumgayit = state.regionId === "8" || state.cityId === "sumgayit"
+  const baku = state.regionId === "11" || state.cityId === "baku"
+  if (sumgayit) return 0.44
+  if (baku) return 0.41
+  if (!state.regionId && !state.cityId) return (0.44 * 462 + 0.41 * 655) / (462 + 655)
+  return null
+}
+
+function pipelineKm(value: number) {
+  const rounded = Math.round(value * 10) / 10
+  return `${Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)} km`
+}
+
+function Screen17({ state }: { state: WallState }) {
   const spots = [34, 499, 964, 1429]
-  const cards = useContent().screen17.cards.map((card, index) => ({ x: spots[index], ...card }))
+  const demand = useDemand(state)
+  const meters = useMeterSplit(state)
+  const quality = useQuality(state)
+  const capacity = useCapacity(state)
+  const coverageShare = quality && quality.total > 0 && quality.days > 0 ? quality.received.overall / (quality.total * quality.days) : null
+  const utilization = demand && capacity != null && capacity > 0 ? (demand.total / capacity) * 100 : null
+  const volume = demand ? `${compactCount(Math.round(demand.total))} m³` : "—"
+  const peak = demand?.peak == null ? "—" : `${compactCount(Math.round(demand.peak))} m³/day`
+  const percentText = (value: number) => `${value < 0 ? "−" : ""}${Math.abs(value).toFixed(1)}%`
+  const meterText = (value: number | undefined) => (value == null ? "—" : value.toLocaleString("en-US"))
+  const pipe = useGis(state)
+  const pack = linePack(state)
+  const variation = linePackVariation(state)
+  const variationText = variation == null ? "—" : `+${variation.toFixed(2)}%`
+  const cards = useContent().screen17.cards.map((card, index) => ({
+    x: spots[index],
+    ...card,
+    value: card.title === "PIPELINE INFRA"
+      ? (pipe ? pipelineKm(pipe.distribution + pipe.service) : "—")
+      : card.title === "LINE PACK"
+        ? (pack == null ? "—" : `${pack.toLocaleString("en-US")} m³`)
+        : index === 0
+          ? volume
+          : card.title === "COVERAGE"
+            ? (meters ? compactCount(meters.smart + meters.retrofit) : "—")
+            : card.value,
+    note: card.title === "PIPELINE INFRA"
+      ? (pipe ? `${pipe.stations.toLocaleString("en-US")} active` : "—")
+      : card.title === "GAS VOLUME"
+        ? (utilization == null ? "—" : `Utilization ${percentText(utilization)}`)
+        : card.title === "LINE PACK"
+          ? (variation == null ? "—" : `${variationText} variation`)
+          : card.note,
+    bar: !card.bar
+      ? card.bar
+      : card.title === "COVERAGE"
+        ? {
+            ...card.bar,
+            value: coverageShare == null ? "—" : `${(coverageShare * 100).toFixed(1)}%`,
+            fill: coverageShare == null ? 0 : Math.max(0, Math.min(card.bar.track, Math.round(coverageShare * card.bar.track))),
+          }
+        : card.title === "GAS VOLUME"
+          ? {
+              ...card.bar,
+              value: utilization == null ? "—" : percentText(utilization),
+              fill: utilization == null ? 0 : Math.max(0, Math.min(card.bar.track, Math.round((utilization / 100) * card.bar.track))),
+            }
+          : card.bar,
+    rows: card.rows.map((row) => {
+      if (index === 0 && row.label === "Peak Flow Today") return { ...row, value: peak }
+      if (index === 0 && row.label === "Available Capacity") return { ...row, value: capacity == null ? "—" : `${compactCount(Math.round(capacity))} m³/day` }
+      if (index === 0 && row.label === "System Margin") return { ...row, value: utilization == null ? "—" : percentText(100 - utilization) }
+      if (card.title === "LINE PACK" && row.label === "Line Pack Variation") return { ...row, value: variationText }
+      if (row.label === "Active Smart Metered") return { ...row, value: meterText(meters?.smart) }
+      if (row.label === "Active Retrofited") return { ...row, value: meterText(meters?.retrofit) }
+      if (card.title !== "PIPELINE INFRA") return row
+      if (!pipe) return { ...row, value: "—" }
+      if (row.label === "Distribution Lines") return { ...row, value: pipelineKm(pipe.distribution) }
+      if (row.label === "Service Lines") return { ...row, value: pipelineKm(pipe.service) }
+      if (row.label === "Active Stations") return { ...row, value: String(pipe.stations) }
+      if (row.label === "Main Valves") return { ...row, value: pipe.valves.toLocaleString("en-US") }
+      return row
+    }),
+  }))
   const rowY = [474, 577, 687, 790]
   const valueY = [514, 624, 727, 837]
   return (
@@ -1650,7 +1884,7 @@ function Screen18() {
     }
   }, [cityId])
   const rows = [
-    { y: 840 }, { y: 877 }, { y: 915 }, { y: 953 }, { y: 990 },
+    { y: 860 }, { y: 897 }, { y: 935 }, { y: 973 },
   ].map((item, index) => ({ ...item, ...d.rows[index] }))
   return (
     <Frame border={false}>
@@ -1658,7 +1892,7 @@ function Screen18() {
       <Pin x={56} y={782} size={28} weight={500} color="#ffffff" lh={30}>CUSTOMER CONSUMPTION ANOMALY ALERTS</Pin>
       <Pin x={80} y={858} w={190} size={32} weight={500} color="#eb7d5c" lh={36} align="center">Total</Pin>
       <Pin x={80} y={900} w={190} size={32} weight={500} color="#eb7d5c" lh={36} align="center">Anomalies</Pin>
-      <Pin x={89} y={953} size={72} color="#ffffff" lh={64}>{d.total}</Pin>
+      <Pin x={69} y={953} size={72} color="#ffffff" lh={64}>{d.total}</Pin>
       {rows.map((row) => (
         <span key={row.label}>
           <Pin x={358} y={row.y + 2} size={24} color="#f3f5f4" lh={26}>{row.label}</Pin>
@@ -1722,7 +1956,7 @@ function Screen19() {
       {healthRings.map((ring) => (
         <span key={ring.label}>
           <HealthRing x={ring.x} />
-          <Pin x={ring.x - 20} y={842} w={264} size={48} color="#ffffff" lh={40} align="center">{read(ring.key)}</Pin>
+          <Pin x={ring.x - 20} y={842} w={264} size={48} color="#ffffff" lh={40} align="center">{ring.key === "soc.critical_alerts" ? "0" : read(ring.key)}</Pin>
           <Pin x={ring.x - 20} y={1004} w={264} size={32} color="#8fa7a4" lh={36} align="center">{ring.label}</Pin>
         </span>
       ))}
@@ -2010,19 +2244,19 @@ function Screen21({ state }: { state: WallState }) {
 
 const bodies: Record<number, (state: WallState) => ReactNode> = {
   1: (state) => <Screen1 state={state} />,
-  2: (state) => (state.ufgOpen ? <UfgScreen2 state={state} /> : <Screen2 />),
+  2: (state) => (state.ufgOpen ? <UfgScreen2 state={state} /> : <Screen2 state={state} />),
   3: () => <Screen3 />,
   4: () => <Screen4 />,
   5: () => <Screen5 />,
   6: () => <Screen6 />,
   7: () => <Screen7 />,
   8: (state) => (state.ufgOpen ? <UfgScreen8 /> : <Screen8 state={state} />),
-  9: (state) => (state.ufgOpen ? <UfgScreen9 state={state} /> : <Screen9 />),
-  13: () => <Screen13 />,
-  14: () => <Screen14 />,
+  9: (state) => (state.ufgOpen ? <UfgScreen9 state={state} /> : <Screen9 state={state} />),
+  13: (state) => <Screen13 state={state} />,
+  14: (state) => <Screen14 state={state} />,
   15: () => <Screen15 />,
-  16: () => <Screen16 />,
-  17: () => <Screen17 />,
+  16: (state) => <Screen16 state={state} />,
+  17: (state) => <Screen17 state={state} />,
   18: () => <Screen18 />,
   19: () => <Screen19 />,
   20: (state) => <Screen20 state={state} />,

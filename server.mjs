@@ -6,11 +6,18 @@ import { handleUfg } from "./server/ufg.mjs"
 import { handlePressure } from "./server/pressure.mjs"
 import { handleLeaks, handleQuality } from "./server/quality.mjs"
 import { handleDemand } from "./server/demand.mjs"
+import { handleGis } from "./server/gis.mjs"
+import { handleImpact } from "./server/impact.mjs"
+import { handleReconnect } from "./server/reconnect.mjs"
+import { handleTamper } from "./server/tamper.mjs"
 import { handleWeather } from "./server/weather.mjs"
+import { app as duckdbApp } from "./duckdb/server.js"
+import { isDuckdbRequest, setDuckdbOrigin } from "./server/duckdb-origin.mjs"
 
 const root = path.resolve("dist")
 const port = Number(process.env.PORT || 3089)
 const host = process.env.HOST || "0.0.0.0"
+setDuckdbOrigin(`http://127.0.0.1:${port}`)
 const types = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -27,11 +34,19 @@ const types = {
 }
 
 const server = http.createServer((req, res) => {
+  if (isDuckdbRequest(req.url)) {
+    duckdbApp(req, res)
+    return
+  }
   if (handleUfg(req, res)) return
   if (handlePressure(req, res)) return
   if (handleQuality(req, res)) return
   if (handleLeaks(req, res)) return
   if (handleDemand(req, res)) return
+  if (handleGis(req, res)) return
+  if (handleImpact(req, res)) return
+  if (handleReconnect(req, res)) return
+  if (handleTamper(req, res)) return
   if (handleWeather(req, res)) return
   if (handleSync(req, res)) return
   const url = new URL(req.url || "/", "http://localhost")
