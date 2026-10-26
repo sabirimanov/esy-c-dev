@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode, type Ref } from "react"
+import { alertRowMs, useAlertScroll, useSmoothTrack } from "../data/alertScroll"
 import { useUfgAlarms, useUfgHierarchy, useUfgReadiness, useUfgSummary, type UfgAlarm, type UfgCounts } from "../data/ufg"
 import { At, Frame, PlaceText } from "../ui/widgets"
 import { formatRange } from "../wall/dates"
@@ -227,25 +228,54 @@ function alarmName(source: string, names: Map<string, string>) {
   return (names.get(source) || source).replace(/\(\d+\)\s*$/, "").trim()
 }
 
+function AlarmLine({ row, names, height, lineRef }: { row: UfgAlarm; names: Map<string, string>; height?: number; lineRef?: Ref<HTMLDivElement> }) {
+  return (
+    <div ref={lineRef} className="ufg-alarm body" style={height ? { height, flex: "none" } : undefined}>
+      <span>#{row.id}</span>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{alarmName(row.source, names)}</span>
+      <span className="pct">{row.currentValue || "—"}</span>
+      <span className="hot">{row.state.toUpperCase()}</span>
+    </div>
+  )
+}
+
 function AlarmTicker({ rows, names }: { rows: UfgAlarm[]; names: Map<string, string> }) {
+  const smooth = useAlertScroll() === "smooth" && rows.length > 4
+  const view = useRef<HTMLDivElement>(null)
+  const sample = useRef<HTMLDivElement>(null)
+  const [rowH, setRowH] = useState(0)
+  const rowMs = alertRowMs(rowH)
+  const track = useSmoothTrack(smooth, rows.length, rowMs, rows.length * rowH)
   const [offset, setOffset] = useState(0)
   useEffect(() => {
-    if (rows.length <= 4) return
-    const timer = window.setInterval(() => setOffset((index) => (index + 1) % rows.length), 1000)
+    if (smooth || rows.length <= 4) return
+    const timer = window.setInterval(() => setOffset((index) => (index + 1) % rows.length), rowMs)
     return () => window.clearInterval(timer)
-  }, [rows.length])
-  const shown = Array.from({ length: Math.min(4, rows.length) }, (_, index) => rows[(offset + index) % rows.length])
+  }, [rows.length, smooth, rowMs])
+  useEffect(() => {
+    const node = smooth ? view.current : sample.current
+    if (!node) return
+    const measure = () => setRowH(smooth && view.current ? view.current.clientHeight / 4 : node.getBoundingClientRect().height)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [smooth, rows.length])
+  if (!smooth) {
+    const shown = Array.from({ length: Math.min(4, rows.length) }, (_, index) => rows[(offset + index) % rows.length])
+    return (
+      <>
+        {shown.map((row, index) => <AlarmLine key={row.id} row={row} names={names} lineRef={index === 0 ? sample : undefined} />)}
+      </>
+    )
+  }
+  const loop = [...rows, ...rows]
   return (
-    <>
-      {shown.map((row) => (
-        <div className="ufg-alarm body" key={row.id}>
-          <span>#{row.id}</span>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{alarmName(row.source, names)}</span>
-          <span className="pct">{row.currentValue || "—"}</span>
-          <span className="hot">{row.state.toUpperCase()}</span>
-        </div>
-      ))}
-    </>
+    <div ref={view} style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+      <div ref={track}>
+        {loop.map((row, index) => <AlarmLine key={`${index}-${row.id}`} row={row} names={names} height={rowH || undefined} />)}
+      </div>
+    </div>
   )
 }
 

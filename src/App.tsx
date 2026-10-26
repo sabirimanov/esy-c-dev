@@ -1,5 +1,6 @@
 import { useEffect } from "react"
 import { BrowserRouter, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom"
+import { AlertScrollProvider } from "./data/alertScroll"
 import { WallProvider } from "./wall/useWall"
 import { ScreenView } from "./screens/ScreenView"
 import { SnocRoute } from "./snoc/SnocRoute"
@@ -76,6 +77,7 @@ function RouteScreen() {
 
 export function App() {
   return (
+    <AlertScrollProvider>
     <WallProvider>
       <BrowserRouter>
         <Routes>
@@ -86,5 +88,6 @@ export function App() {
         </Routes>
       </BrowserRouter>
     </WallProvider>
+    </AlertScrollProvider>
   )
 }

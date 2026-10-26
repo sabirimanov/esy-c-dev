@@ -10,6 +10,7 @@ import { useDemand } from "../data/demand"
 import { useGis } from "../data/gis"
 import { useQuality } from "../data/quality"
 import { useImpact } from "../data/impact"
+import { alertRowMs, useAlertScroll, useSmoothTrack } from "../data/alertScroll"
 import { useFieldOps } from "../data/field"
 import { useTamper } from "../data/tamper"
 import { useCapacity, useMeterSplit, useUfgHierarchy, useUfgSummary, useUfgTrend, type UfgCluster } from "../data/ufg"
@@ -1462,40 +1463,60 @@ const severityColor: Record<string, string> = {
   Low: "#8fb8b4",
 }
 
+function ExecutiveAlertRow({ row, height }: { row: (typeof executiveAlerts)[number]; height?: number }) {
+  return (
+    <div
+      style={{
+        flex: height ? undefined : 1,
+        height,
+        minHeight: 0,
+        boxSizing: "border-box",
+        display: "grid",
+        gridTemplateColumns: "35px 355px 130px 130px 1fr",
+        columnGap: 30,
+        alignItems: "center",
+        borderTop: "1px solid #2a3330",
+        padding: "6px 0",
+      }}
+    >
+      <div style={{ color: "#cccccc", fontSize: 28, lineHeight: "32px", textAlign: "left" }}>{row.date}</div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ color: "#ffffff", fontSize: 22, lineHeight: "28px" }}>{row.type}</div>
+      </div>
+      <div style={{ color: "#60bbb3", fontSize: 20, lineHeight: "24px", textTransform: "uppercase" }}>{row.region}</div>
+      <div style={{ color: severityColor[row.severity], fontSize: 20, fontWeight: 600, lineHeight: "24px", textTransform: "uppercase" }}>{row.severity}</div>
+      <div style={{ color: "#ffffff", fontSize: 24, lineHeight: "28px" }}>{row.action}</div>
+    </div>
+  )
+}
+
 function ExecutiveAlerts() {
+  const smooth = useAlertScroll() === "smooth"
   const [offset, setOffset] = useState(0)
+  const rowH = 114
+  const rowMs = alertRowMs(rowH)
+  const track = useSmoothTrack(smooth, executiveAlerts.length, rowMs, executiveAlerts.length * rowH)
   useEffect(() => {
-    const timer = window.setInterval(() => setOffset((index) => (index + 1) % executiveAlerts.length), 3000)
+    if (smooth) return
+    const timer = window.setInterval(() => setOffset((index) => (index + 1) % executiveAlerts.length), rowMs)
     return () => window.clearInterval(timer)
-  }, [])
-  const shown = Array.from({ length: 4 }, (_, index) => executiveAlerts[(offset + index) % executiveAlerts.length])
+  }, [smooth, rowMs])
+  const shown = smooth
+    ? [...executiveAlerts, ...executiveAlerts]
+    : Array.from({ length: 4 }, (_, index) => executiveAlerts[(offset + index) % executiveAlerts.length])
   return (
     <At x={803} y={424} w={1062} h={456}>
-      <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-        {shown.map((row) => (
-          <div
-            key={`${row.date}-${row.type}`}
-            style={{
-              flex: 1,
-              minHeight: 0,
-              display: "grid",
-              gridTemplateColumns: "35px 355px 130px 130px 1fr",
-              columnGap: 30,
-              alignItems: "center",
-              borderTop: "1px solid #2a3330",
-              padding: "6px 0",
-            }}
-          >
-            <div style={{ color: "#cccccc", fontSize: 28, lineHeight: "32px", textAlign: "left" }}>{row.date}</div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ color: "#ffffff", fontSize: 22, lineHeight: "28px" }}>{row.type}</div>
-            </div>
-            <div style={{ color: "#60bbb3", fontSize: 20, lineHeight: "24px", textTransform: "uppercase" }}>{row.region}</div>
-            <div style={{ color: severityColor[row.severity], fontSize: 20, fontWeight: 600, lineHeight: "24px", textTransform: "uppercase" }}>{row.severity}</div>
-            <div style={{ color: "#ffffff", fontSize: 24, lineHeight: "28px" }}>{row.action}</div>
+      {smooth ? (
+        <div style={{ height: "100%", overflow: "hidden" }}>
+          <div ref={track}>
+            {shown.map((row, index) => <ExecutiveAlertRow key={`${index}-${row.type}`} row={row} height={rowH} />)}
           </div>
-        ))}
-      </div>
+        </div>
+      ) : (
+        <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+          {shown.map((row) => <ExecutiveAlertRow key={`${row.date}-${row.type}`} row={row} />)}
+        </div>
+      )}
     </At>
   )
 }

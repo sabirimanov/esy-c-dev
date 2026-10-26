@@ -11,6 +11,7 @@ import { handleField } from "./server/field.mjs"
 import { handleReconnect } from "./server/reconnect.mjs"
 import { handleTamper } from "./server/tamper.mjs"
 import { handleWeather } from "./server/weather.mjs"
+import { handleDisplay } from "./server/display.mjs"
 import { app as duckdbApp } from "./duckdb/server.js"
 import { isDuckdbRequest, setDuckdbOrigin } from "./server/duckdb-origin.mjs"
 
@@ -25,7 +26,7 @@ function wallSync(): Plugin {
           duckdbApp(req, res)
           return
         }
-        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res)) next()
+        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res) && !handleDisplay(req, res)) next()
       })
     },
     configurePreviewServer(server) {
@@ -34,7 +35,7 @@ function wallSync(): Plugin {
           duckdbApp(req, res)
           return
         }
-        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res)) next()
+        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res) && !handleDisplay(req, res)) next()
       })
     },
   }

@@ -12,6 +12,7 @@ import { handleField } from "./server/field.mjs"
 import { handleReconnect } from "./server/reconnect.mjs"
 import { handleTamper } from "./server/tamper.mjs"
 import { handleWeather } from "./server/weather.mjs"
+import { handleDisplay } from "./server/display.mjs"
 import { app as duckdbApp } from "./duckdb/server.js"
 import { isDuckdbRequest, setDuckdbOrigin } from "./server/duckdb-origin.mjs"
 
@@ -51,6 +52,7 @@ const server = http.createServer((req, res) => {
   if (handleTamper(req, res)) return
   if (handleWeather(req, res)) return
   if (handleSync(req, res)) return
+  if (handleDisplay(req, res)) return
   const url = new URL(req.url || "/", "http://localhost")
   const pathname = decodeURIComponent(url.pathname)
   if (pathname.includes("\0") || pathname.includes("..")) {
