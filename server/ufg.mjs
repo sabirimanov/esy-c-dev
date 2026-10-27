@@ -1,5 +1,5 @@
 import fs from "node:fs"
-import { cached } from "./cache.mjs"
+import { cached, getCached, setCached } from "./cache.mjs"
 import { duckdbUrl } from "./duckdb-origin.mjs"
 
 const hierarchyFallback = JSON.parse(fs.readFileSync(new URL("./ufg-hierarchy.json", import.meta.url), "utf8"))
@@ -16,16 +16,9 @@ async function fetchCcc(path, extra) {
   url.searchParams.set("system", "ufg")
   url.searchParams.set("path", path)
   for (const [key, value] of Object.entries(extra || {})) url.searchParams.set(key, value)
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const remote = await fetch(url)
-    if (remote.status === 429 && attempt < 2) {
-      await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)))
-      continue
-    }
-    if (!remote.ok) throw new Error(String(remote.status))
-    return remote.json()
-  }
-  throw new Error("429")
+  const remote = await fetch(url)
+  if (!remote.ok) throw new Error(String(remote.status))
+  return remote.json()
 }
 
 export function loadUfgHierarchy() {
@@ -82,15 +75,21 @@ async function hierarchy() {
   })
 }
 
+function sheetOf(value) {
+  const supply = Number(value?.supply)
+  const demand = Number(value?.demand)
+  return Number.isFinite(supply) && Number.isFinite(demand) ? { supply, demand } : null
+}
+
 async function loadClusterView(clusterId, gasDay) {
   if (!/^[A-Za-z0-9_]{1,80}$/.test(clusterId)) return null
-  const key = `ufg:sheet:${clusterId}|${gasDay}`
-  return cached(key, async () => {
-    const data = await fetchCcc(`/api/v1/cluster_view/${clusterId}`, { gasDay, version: "1" })
-    const supply = Number(data.sheet?.supply_kwh)
-    const demand = Number(data.sheet?.demand_kwh)
-    return Number.isFinite(supply) && Number.isFinite(demand) ? { supply, demand } : null
-  })
+  const saved = sheetOf(getCached(`ufg:view:${clusterId}|${gasDay}`)) || sheetOf(getCached(`ufg:sheet:${clusterId}|${gasDay}`))
+  if (saved) return saved
+  const data = await fetchCcc(`/api/v1/cluster_view/${clusterId}`, { gasDay, version: "1" })
+  const supply = Number(data.sheet?.supply_kwh)
+  const demand = Number(data.sheet?.demand_kwh)
+  if (!Number.isFinite(supply) || !Number.isFinite(demand)) return null
+  return setCached(`ufg:sheet:${clusterId}|${gasDay}`, { supply, demand })
 }
 
 function scopedClusters(clusters, filter) {
@@ -110,14 +109,60 @@ function ufgPercent(supply, demand) {
   return supply > 0 ? ((supply - demand) / supply) * 100 : null
 }
 
+function addSheet(byDay, byCluster, wallId, day, sheet) {
+  if (!sheet) return false
+  const dayBucket = byDay.get(day)
+  const clusterBucket = byCluster.get(wallId)
+  dayBucket.supply += sheet.supply
+  dayBucket.demand += sheet.demand
+  dayBucket.found = true
+  clusterBucket.supply += sheet.supply
+  clusterBucket.demand += sheet.demand
+  clusterBucket.found = true
+  return true
+}
+
 async function collectSheets(clusters, days) {
   const byDay = new Map(days.map((day) => [day, { supply: 0, demand: 0, found: false }]))
   const byCluster = new Map(clusters.map((cluster) => [cluster.cluster_id, { supply: 0, demand: 0, found: false }]))
-  if (!clusters.length || !days.length) return { byDay, byCluster }
+  if (!clusters.length || !days.length) return { byDay, byCluster, failed: false }
+
+  let failed = false
+  const filled = new Set()
+  for (const cluster of clusters) {
+    const apiId = viewClusterId(cluster)
+    for (const day of days) {
+      const saved = sheetOf(getCached(`ufg:view:${apiId}|${day}`)) || sheetOf(getCached(`ufg:sheet:${apiId}|${day}`))
+      if (saved && addSheet(byDay, byCluster, cluster.cluster_id, day, saved)) filled.add(`${cluster.cluster_id}|${day}`)
+    }
+  }
+  const from = days[0]
+  const to = days[days.length - 1]
+  const pending = clusters.filter((cluster) => days.some((day) => !filled.has(`${cluster.cluster_id}|${day}`)))
+  async function hourlyWorker() {
+    while (pending.length) {
+      const cluster = pending.shift()
+      if (!cluster) return
+      try {
+        const hourly = await loadClusterDemand(viewClusterId(cluster), from, to)
+        for (const day of days) {
+          if (filled.has(`${cluster.cluster_id}|${day}`)) continue
+          const bucket = hourly.get(day)
+          if (!bucket || !(bucket.supply > 0)) continue
+          if (addSheet(byDay, byCluster, cluster.cluster_id, day, bucket)) filled.add(`${cluster.cluster_id}|${day}`)
+        }
+      } catch {
+        failed = true
+      }
+    }
+  }
+  if (pending.length) await Promise.all(Array.from({ length: Math.min(2, pending.length) }, () => hourlyWorker()))
 
   const jobs = []
   for (const cluster of clusters) {
-    for (const day of days) jobs.push([cluster.cluster_id, viewClusterId(cluster), day])
+    for (const day of days) {
+      if (!filled.has(`${cluster.cluster_id}|${day}`)) jobs.push([cluster.cluster_id, viewClusterId(cluster), day])
+    }
   }
   const queue = jobs.slice()
   async function worker() {
@@ -126,22 +171,14 @@ async function collectSheets(clusters, days) {
       if (!next) return
       try {
         const sheet = await loadClusterView(next[1], next[2])
-        if (!sheet) continue
-        const day = byDay.get(next[2])
-        const cluster = byCluster.get(next[0])
-        day.supply += sheet.supply
-        day.demand += sheet.demand
-        day.found = true
-        cluster.supply += sheet.supply
-        cluster.demand += sheet.demand
-        cluster.found = true
+        if (sheet) addSheet(byDay, byCluster, next[0], next[2], sheet)
       } catch {
-        // A missing day stays out of the total.
+        failed = true
       }
     }
   }
-  await Promise.all(Array.from({ length: Math.min(4, jobs.length) }, () => worker()))
-  return { byDay, byCluster }
+  if (jobs.length) await Promise.all(Array.from({ length: Math.min(2, jobs.length) }, () => worker()))
+  return { byDay, byCluster, failed }
 }
 
 function volumeOf(clusters, sheets) {
@@ -195,15 +232,16 @@ function seriesFrom(days, sheets) {
 }
 
 async function trend(filter, clusters, from, to, prevFrom, prevTo) {
-  const key = `ufg:trend:${filter.region}|${filter.zone}|${filter.cluster}|${from}|${to}|${prevFrom}|${prevTo}`
+  const key = `ufg:trend:v2:${filter.region}|${filter.zone}|${filter.cluster}|${from}|${to}|${prevFrom}|${prevTo}`
   return cached(key, async () => {
     const currentDays = daysOf(from, to)
     const previousDays = daysOf(prevFrom, prevTo)
     const scope = scopedClusters(clusters, filter)
-    const [currentSheets, previousSheets] = await Promise.all([
-      collectSheets(scope, currentDays),
-      collectSheets(scope, previousDays),
-    ])
+    const currentSheets = await collectSheets(scope, currentDays)
+    const previousSheets = await collectSheets(scope, previousDays)
+    const currentFound = [...currentSheets.byDay.values()].some((bucket) => bucket.found)
+    const previousFound = [...previousSheets.byDay.values()].some((bucket) => bucket.found)
+    if (!currentFound && !previousFound && (currentSheets.failed || previousSheets.failed)) throw new Error("upstream")
     return {
       current: seriesFrom(currentDays, currentSheets),
       previous: seriesFrom(previousDays, previousSheets),
@@ -501,18 +539,11 @@ export function handleUfg(req, res) {
       .catch(() => send(res, 502, { error: "upstream unavailable" }))
     return true
   }
-  const summaryKey = `ufg:summary:${filter.region}|${filter.zone}|${filter.cluster}|${from}|${to}`
+  const summaryKey = `ufg:summary:v2:${filter.region}|${filter.zone}|${filter.cluster}|${from}|${to}`
   cached(summaryKey, async () => {
     const body = await hierarchy()
     const selectedClusters = scopedClusters(body.clusters, filter)
     const compared = filter.region ? scopedClusters(body.clusters, { region: filter.region, zone: filter.zone, cluster: "" }) : []
-    const union = []
-    const seen = new Set()
-    for (const cluster of [...selectedClusters, ...compared]) {
-      if (seen.has(cluster.cluster_id)) continue
-      seen.add(cluster.cluster_id)
-      union.push(cluster)
-    }
     const numbers = filter.region || filter.zone || filter.cluster ? consumerNumbers(body.clusters, filter) : null
     const selected = filter.cluster ? body.clusters.find((item) => item.cluster_id === filter.cluster) : null
     const regionName = filter.region || filter.zone || filter.cluster ? consumerRegion(filter, selected) : ""
@@ -526,8 +557,12 @@ export function handleUfg(req, res) {
         return null
       }
     })()
-    const [sheets, consumers] = await Promise.all([collectSheets(union, days), consumersPromise])
+    const sheets = await collectSheets(selectedClusters, days)
     const volume = volumeOf(selectedClusters, sheets)
+    if (volume.current == null && sheets.failed) throw new Error("upstream")
+    const consumers = await consumersPromise
+    const sameScope = compared.length === selectedClusters.length && compared.every((cluster, index) => cluster.cluster_id === selectedClusters[index]?.cluster_id)
+    const extremeSheets = filter.region && !sameScope ? await collectSheets(compared, days) : sheets
     const target = 5
     const current = volume.current
     return {
@@ -537,7 +572,7 @@ export function handleUfg(req, res) {
       closure: current ? (target / current) * 100 : null,
       supply: volume.supply,
       sale: volume.sale,
-      extremes: filter.region ? extremesFrom(compared, sheets) : null,
+      extremes: filter.region ? extremesFrom(compared, extremeSheets) : null,
       consumers,
     }
   })
