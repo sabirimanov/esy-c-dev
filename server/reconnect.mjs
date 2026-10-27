@@ -83,6 +83,6 @@ export function handleReconnect(req, res) {
   const { year, month } = dominantMonth(from, to)
   loadReconnect(year, month, scope)
     .then((body) => send(res, 200, body))
-    .catch(() => res.writeHead(502).end())
+    .catch(() => send(res, 502, { error: "upstream unavailable" }))
   return true
 }

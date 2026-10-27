@@ -16,6 +16,7 @@ import { handleWeather } from "./server/weather.mjs"
 import { handleDisplay } from "./server/display.mjs"
 import { app as duckdbApp } from "./duckdb/server.js"
 import { isDuckdbRequest, setDuckdbOrigin } from "./server/duckdb-origin.mjs"
+import { applyCors } from "./server/cors.mjs"
 
 setDuckdbOrigin("http://127.0.0.1:4317")
 
@@ -24,6 +25,7 @@ function wallSync(): Plugin {
     name: "wall-sync",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
+        if (applyCors(req, res)) return
         if (isDuckdbRequest(req.url)) {
           duckdbApp(req, res)
           return
@@ -33,6 +35,7 @@ function wallSync(): Plugin {
     },
     configurePreviewServer(server) {
       server.middlewares.use((req, res, next) => {
+        if (applyCors(req, res)) return
         if (isDuckdbRequest(req.url)) {
           duckdbApp(req, res)
           return

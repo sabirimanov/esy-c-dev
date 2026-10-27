@@ -123,6 +123,6 @@ export function handleDemand(req, res) {
       return loadDemand(scope, from, to)
     })
     .then((body) => send(res, 200, body))
-    .catch(() => res.writeHead(502).end())
+    .catch(() => send(res, 502, { error: "upstream unavailable" }))
   return true
 }

@@ -17,6 +17,7 @@ import { handleWeather } from "./server/weather.mjs"
 import { handleDisplay } from "./server/display.mjs"
 import { app as duckdbApp } from "./duckdb/server.js"
 import { isDuckdbRequest, setDuckdbOrigin } from "./server/duckdb-origin.mjs"
+import { applyCors } from "./server/cors.mjs"
 
 const root = path.resolve("dist")
 const port = Number(process.env.PORT || 3089)
@@ -38,6 +39,7 @@ const types = {
 }
 
 const server = http.createServer((req, res) => {
+  if (applyCors(req, res)) return
   if (isDuckdbRequest(req.url)) {
     duckdbApp(req, res)
     return

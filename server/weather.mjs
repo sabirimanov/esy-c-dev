@@ -81,7 +81,7 @@ export function handleWeather(req, res) {
   const id = url.searchParams.get("city") || "baku"
   load(id).then(
     (body) => send(res, 200, body),
-    () => res.writeHead(502).end(),
+    () => send(res, 502, { error: "upstream unavailable" }),
   )
   return true
 }

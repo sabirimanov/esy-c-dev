@@ -67,6 +67,6 @@ export function handleAnomalies(req, res) {
     return response.json()
   })
     .then((body) => send(res, 200, body))
-    .catch(() => res.writeHead(502).end())
+    .catch(() => send(res, 502, { error: "upstream unavailable" }))
   return true
 }

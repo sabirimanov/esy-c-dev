@@ -486,14 +486,36 @@ function Screen4() {
   return <div className="screen-body canvas" />
 }
 
+function ClusterChoice({ selected, onPick, children }: { selected: boolean; onPick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      style={{
+        display: "block",
+        width: "100%",
+        border: 0,
+        background: selected ? "#165654" : "transparent",
+        color: "#f2f6f5",
+        font: "inherit",
+        fontSize: 16,
+        lineHeight: "22px",
+        textAlign: "left",
+        padding: "8px 16px",
+        cursor: "pointer",
+      }}
+    >{children}</button>
+  )
+}
+
 function Screen5() {
   const { state, patch, clearCache } = useWall()
   const [cacheCleared, setCacheCleared] = useState(false)
   const content = useContent()
-  const read = useSocPanel()
   const leaks = useLeaks(state)
+  const [clusterOpen, setClusterOpen] = useState(false)
   const cards = [
-    { label: "NETWORK HEALTH", value: read("comm.gateway_availability"), down: false, amount: "" },
+    { label: "NETWORK HEALTH", value: "—", down: false, amount: "" },
     { label: "ACTIVE INCIDENTS", value: "0", down: false, amount: "" },
     { label: "SUSPECTED LEAKS", value: leaks ? leaks.suspected.toLocaleString("en-US") : "—", down: false, amount: "" },
     { label: "ACTIVE CREWS", value: "N/A", down: false, amount: "" },
@@ -638,24 +660,29 @@ function Screen5() {
       <At x={ox + 78} y={oy + 338} w={420} h={80}>
         <div style={{ height: "100%", borderRadius: 40, background: "#0c1b1c", position: "relative" }}>
           <div style={{ position: "absolute", left: 28, top: 14, fontSize: 13, letterSpacing: 1.4, color: "#798586" }}>CLUSTER</div>
-          <select
-            className="region-select"
-            value={selectedCluster ? selectedCluster.cluster_id : ""}
-            onChange={(event) => patch({ clusterId: event.target.value || null })}
-          >
-            <option value="">All clusters</option>
-            {grouped.size > 1
-              ? [...grouped.entries()].map(([id, list]) => (
-                <optgroup key={id} label={zoneName.get(id) ?? id}>
-                  {list.map((cluster) => (
-                    <option key={cluster.cluster_id} value={cluster.cluster_id}>{cluster.name_en}</option>
+          <button type="button" className="region-select" style={{ textAlign: "left", fontFamily: "inherit" }} onClick={() => setClusterOpen((open) => !open)}>
+            {clusterLabel}
+          </button>
+          {clusterOpen && (
+            <>
+              <div style={{ position: "fixed", inset: 0, zIndex: 3 }} onClick={() => setClusterOpen(false)} />
+              <div style={{ position: "absolute", left: 12, top: 76, zIndex: 4, width: 396, maxHeight: 300, overflowY: "auto", borderRadius: 18, background: "#0e2426", boxShadow: "0 16px 40px rgba(0,0,0,0.5)", padding: "6px 0" }}>
+                <ClusterChoice selected={!selectedCluster} onPick={() => { patch({ clusterId: null }); setClusterOpen(false) }}>All clusters</ClusterChoice>
+                {grouped.size > 1
+                  ? [...grouped.entries()].map(([id, list]) => (
+                    <div key={id}>
+                      <div style={{ padding: "8px 16px 2px", color: "#7a8a8b", fontSize: 13, letterSpacing: 0.6 }}>{zoneName.get(id) ?? id}</div>
+                      {list.map((cluster) => (
+                        <ClusterChoice key={cluster.cluster_id} selected={cluster.cluster_id === state.clusterId} onPick={() => { patch({ clusterId: cluster.cluster_id }); setClusterOpen(false) }}>{cluster.name_en}</ClusterChoice>
+                      ))}
+                    </div>
+                  ))
+                  : visible.map((cluster) => (
+                    <ClusterChoice key={cluster.cluster_id} selected={cluster.cluster_id === state.clusterId} onPick={() => { patch({ clusterId: cluster.cluster_id }); setClusterOpen(false) }}>{cluster.name_en}</ClusterChoice>
                   ))}
-                </optgroup>
-              ))
-              : visible.map((cluster) => (
-                <option key={cluster.cluster_id} value={cluster.cluster_id}>{cluster.name_en}</option>
-              ))}
-          </select>
+              </div>
+            </>
+          )}
           <div style={{ position: "absolute", right: 28, top: 30, color: "#9aabb0", fontSize: 16, pointerEvents: "none" }}>⌄</div>
         </div>
       </At>

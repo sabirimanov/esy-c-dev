@@ -59,6 +59,6 @@ export function handleGis(req, res) {
       return loadGis(ids)
     })
     .then((body) => send(res, 200, body))
-    .catch(() => res.writeHead(502).end())
+    .catch(() => send(res, 502, { error: "upstream unavailable" }))
   return true
 }

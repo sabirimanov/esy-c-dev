@@ -88,10 +88,10 @@ function Spark({ x, y, w, h, color, points }: { x: number; y: number; w: number;
 }
 
 export function SnocScreen({ id }: { id: number }) {
-  const { read, ready, live, alerts, series, samples } = useDash()
+  const { read, ready, live, alerts, series, samples, commSuccess, offlineDevices } = useDash()
   const col = (id - 1) % 4
   const row = Math.floor((id - 1) / 4)
-  const copy = { ready, live, alerts, read, samples }
+  const copy = { ready, live, alerts, read, samples, commSuccess, offlineDevices }
   return (
     <div className="snoc-clip">
       <div className="snoc-wall" style={{ transform: `translate(${-col * 1920}px, ${-row * 1080}px)` }}>

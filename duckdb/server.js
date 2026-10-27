@@ -429,6 +429,13 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.json({ limit: '1mb' }));
 app.use((req, res, next) => {
   res.set('Cache-Control', 'no-store');
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Cache-Control, Pragma');
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
   next();
 });
 app.use('/explorer', express.static(publicDir));

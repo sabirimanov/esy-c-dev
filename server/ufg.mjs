@@ -427,7 +427,7 @@ export function handleUfg(req, res) {
   if (url.pathname === "/ufg/alarms") {
     loadAlarms().then(
       (body) => send(res, 200, { alarms: body }),
-      () => res.writeHead(502).end(),
+      () => send(res, 502, { error: "upstream unavailable" }),
     )
     return true
   }
@@ -444,7 +444,7 @@ export function handleUfg(req, res) {
         return { capacity: capacityFor(sheet, filter, numbers) }
       })
       .then((body) => send(res, 200, body))
-      .catch(() => res.writeHead(502).end())
+      .catch(() => send(res, 502, { error: "upstream unavailable" }))
     return true
   }
   if (url.pathname === "/ufg/meters") {
@@ -462,13 +462,13 @@ export function handleUfg(req, res) {
         return loadMeterSplit(numbers, regionName)
       })
       .then((body) => send(res, 200, body))
-      .catch(() => res.writeHead(502).end())
+      .catch(() => send(res, 502, { error: "upstream unavailable" }))
     return true
   }
   if (url.pathname === "/ufg/hierarchy") {
     hierarchy().then(
       (body) => send(res, 200, { zones: body.zones, clusters: body.clusters }),
-      () => res.writeHead(502).end(),
+      () => send(res, 502, { error: "upstream unavailable" }),
     )
     return true
   }
@@ -492,7 +492,7 @@ export function handleUfg(req, res) {
       return readinessOf(body.clusters, snapshot, filter)
     })
       .then((body) => send(res, 200, body))
-      .catch(() => res.writeHead(502).end())
+      .catch(() => send(res, 502, { error: "upstream unavailable" }))
     return true
   }
   if (url.pathname === "/ufg/trend") {
@@ -506,7 +506,7 @@ export function handleUfg(req, res) {
     hierarchy()
       .then((body) => trend(filter, body.clusters, from, to, prevFrom, prevTo))
       .then((body) => send(res, 200, body))
-      .catch(() => res.writeHead(502).end())
+      .catch(() => send(res, 502, { error: "upstream unavailable" }))
     return true
   }
   const summaryKey = `ufg:summary:${filter.region}|${filter.zone}|${filter.cluster}|${from}|${to}`
@@ -550,6 +550,6 @@ export function handleUfg(req, res) {
     }
   })
     .then((body) => send(res, 200, body))
-    .catch(() => res.writeHead(502).end())
+    .catch(() => send(res, 502, { error: "upstream unavailable" }))
   return true
 }

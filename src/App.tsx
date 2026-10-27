@@ -64,7 +64,7 @@ function RouteScreen() {
   if (!ids.length) return <div className="screen" />
   return (
     <div className="wall-fit">
-      <div className="wall" style={{ width, height, transform: `scale(${scaleX}, ${scaleY})` }}>
+      <div className="wall" style={{ width, height, transform: scaleX === 1 && scaleY === 1 ? undefined : `scale(${scaleX}, ${scaleY})` }}>
         {spots.map((spot) => (
           <div key={spot.id} className="wall-tile" style={{ left: (spot.col - minCol) * TILE.w, top: (spot.row - minRow) * TILE.h }}>
             <ScreenView id={spot.id} />

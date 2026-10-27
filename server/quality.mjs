@@ -92,7 +92,7 @@ export function handleQuality(req, res) {
   loadUfgHierarchy()
     .then((body) => loadQuality(scopeOf(body.clusters, filter), from, to))
     .then((body) => send(res, 200, body))
-    .catch(() => res.writeHead(502).end())
+    .catch(() => send(res, 502, { error: "upstream unavailable" }))
   return true
 }
 
@@ -147,13 +147,14 @@ export function handleLeaks(req, res) {
     send(res, 400, { error: "bad filter" })
     return true
   }
-  loadUfgHierarchy()
-    .then((body) => {
-      const clusters = leakClusters(body.clusters, filter)
-      if (clusters && clusters.length === 0) return emptyLeaks
-      return loadLeaks(clusters, from, to)
-    })
-    .then((body) => send(res, 200, body))
-    .catch(() => res.writeHead(502).end())
+  const scoped = Boolean(filter.region || filter.zone || filter.cluster)
+  const load = scoped
+    ? loadUfgHierarchy().then((body) => {
+        const clusters = leakClusters(body.clusters, filter)
+        if (clusters && clusters.length === 0) return emptyLeaks
+        return loadLeaks(clusters, from, to)
+      })
+    : loadLeaks(null, from, to)
+  load.then((body) => send(res, 200, body)).catch(() => send(res, 502, { error: "upstream unavailable" }))
   return true
 }

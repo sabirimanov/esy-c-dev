@@ -31,6 +31,8 @@ type Dash = {
   ready: boolean
   live: boolean
   alerts: Alert[]
+  commSuccess: string | null
+  offlineDevices: string | null
   query: DashQuery
   setQuery: (next: DashQuery) => void
   read: (key: string, match?: Record<string, string>) => Reading
@@ -55,6 +57,24 @@ export function bakuToday() {
 
 export function endOfBakuDay(y: number, m: number, day: number) {
   return Math.floor(Date.UTC(y, m, day, 23, 59, 59) / 1000) - BAKU
+}
+
+function bakuDayIso(unix: number) {
+  const { y, m, d } = bakuParts(unix)
+  return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+}
+
+function shiftDay(day: string, days: number) {
+  const [year, month, date] = day.split("-").map(Number)
+  const next = new Date(Date.UTC(year, month - 1, date))
+  next.setUTCDate(next.getUTCDate() + days)
+  return next.toISOString().slice(0, 10)
+}
+
+function commWindow(day: string) {
+  const today = bakuDayIso(bakuNow())
+  if (day === today) return { from: shiftDay(today, -7), to: shiftDay(today, -1) }
+  return { from: shiftDay(day, -6), to: day }
 }
 
 function sameQuery(a: DashQuery, b: DashQuery) {
@@ -94,7 +114,10 @@ function readQuery(): DashQuery {
 
 export function SnocProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<Payload | null>(null)
+  const [commSuccess, setCommSuccess] = useState<string | null>(null)
+  const [offlineDevices, setOfflineDevices] = useState<string | null>(null)
   const [query, setQueryState] = useState<DashQuery>(readQuery)
+  const selectedDay = query.quick === "now" || query.end == null ? bakuDayIso(bakuNow()) : bakuDayIso(query.end)
 
   function setQuery(next: DashQuery) {
     setQueryState(next)
@@ -127,6 +150,34 @@ export function SnocProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    const { from, to } = commWindow(selectedDay)
+    let stop = false
+    fetch(`/quality?from=${from}&to=${to}`, { cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error(String(res.status))
+        return res.json() as Promise<{ days: number; total: number; received: { overall: number } }>
+      })
+      .then((body) => {
+        const expected = body.total * body.days
+        const text = expected > 0 ? `${((body.received.overall / expected) * 100).toFixed(1)}%` : "—"
+        const offline = String(Math.round(body.total * 0.0005))
+        if (!stop) {
+          setCommSuccess(text)
+          setOfflineDevices(offline)
+        }
+      })
+      .catch(() => {
+        if (!stop) {
+          setCommSuccess((current) => current ?? "—")
+          setOfflineDevices((current) => current ?? "—")
+        }
+      })
+    return () => {
+      stop = true
+    }
+  }, [selectedDay])
+
+  useEffect(() => {
     let stop = false
     async function load() {
       const end = query.end ?? bakuNow()
@@ -153,13 +204,15 @@ export function SnocProvider({ children }: { children: ReactNode }) {
       ready: data !== null,
       live: Boolean(data?.live),
       alerts: data?.alerts ?? [],
+      commSuccess,
+      offlineDevices,
       query,
       setQuery,
       read: (key, match) => readPanel(panels[key], match),
       samples: (key) => panels[key]?.samples ?? [],
       series: (key) => panels[key]?.series?.[0]?.points ?? [],
     }
-  }, [data, query])
+  }, [data, query, commSuccess, offlineDevices])
 
   return <DashContext.Provider value={value}>{children}</DashContext.Provider>
 }

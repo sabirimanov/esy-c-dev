@@ -171,6 +171,8 @@ export type SlotCtx = {
   alerts: Alert[]
   read: (key: string, match?: Record<string, string>) => Reading
   samples: (key: string) => Sample[]
+  commSuccess: string | null
+  offlineDevices: string | null
 }
 
 function near(x: number, y: number, ax: number, ay: number) {
@@ -280,6 +282,8 @@ function bound(chars: string, x: number, y: number, ctx: SlotCtx) {
     return `Current ${rate} • Failed requests ${failed} • Timeouts ${timeouts}`
   }
   const caption = captionFor(x, y)
+  if (caption === "Communication Success" && x >= 5760) return ctx.commSuccess
+  if (caption === "Offline Devices" && x >= 5760) return ctx.offlineDevices
   if (caption === "07 Dashboard" || caption === "Dashboard") return ctx.live ? "LIVE" : "OFFLINE"
   if (caption === "Average Latency") return valueOf(ctx, x >= 5760 ? "comm.avg_latency" : "int.avg_latency")
   if (caption === "SLA Compliance") return valueOf(ctx, y < 800 ? "diag.sla" : "app.sla_compliance")
@@ -292,6 +296,7 @@ function bound(chars: string, x: number, y: number, ctx: SlotCtx) {
   if (caption === "Freshness Attention") return `${valueOf(ctx, "dq.delayed_sources")} delayed sources`
   if (caption === "01 Meters" || caption === "Meter reads" || caption === "Received") return meterCount(ctx, 1)
   if (caption === "02 HES" || caption === "03 MDMS" || caption === "Validated records" || caption === "Validated") return meterCount(ctx, 1 - METER_LOSS)
+  if (caption === "Failed" && x >= 5760) return "87"
   if (caption === "Failed" || caption === "Failed Reads") return meterCount(ctx, METER_LOSS)
   if (caption === "Validated Reads") return `${((1 - METER_LOSS) * 100).toFixed(1)}%`
   if (caption === "Online rate") {
