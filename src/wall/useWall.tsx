@@ -2,11 +2,15 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { normalizeCity, normalizeCluster, normalizeRegion } from "./places"
 import { defaultWall, type WallState } from "./state"
 
-type WallPatch = Partial<Pick<WallState, "date" | "dateTo" | "regionId" | "cityId" | "clusterId" | "regionSet" | "seed" | "period" | "ufgOpen">>
+type WallPatch = Partial<Pick<WallState, "date" | "dateTo" | "regionId" | "cityId" | "clusterId" | "regionSet" | "seed" | "period" | "ufgOpen">> & {
+  clearCache?: boolean
+  reload?: boolean
+}
 
 type WallApi = {
   state: WallState
   patch: (partial: WallPatch) => void
+  clearCache: () => void
 }
 
 const WallContext = createContext<WallApi | null>(null)
@@ -85,6 +89,10 @@ export function WallProvider({ children }: { children: ReactNode }) {
     })
   }
 
+  function clearCache() {
+    patch({ clearCache: true })
+  }
+
   useEffect(() => {
     window.setRegion = (id: string | null) => {
       const regionId = normalizeRegion(id)
@@ -94,9 +102,10 @@ export function WallProvider({ children }: { children: ReactNode }) {
       }
       patch({ regionId, regionSet: true, cityId: null, clusterId: null })
     }
+    window.clearCache = clearCache
   })
 
-  return <WallContext.Provider value={{ state, patch }}>{children}</WallContext.Provider>
+  return <WallContext.Provider value={{ state, patch, clearCache }}>{children}</WallContext.Provider>
 }
 
 export function useWall() {

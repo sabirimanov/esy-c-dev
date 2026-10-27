@@ -200,10 +200,12 @@
   },
   "screen15": {
     "cards": [
-      { "label": "Revenue Realization", "value": "0%" },
-      { "label": "Collection Efficiency", "value": "0%" },
-      { "label": "Outstanding Balance", "value": "0" },
-      { "label": "Recovery Rate", "value": "0%" }
+      { "label": "Revenue Realization Gross", "value": "—" },
+      { "label": "Revenue Realization Net", "value": "—" },
+      { "label": "Bill Payment Rate", "value": "—" },
+      { "label": "Outstanding Credit", "value": "—" },
+      { "label": "Outstanding Balance", "value": "—" },
+      { "label": "Positive Balance %", "value": "—" }
     ],
     "reconnect": "0%",
     "bars": [
@@ -275,7 +277,7 @@
         "rows": [
           { "label": "Active Smart Metered", "value": "2.12 M" },
           { "label": "Active Retrofited", "value": "12,450" },
-          { "label": "High Impact Regions", "value": "2" }
+          { "label": "High Impact Regions", "value": "N/A" }
         ],
         "bar": { "label": "Service Coverage", "value": "92.4%", "fill": 217, "track": 235 }
       }

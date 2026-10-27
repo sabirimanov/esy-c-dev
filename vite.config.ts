@@ -8,6 +8,8 @@ import { handleDemand } from "./server/demand.mjs"
 import { handleGis } from "./server/gis.mjs"
 import { handleImpact } from "./server/impact.mjs"
 import { handleField } from "./server/field.mjs"
+import { handleBilling } from "./server/billing.mjs"
+import { handleAnomalies } from "./server/anomalies.mjs"
 import { handleReconnect } from "./server/reconnect.mjs"
 import { handleTamper } from "./server/tamper.mjs"
 import { handleWeather } from "./server/weather.mjs"
@@ -26,7 +28,7 @@ function wallSync(): Plugin {
           duckdbApp(req, res)
           return
         }
-        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res) && !handleDisplay(req, res)) next()
+        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleBilling(req, res) && !handleAnomalies(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res) && !handleDisplay(req, res)) next()
       })
     },
     configurePreviewServer(server) {
@@ -35,7 +37,7 @@ function wallSync(): Plugin {
           duckdbApp(req, res)
           return
         }
-        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res) && !handleDisplay(req, res)) next()
+        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleBilling(req, res) && !handleAnomalies(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res) && !handleDisplay(req, res)) next()
       })
     },
   }
@@ -49,6 +51,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/socnoc": { target: "https://cccdev.esyasoft.app", changeOrigin: true, secure: true },
+      "/soc-live": { target: "http://127.0.0.1:8443", changeOrigin: true, rewrite: (path) => path.replace(/^\/soc-live/, "/api/dashboard") },
     },
   },
 })

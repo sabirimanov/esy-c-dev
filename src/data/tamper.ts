@@ -29,6 +29,6 @@ export function useTamper(state: WallState) {
     return () => {
       live = false
     }
-  }, [state.date, state.dateTo])
+  }, [state.date, state.dateTo, state.seed])
   return counts
 }

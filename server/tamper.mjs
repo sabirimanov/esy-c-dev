@@ -1,6 +1,5 @@
+import { cached } from "./cache.mjs"
 import { duckdbUrl } from "./duckdb-origin.mjs"
-const ttl = 10 * 60 * 1000
-const cache = new Map()
 
 function send(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" })
@@ -8,17 +7,15 @@ function send(res, status, body) {
 }
 
 async function loadTamper(from, to) {
-  const key = `${from}|${to}`
-  const hit = cache.get(key)
-  if (hit && hit.until > Date.now()) return hit.body
-  const url = duckdbUrl("/api/tamper")
-  url.searchParams.set("from", from)
-  url.searchParams.set("to", to)
-  const remote = await fetch(url)
-  if (!remote.ok) throw new Error(String(remote.status))
-  const body = await remote.json()
-  cache.set(key, { until: Date.now() + ttl, body })
-  return body
+  const key = `tamper:${from}|${to}`
+  return cached(key, async () => {
+    const url = duckdbUrl("/api/tamper")
+    url.searchParams.set("from", from)
+    url.searchParams.set("to", to)
+    const remote = await fetch(url)
+    if (!remote.ok) throw new Error(String(remote.status))
+    return remote.json()
+  })
 }
 
 export function handleTamper(req, res) {

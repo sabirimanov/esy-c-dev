@@ -1,8 +1,6 @@
+import { cached } from "./cache.mjs"
 import { loadUfgHierarchy } from "./ufg.mjs"
-
 import { duckdbUrl } from "./duckdb-origin.mjs"
-const ttl = 10 * 60 * 1000
-const cache = new Map()
 
 function send(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" })
@@ -32,16 +30,14 @@ function readFilter(url) {
 }
 
 async function loadGis(ids) {
-  const key = ids.join(",")
-  const hit = cache.get(key)
-  if (hit && hit.until > Date.now()) return hit.body
-  const url = duckdbUrl("/api/gis")
-  for (const id of ids) url.searchParams.append("cluster", id)
-  const remote = await fetch(url)
-  if (!remote.ok) throw new Error(String(remote.status))
-  const body = await remote.json()
-  cache.set(key, { until: Date.now() + ttl, body })
-  return body
+  const key = `gis:${ids.join(",")}`
+  return cached(key, async () => {
+    const url = duckdbUrl("/api/gis")
+    for (const id of ids) url.searchParams.append("cluster", id)
+    const remote = await fetch(url)
+    if (!remote.ok) throw new Error(String(remote.status))
+    return remote.json()
+  })
 }
 
 export function handleGis(req, res) {

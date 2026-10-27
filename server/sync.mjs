@@ -1,4 +1,5 @@
 import fs from "node:fs"
+import { clearCache } from "./cache.mjs"
 
 const statePath = new URL("./wall-state.json", import.meta.url)
 const clients = new Set()
@@ -115,6 +116,23 @@ setInterval(() => {
 
 export function handleSync(req, res) {
   const path = (req.url || "").split("?")[0]
+  if (path === "/cache/clear") {
+    if (req.method !== "GET" && req.method !== "POST" && req.method !== "DELETE") {
+      res.writeHead(405).end()
+      return true
+    }
+    const info = clearCache()
+    state = {
+      ...state,
+      seed: (Number(state.seed) || 0) + 1,
+      rev: state.rev + 1,
+    }
+    persist()
+    broadcast()
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" })
+    res.end(JSON.stringify({ ...info, seed: state.seed, rev: state.rev }))
+    return true
+  }
   if (path !== "/sync") return false
 
   if (req.method === "GET") {
@@ -176,7 +194,14 @@ export function handleSync(req, res) {
       if (Number.isInteger(patch.snocViewM) && patch.snocViewM >= 0 && patch.snocViewM <= 11) next.snocViewM = patch.snocViewM
       if (patch.snocEnd === null || (Number.isInteger(patch.snocEnd) && patch.snocEnd > 0)) next.snocEnd = patch.snocEnd
       if (next.snocQuick === "now") next.snocEnd = Math.floor(Date.now() / 1000)
-      if (patch.reload === true) next.reload = (Number(state.reload) || 0) + 1
+      if (patch.clearCache === true) {
+        clearCache()
+        next.seed = (Number(state.seed) || 0) + 1
+      }
+      if (patch.reload === true) {
+        clearCache()
+        next.reload = (Number(state.reload) || 0) + 1
+      }
       next.rev = state.rev + 1
       state = next
       persist()

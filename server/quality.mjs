@@ -1,7 +1,6 @@
+import { cached } from "./cache.mjs"
 import { loadUfgHierarchy } from "./ufg.mjs"
 import { duckdbUrl } from "./duckdb-origin.mjs"
-const ttl = 10 * 60 * 1000
-const cache = new Map()
 
 function send(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" })
@@ -57,21 +56,19 @@ function readFilter(url) {
 }
 
 async function loadQuality(scope, from, to) {
-  const key = JSON.stringify({ ...scope, from, to })
-  const hit = cache.get(key)
-  if (hit && hit.until > Date.now()) return hit.body
-  const url = duckdbUrl("/api/quality")
-  url.searchParams.set("from", from)
-  url.searchParams.set("to", to)
-  url.searchParams.set("deviceRegion", scope.deviceRegion)
-  url.searchParams.set("clusterNo", scope.clusterNo)
-  url.searchParams.set("balance", scope.balance)
-  for (const site of scope.sites) url.searchParams.append("site", site)
-  const remote = await fetch(url)
-  if (!remote.ok) throw new Error(String(remote.status))
-  const body = await remote.json()
-  cache.set(key, { until: Date.now() + ttl, body })
-  return body
+  const key = `quality:${JSON.stringify({ ...scope, from, to })}`
+  return cached(key, async () => {
+    const url = duckdbUrl("/api/quality")
+    url.searchParams.set("from", from)
+    url.searchParams.set("to", to)
+    url.searchParams.set("deviceRegion", scope.deviceRegion)
+    url.searchParams.set("clusterNo", scope.clusterNo)
+    url.searchParams.set("balance", scope.balance)
+    for (const site of scope.sites) url.searchParams.append("site", site)
+    const remote = await fetch(url)
+    if (!remote.ok) throw new Error(String(remote.status))
+    return remote.json()
+  })
 }
 
 export function handleQuality(req, res) {
@@ -120,18 +117,16 @@ function leakClusters(clusters, filter) {
 const emptyLeaks = { suspected: 0, grades: { "Grade A": 0, "Grade B": 0, "Grade C": 0 } }
 
 async function loadLeaks(clusters, from, to) {
-  const key = `leaks|${from}|${to}|${clusters == null ? "*" : clusters.slice().sort().join(",")}`
-  const hit = cache.get(key)
-  if (hit && hit.until > Date.now()) return hit.body
-  const url = duckdbUrl("/api/leaks")
-  url.searchParams.set("from", from)
-  url.searchParams.set("to", to)
-  if (clusters) url.searchParams.set("clusters", clusters.join(","))
-  const remote = await fetch(url)
-  if (!remote.ok) throw new Error(String(remote.status))
-  const body = await remote.json()
-  cache.set(key, { until: Date.now() + ttl, body })
-  return body
+  const key = `leaks:${from}|${to}|${clusters == null ? "*" : clusters.slice().sort().join(",")}`
+  return cached(key, async () => {
+    const url = duckdbUrl("/api/leaks")
+    url.searchParams.set("from", from)
+    url.searchParams.set("to", to)
+    if (clusters) url.searchParams.set("clusters", clusters.join(","))
+    const remote = await fetch(url)
+    if (!remote.ok) throw new Error(String(remote.status))
+    return remote.json()
+  })
 }
 
 export function handleLeaks(req, res) {

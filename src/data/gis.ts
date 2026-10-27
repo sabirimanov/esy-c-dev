@@ -57,6 +57,6 @@ export function useGis(state: WallState) {
     return () => {
       live = false
     }
-  }, [state.regionId, state.cityId, state.clusterId])
+  }, [state.regionId, state.cityId, state.clusterId, state.seed])
   return infra
 }

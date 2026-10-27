@@ -1,6 +1,5 @@
+import { cached } from "./cache.mjs"
 import { duckdbUrl } from "./duckdb-origin.mjs"
-const ttl = 10 * 60 * 1000
-const cache = new Map()
 
 function send(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" })
@@ -46,18 +45,16 @@ function readFilter(url) {
 }
 
 async function loadReconnect(year, month, scope) {
-  const key = `${year}|${month}|${scope}`
-  const hit = cache.get(key)
-  if (hit && hit.until > Date.now()) return hit.body
-  const url = duckdbUrl("/api/reconnect")
-  url.searchParams.set("year", String(year))
-  url.searchParams.set("month", month)
-  url.searchParams.set("scope", scope)
-  const remote = await fetch(url)
-  if (!remote.ok) throw new Error(String(remote.status))
-  const body = await remote.json()
-  cache.set(key, { until: Date.now() + ttl, body })
-  return body
+  const key = `reconnect:${year}|${month}|${scope}`
+  return cached(key, async () => {
+    const url = duckdbUrl("/api/reconnect")
+    url.searchParams.set("year", String(year))
+    url.searchParams.set("month", month)
+    url.searchParams.set("scope", scope)
+    const remote = await fetch(url)
+    if (!remote.ok) throw new Error(String(remote.status))
+    return remote.json()
+  })
 }
 
 export function handleReconnect(req, res) {

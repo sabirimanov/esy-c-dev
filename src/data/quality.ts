@@ -41,6 +41,6 @@ export function useQuality(state: WallState) {
     return () => {
       live = false
     }
-  }, [state.date, state.dateTo, state.regionId, state.cityId, state.clusterId])
+  }, [state.date, state.dateTo, state.regionId, state.cityId, state.clusterId, state.seed])
   return stats
 }

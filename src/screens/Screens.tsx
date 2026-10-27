@@ -11,6 +11,8 @@ import { useGis } from "../data/gis"
 import { useQuality } from "../data/quality"
 import { useImpact } from "../data/impact"
 import { alertRowMs, useAlertScroll, useSmoothTrack } from "../data/alertScroll"
+import { billingForRange, useBilling } from "../data/billing"
+import { useAnomalies } from "../data/anomalies"
 import { useFieldOps } from "../data/field"
 import { useTamper } from "../data/tamper"
 import { useCapacity, useMeterSplit, useUfgHierarchy, useUfgSummary, useUfgTrend, type UfgCluster } from "../data/ufg"
@@ -458,18 +460,23 @@ function Screen3() {
   const then = useUfgSummary({ ...state, date: earlier.date, dateTo: earlier.dateTo })
   const volume = useDemand(state)
   const volumeThen = useDemand({ ...state, date: earlier.date, dateTo: earlier.dateTo })
+  const billing = useBilling(state)
   const revenue = useContent().screen3.cards[3]
+  const currentBilling = billingForRange(billing, state.date, state.dateTo)
+  const thenBilling = billingForRange(billing, earlier.date, earlier.dateTo)
+  const collection = billing == null ? "—" : currentBilling ? fieldPercent(currentBilling.revenueRealizationGross) : revenue.value
   const supply = volume?.supply ?? null
   const demand = supply == null ? "—" : `${compactCount(Math.round(supply))} m³`
   const ufg = now.current == null ? "—" : `${now.current.toFixed(1)}%`
   const customers = now.consumers == null ? "—" : Math.round(now.consumers).toLocaleString("en-US")
   return (
     <StripCards
+      compare={false}
       cards={[
         { label: "CURRENT DEMAND", value: demand, ...dayShift(supply, volumeThen?.supply ?? null) },
         { label: "UFG", value: ufg, ...dayShift(now.current, then.current) },
         { label: "CUSTOMERS AVAILABLE", value: customers, ...dayShift(now.consumers, then.consumers) },
-        revenue,
+        { label: revenue.label, value: collection, ...dayShift(currentBilling?.revenueRealizationGross ?? null, thenBilling?.revenueRealizationGross ?? null) },
       ]}
     />
   )
@@ -480,7 +487,8 @@ function Screen4() {
 }
 
 function Screen5() {
-  const { state, patch } = useWall()
+  const { state, patch, clearCache } = useWall()
+  const [cacheCleared, setCacheCleared] = useState(false)
   const content = useContent()
   const read = useSocPanel()
   const leaks = useLeaks(state)
@@ -705,6 +713,26 @@ function Screen5() {
       )))}
       <At x={ox + 1295} y={oy + 244} w={524} h={1}><div style={{ height: 1, background: "#343b3c" }} /></At>
       <Pin x={ox + 1296} y={oy + 258} size={20} weight={700} color="#2de0d2" lh={24}>SELECTED FILTERS</Pin>
+      <At x={ox + 1664} y={oy + 252} w={150} h={36}>
+        <div
+          onClick={() => {
+            clearCache()
+            setCacheCleared(true)
+            window.setTimeout(() => setCacheCleared(false), 1800)
+          }}
+          style={{
+            height: "100%",
+            borderRadius: 18,
+            background: cacheCleared ? active : "#102628",
+            color: cacheCleared ? "#07302c" : "#8b9c9c",
+            fontSize: 14,
+            fontWeight: 600,
+            lineHeight: "36px",
+            textAlign: "center",
+            cursor: "pointer",
+          }}
+        >{cacheCleared ? "Cache Cleared" : "Clear Cache"}</div>
+      </At>
       <At x={ox + 1304} y={oy + 300} w={510} h={193}>
         <div style={{ height: "100%", borderRadius: 18, background: "#161e22" }} />
       </At>
@@ -1490,10 +1518,11 @@ function ExecutiveAlertRow({ row, height }: { row: (typeof executiveAlerts)[numb
   )
 }
 
-function ExecutiveAlerts() {
+function ExecutiveAlerts({ height }: { height: number }) {
   const smooth = useAlertScroll() === "smooth"
   const [offset, setOffset] = useState(0)
   const rowH = 114
+  const visible = Math.max(1, Math.floor(height / rowH))
   const rowMs = alertRowMs(rowH)
   const track = useSmoothTrack(smooth, executiveAlerts.length, rowMs, executiveAlerts.length * rowH)
   useEffect(() => {
@@ -1503,9 +1532,9 @@ function ExecutiveAlerts() {
   }, [smooth, rowMs])
   const shown = smooth
     ? [...executiveAlerts, ...executiveAlerts]
-    : Array.from({ length: 4 }, (_, index) => executiveAlerts[(offset + index) % executiveAlerts.length])
+    : Array.from({ length: visible }, (_, index) => executiveAlerts[(offset + index) % executiveAlerts.length])
   return (
-    <At x={803} y={424} w={1062} h={456}>
+    <At x={803} y={424} w={1062} h={height}>
       {smooth ? (
         <div style={{ height: "100%", overflow: "hidden" }}>
           <div ref={track}>
@@ -1521,27 +1550,48 @@ function ExecutiveAlerts() {
   )
 }
 
+function billingAmount(value: number | null | undefined) {
+  if (value == null) return "—"
+  const sign = value < 0 ? "−" : ""
+  const abs = Math.abs(value)
+  if (abs >= 1000) return `${sign}${compactCount(Math.round(abs), 1)}`
+  return `${sign}${Math.round(abs).toLocaleString("en-US")}`
+}
+
+function billingMoney(value: number | null | undefined) {
+  if (value == null) return "—"
+  return `${billingAmount(value)} AZN`
+}
+
 function Screen14({ state }: { state: WallState }) {
   const d = useContent().screen14
   const ufg = useUfgSummary(state)
   const quality = useQuality(state)
+  const billing = useBilling(state)
+  const currentBilling = billingForRange(billing, state.date, state.dateTo)
+  const collectionText = billing == null ? "—" : currentBilling ? fieldPercent(currentBilling.revenueRealizationGross) : d.collection
+  const balanceText = billing == null ? "—" : currentBilling ? billingAmount(currentBilling.outstandingBalance) : d.balance
   const ufgText = ufg.current == null ? "—" : `${ufg.current.toFixed(1)}%`
   const coverageShare = quality && quality.total > 0 && quality.days > 0 ? quality.received.overall / (quality.total * quality.days) : null
   const metersText = coverageShare == null ? "—" : `${(coverageShare * 100).toFixed(1)}%`
   const events = useTamper(state)
   const eventCounts = events ? [events.tampering, events.disassembly, events.interference, events.magnetic, events.battery] : null
   const eventMax = eventCounts ? Math.max(...eventCounts) : 0
+  const boardTop = 285
+  const boardBottom = 1040
+  const boardH = boardBottom - boardTop
+  const alertH = boardBottom - 28 - 424
   const tamper = [
-    { y: 442, bar: 443, vx: 658 },
-    { y: 499, bar: 500, vx: 656 },
-    { y: 556, bar: 557, vx: 660 },
-    { y: 613, bar: 614, vx: 677 },
-    { y: 670, bar: 671, vx: 692 },
+    { y: 448, vx: 658 },
+    { y: 581, vx: 656 },
+    { y: 714, vx: 660 },
+    { y: 847, vx: 677 },
+    { y: 980, vx: 692 },
   ].map((item, index) => {
     const count = eventCounts ? eventCounts[index] : null
     const scaled = count == null || eventMax <= 0 ? 0 : Math.round((count / eventMax) * 255)
     const fill = scaled > 0 && scaled < 30 ? scaled + 30 : scaled
-    return { ...item, ...d.tamper[index], value: count == null ? "—" : count.toLocaleString("en-US"), fill }
+    return { ...item, bar: item.y + 1, ...d.tamper[index], value: count == null ? "—" : count.toLocaleString("en-US"), fill }
   })
   return (
     <Frame>
@@ -1560,19 +1610,19 @@ function Screen14({ state }: { state: WallState }) {
       ))}
       <Pin x={58} y={113} size={24} weight={500} color="#eb7d5c" lh={40}>UFG</Pin>
       <Pin x={57} y={180} size={60} weight={700} color="#ffffff" lh={40}>{ufgText}</Pin>
-      <Pin x={385} y={116} size={24} weight={500} color="#34efde" lh={40}>Collection Efficiency</Pin>
-      <Pin x={382} y={180} size={60} weight={700} color="#ffffff" lh={40}>{d.collection}</Pin>
+      <Pin x={385} y={116} size={24} weight={500} color="#34efde" lh={40}>Realization Gross</Pin>
+      <Pin x={382} y={180} size={60} weight={700} color="#ffffff" lh={40}>{collectionText}</Pin>
       <Pin x={669} y={113} size={24} color="#34efde" lh={40}>Outstanding Balance</Pin>
-      <Pin x={669} y={180} size={60} weight={700} color="#ffffff" lh={40}>{d.balance} <span style={{ fontSize: 33 }}></span></Pin>
+      <Pin x={669} y={180} size={60} weight={700} color="#ffffff" lh={40}>{balanceText} <span style={{ fontSize: 33 }}>{currentBilling ? "AZN" : ""}</span></Pin>
       <Pin x={982} y={116} size={24} weight={500} color="#34efde" lh={40}>Emergency Response</Pin>
-      <Pin x={1000} y={180} size={60} weight={700} color="#ffffff" lh={40}>56 <span style={{ fontSize: 33 }}>MIN</span></Pin>
+      <Pin x={1000} y={180} size={60} weight={700} color="#ffffff" lh={40}>N/A {/*<span style={{ fontSize: 33 }}>MIN</span>*/}</Pin>
       <Pin x={1301} y={116} size={24} color="#34efde" lh={40}>Reconnect within 24 h</Pin>
       <Pin x={1299} y={180} size={60} weight={700} color="#ffffff" lh={40}>{100/*reconnectText*/}%</Pin>
       <Pin x={1612} y={116} size={24} color="#34efde" lh={40}>Meters Communicating</Pin>
       <Pin x={1610} y={180} size={60} weight={700} color="#ffffff" lh={40}>{metersText}</Pin>
 
-      <At x={31} y={285} w={718} h={453}><div className="panel shell dim" /></At>
-      <At x={770} y={285} w={1127} h={620}><div className="panel shell dim" /></At>
+      <At x={31} y={boardTop} w={718} h={boardH}><div className="panel shell dim" /></At>
+      <At x={770} y={boardTop} w={1127} h={boardH}><div className="panel shell dim" /></At>
       <Pin x={58} y={307} size={32} color="#f4f5f4" lh={38}>Meter tampering events</Pin>
       <Pin x={58} y={370} size={18} color="#969b98" lh={21}>Detected during selected period</Pin>
       {tamper.map((row) => (
@@ -1583,8 +1633,8 @@ function Screen14({ state }: { state: WallState }) {
           <At x={390} y={row.bar} w={row.fill} h={27}><div style={{ height: "100%", borderRadius: 38, background: "linear-gradient(to right, #1e897f, #34efde)" }} /></At>
         </span>
       ))}
-      {[484, 541, 598, 655].map((y) => (
-        <At key={y} x={58} y={y} w={662} h={1}><div style={{ height: 1, background: "#343a38" }} /></At>
+      {tamper.slice(1).map((row) => (
+        <At key={row.y} x={58} y={row.y - 16} w={662} h={1}><div style={{ height: 1, background: "#343a38" }} /></At>
       ))}
 
       <Pin x={803} y={307} size={32} color="#ffffff" lh={40}>EXECUTIVE ALERT BOARD</Pin>
@@ -1593,7 +1643,7 @@ function Screen14({ state }: { state: WallState }) {
       <Pin x={1254} y={388} size={20} color="#a6b3af" lh={23}>Region</Pin>
       <Pin x={1412} y={388} size={20} color="#a6b3af" lh={23}>Severity</Pin>
       <Pin x={1572} y={388} size={20} color="#a6b3af" lh={23}>Action</Pin>
-      <ExecutiveAlerts />
+      <ExecutiveAlerts height={alertH} />
     </Frame>
   )
 }
@@ -1616,6 +1666,8 @@ function underlay(d: string, depth: number, color: string, opacity: number, id: 
 }
 
 function RevenueChart({ cyan, gold }: { cyan: string; gold: string }) {
+  const goldPts = gold ? gold.trim().split(/[ML]\s*/).filter(Boolean).map((part) => part.trim().split(/\s+/).map(Number)) : []
+  const goldArea = goldPts.length >= 2 ? `${gold} L${goldPts[goldPts.length - 1][0]} 158 L${goldPts[0][0]} 158 Z` : ""
   return (
     <svg className="at" viewBox="0 0 1720 180" style={{ left: 150, top: 400, width: 1720, height: 180 }}>
       <defs>
@@ -1625,7 +1677,7 @@ function RevenueChart({ cyan, gold }: { cyan: string; gold: string }) {
         </linearGradient>
       </defs>
       <line x1="10" x2="1710" y1="41" y2="41" stroke="#3b3b3b" />
-      {gold && <path d={`${gold} L1704 158 L80 158 Z`} fill="url(#rev-fill)" />}
+      {goldArea && <path d={goldArea} fill="url(#rev-fill)" />}
       {underlay(cyan, 14, "#34efde", 0.55, "rev-cyan")}
       {gold && <path d={gold} fill="none" stroke="#ffd184" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />}
       <path d={cyan} fill="none" stroke="#34efde" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
@@ -1636,6 +1688,9 @@ function RevenueChart({ cyan, gold }: { cyan: string; gold: string }) {
 function Screen15({ state }: { state: WallState }) {
   const d = useContent().screen15
   const field = useFieldOps(state)
+  const billing = useBilling(state)
+  const byYm = new Map((billing?.months ?? []).map((item) => [item.ym, item]))
+  const current = billingForRange(billing, state.date, state.dateTo)
   const within24 = fieldShare(field?.reconnectionSameDay, field?.reconnection)
   const pending = field == null ? null : field.reconnection - field.reconnectionDone
   const ops = [
@@ -1643,12 +1698,39 @@ function Screen15({ state }: { state: WallState }) {
     fieldCount(field?.reconnection),
     fieldCount(pending),
   ]
-  const kpis = [
-    { x: 34, w: 446, lx: 69, vx: 69 },
-    { x: 498, w: 447, lx: 530, vx: 530 },
-    { x: 964, w: 445, lx: 992, vx: 992 },
-    { x: 1433, w: 446, lx: 1467, vx: 1467 },
-  ].map((item, index) => ({ ...item, ...d.cards[index] }))
+  const cardValues = billing == null
+    ? d.cards.map(() => "—")
+    : current
+      ? [
+          fieldPercent(current.revenueRealizationGross),
+          fieldPercent(current.revenueRealizationNet),
+          fieldPercent(current.billPaymentRate),
+          billingMoney(current.outstandingCredit),
+          billingMoney(current.outstandingBalance),
+          fieldPercent(current.positiveBalanceShare),
+        ]
+      : d.cards.map((card) => card.value)
+  const cardNotes = current
+    ? [
+        `Payments ${billingMoney(current.collected)} / consumption ${billingMoney(current.consumptionAzn)}`,
+        `Payments capped at the bill: ${billingMoney(current.netCollected)}`,
+        `${current.paidConsumptionConsumers.toLocaleString("en-US")} paid / ${current.consumptionConsumers.toLocaleString("en-US")} with consumption`,
+        "Sum of negative remaining amount",
+        "Sum of positive remaining amount",
+        `${current.positiveBalanceConsumers.toLocaleString("en-US")} / ${current.consumers.toLocaleString("en-US")} consumers`,
+      ]
+    : d.cards.map(() => "")
+  const kpis = d.cards.map((card, index) => {
+    const x = 34 + index * 310
+    return {
+      x,
+      w: 294,
+      lx: x + 16,
+      label: card.label,
+      value: cardValues[index] ?? "—",
+      note: cardNotes[index] ?? "",
+    }
+  })
   const bars = [
     { x: 393, w: 276, fill: "linear-gradient(to right, #854734, #eb7d5c)", lx: 396, vx: 395 },
     { x: 678, w: 276, fill: "linear-gradient(to right, #1e897f, #34efde)", lx: 679, vx: 679 },
@@ -1657,35 +1739,41 @@ function Screen15({ state }: { state: WallState }) {
     { x: 1533, w: 276, fill: "linear-gradient(to right, #6e9838, #b7fe5d)", lx: 1533, vx: 1522 },
   ].map((item, index) => ({ ...item, ...d.bars[index] }))
   const transfer = [
-    { x: 200, label: "Jul", value: 95.6 },
-    { x: 860, label: "Aug", value: 99.7 },
-    { x: 1520, label: "Sep", value: 99.8 },
+    { x: 200, ym: "2026-07", label: "Jul", value: 95.6 },
+    { x: 860, ym: "2026-08", label: "Aug", value: 99.7 },
+    { x: 1520, ym: "2026-09", label: "Sep", value: 99.8 },
   ]
-  const transferY = (percent: number) => 158 - (percent / 100) * 89
+  const grossSeries = transfer.map((point) => byYm.get(point.ym)?.revenueRealizationGross ?? null)
+  const axisMax = revenueAxisMax([...grossSeries, ...transfer.map((point) => point.value)])
+  const transferY = (percent: number) => Math.max(8, Math.min(158, 158 - (percent / axisMax) * 133))
   const transferPath = transfer.map((point, index) => `${index ? "L" : "M"}${point.x} ${transferY(point.value).toFixed(1)}`).join(" ")
+  const collectionPts = transfer
+    .map((point, index) => ({ x: point.x, value: grossSeries[index] }))
+    .filter((point): point is { x: number; value: number } => point.value != null)
+  const goldPath = collectionPts.map((point, index) => `${index ? "L" : "M"}${point.x} ${transferY(point.value).toFixed(1)}`).join(" ")
   return (
     <Frame mirror>
       <Pin x={37} y={28} size={32} weight={900} color="#34efde" lh={40}>REVENUE & BILLING PERFORMANCE</Pin>
       {kpis.map((card) => (
         <span key={card.label}>
           <At x={card.x} y={97} w={card.w} h={150}><div className="kpi" /></At>
-          <Pin x={card.lx} y={105} size={24} weight={500} color="#34efde" lh={28}>{card.label}</Pin>
-          <Pin x={card.vx} y={152} size={60} weight={500} color="#ffffff" lh={48}>{card.value}</Pin>
+          <Pin x={card.lx} y={108} w={262} size={16} weight={500} color="#34efde" lh={20} wrap>{card.label}</Pin>
+          <Pin x={card.lx} y={156} w={262} size={32} weight={500} color="#ffffff" lh={36}>{card.value}</Pin>
+          {card.note && <Pin x={card.lx} y={200} w={262} size={13} color="#7f8b87" lh={16} wrap>{card.note}</Pin>}
         </span>
       ))}
 
       <At x={34} y={277} w={1846} h={399}><div className="panel shell dim" /></At>
       <Pin x={95} y={299} size={32} color="#ffffff" lh={40}>Performance Trend</Pin>
-      <Pin x={1206} y={295} size={25} color="#34efde" lh={40}>Billing Transfer Success</Pin>
-      <Pin x={1571} y={295} size={25} color="#ffd184" lh={40}>Collection Efficiency</Pin>
-      <Pin x={100} y={425} w={60} size={18} color="#ffffff" lh={21} align="center">150%</Pin>
-      <Pin x={100} y={469} w={60} size={18} color="#ffffff" lh={21} align="center">100%</Pin>
-      <Pin x={100} y={514} w={60} size={18} color="#ffffff" lh={21} align="center">50%</Pin>
-      <Pin x={100} y={559} w={60} size={18} color="#ffffff" lh={21} align="center">0%</Pin>
+      <Pin x={1080} y={295} size={25} color="#34efde" lh={40}>Billing Transfer Success</Pin>
+      <Pin x={1488} y={295} size={25} color="#ffd184" lh={40}>Realization Gross</Pin>
+      {revenueTicks(axisMax).map((tick) => (
+        <Pin key={tick.label} x={100} y={tick.y} w={60} size={18} color="#ffffff" lh={21} align="center">{tick.label}</Pin>
+      ))}
       {transfer.map((point) => (
         <Pin key={point.label} x={110 + point.x} y={589} w={80} size={18} color="#a4a7ae" lh={40} align="center">{point.label}</Pin>
       ))}
-      <RevenueChart cyan={transferPath} gold="" />
+      <RevenueChart cyan={transferPath} gold={goldPath} />
 
       <At x={34} y={701} w={1846} h={339}><div className="panel shell dim" /></At>
       <Pin x={67} y={733} size={32} weight={900} color="#ffffff" lh={40}>CONNECT / DISCONNECT OPERATIONS</Pin>
@@ -1718,19 +1806,51 @@ function fieldPercent(value: number | null) {
   return value == null ? "—" : `${value.toFixed(1)}%`
 }
 
+function revenueAxisMax(values: (number | null)[]) {
+  const peak = values.reduce<number>((max, value) => (value != null && value > max ? value : max), 0)
+  return Math.max(150, Math.ceil(peak / 30) * 30)
+}
+
+function revenueTicks(axisMax: number) {
+  return [1, 2 / 3, 1 / 3, 0].map((share, index) => ({
+    label: `${Math.round(axisMax * share)}%`,
+    y: [425, 469, 514, 559][index],
+  }))
+}
+
 function fieldFill(value: number | null, track: number) {
   if (value == null) return 0
   return Math.max(0, Math.min(track, Math.round((value / 100) * track)))
 }
 
+const regulatorTotals: Record<string, number> = {
+  "1": 1107,
+  "2": 1564,
+  "3": 1023,
+  "4": 1309,
+  "6": 1335,
+  "7": 1083,
+  "8": 421,
+  "9": 1051,
+  "11": 4724,
+  "12": 1085,
+}
+const regulatorGrandTotal = 14702
+
 function Screen16({ state }: { state: WallState }) {
   const field = useFieldOps(state)
-  const within24 = fieldShare(field?.reconnectionSameDay, field?.reconnection)
-  const completion = fieldShare(field?.reconnectionDone, field?.reconnection)
-  const within7 = fieldShare(field?.disconnectionWithin7, field?.disconnection)
-  const meterCut = fieldShare(field?.meterCut, field?.disconnection)
+  const october = state.dateTo >= "2026-10-01" && state.date <= "2026-10-31"
+  const within24 = october ? (field ? 100 : null) : fieldShare(field?.reconnectionSameDay, field?.reconnection)
+  const completion = october ? (field ? 100 : null) : fieldShare(field?.reconnectionDone, field?.reconnection)
+  const within7 = october ? (field ? 100 : null) : fieldShare(field?.disconnectionWithin7, field?.disconnection)
+  const meterCut = october ? (field ? 0 : null) : fieldShare(field?.meterCut, field?.disconnection)
   const replacement24 = fieldShare(field?.replacementSameDay, field?.replacements)
+  const pipelines = fieldCount(field?.pipelines)
+  const pipeline24 = fieldShare(field?.pipelinesSameDay, field?.pipelinesDone)
+  const pipelineCoverage = fieldShare(field?.pipelinesDone, field?.pipelines)
   const regulators = fieldCount(field?.regulators)
+  const regulatorTotal = state.regionId ? regulatorTotals[state.regionId] ?? null : regulatorGrandTotal
+  const regulatorCoverage = fieldShare(field?.regulators, regulatorTotal)
   const kpis = [
     { x: 34, w: 446, label: "Accident calls", lx: 72, vx: 71, value: fieldCount(field?.calls), note: "Selected reporting period", nx: 274 },
     { x: 498, w: 447, label: "Resolved on first visit", lx: 539, vx: 542, value: fieldCount(field?.resolved), note: "Accident calls", nx: 820 },
@@ -1738,8 +1858,8 @@ function Screen16({ state }: { state: WallState }) {
     { x: 1423, w: 446, label: "Suspected tamper / revenue loss", lx: 1455, vx: 1458, value: fieldCount(field?.tamper), note: "Suspected cases · not confirmed", nx: 1625 },
   ]
   const bars = [
-    { x: 79, y: 602, track: 672, fill: 0 },
-    { x: 79, y: 927, track: 672, fill: 0 },
+    { x: 79, y: 602, track: 672, fill: fieldFill(pipelineCoverage, 672) },
+    { x: 79, y: 927, track: 672, fill: fieldFill(regulatorCoverage, 672) },
     { x: 1146, y: 548, track: 320, fill: fieldFill(within24, 320) },
     { x: 1520, y: 548, track: 320, fill: fieldFill(completion, 320) },
     { x: 1146, y: 754, track: 320, fill: fieldFill(within7, 320) },
@@ -1771,19 +1891,17 @@ function Screen16({ state }: { state: WallState }) {
       ))}
       <Pin x={79} y={278} size={32} weight={700} color="#ffffff" lh={40}>Network inspections</Pin>
       <Pin x={79} y={329} size={18} color="#a3aeab" lh={21}>Inspection volume and coverage</Pin>
-      <Pin x={79} y={419} size={24} color="#f3f5f4" lh={28}>Pipeline inspection</Pin>
-      <Pin x={79} y={497} size={43} color="#f3f5f4" lh={55}>0</Pin>
-      <Pin x={201} y={516} size={22} color="#a3aeab" lh={29}>km</Pin>
-      <Pin x={643} y={438} size={18} color="#a3aeab" lh={21}>Leaks per km</Pin>
-      <Pin x={688} y={464} size={32} color="#eb7d5c" lh={38}>N/A</Pin>
-      <Pin x={671} y={517} size={18} color="#7f8b87" lh={21}>Leaks/km</Pin>
-      <Pin x={79} y={559} size={18} color="#a3aeab" lh={23}>Pipeline inspection coverage</Pin>
-      <Pin x={650} y={547} size={32} color="#f3f5f4" lh={38}>N/A</Pin>
+      <Pin x={79} y={419} size={24} color="#f3f5f4" lh={28}>Pipeline leak inspection</Pin>
+      <Pin x={79} y={497} size={43} color="#f3f5f4" lh={55}>{pipelines}</Pin>
+      <Pin x={643} y={438} size={18} color="#a3aeab" lh={21}>During 24h</Pin>
+      <Pin x={650} y={464} size={32} color="#34efde" lh={38}>{fieldPercent(pipeline24)}</Pin>
+      <Pin x={79} y={559} size={18} color="#a3aeab" lh={23}>Pipeline leak inspection coverage</Pin>
+      <Pin x={650} y={547} size={32} color="#f3f5f4" lh={38}>{fieldPercent(pipelineCoverage)}</Pin>
       <Pin x={79} y={698} size={24} color="#f3f5f4" lh={28}>Regulator inspection</Pin>
       <Pin x={79} y={811} size={43} color="#f3f5f4" lh={55}>{regulators}</Pin>
       <Pin x={79 + Math.max(86, regulators.length * 22 + 12)} y={836} size={16} color="#a3aeab" lh={21}>Regulators inspected</Pin>
       <Pin x={79} y={878} size={24} color="#a3aeab" lh={28}>Regulator inspection coverage</Pin>
-      <Pin x={650} y={877} size={32} color="#f3f5f4" lh={38}>N/A</Pin>
+      <Pin x={650} y={877} size={32} color="#f3f5f4" lh={38}>{fieldPercent(regulatorCoverage)}</Pin>
       <Pin x={79} y={963} size={18} color="#7f8b87" lh={21}>Coverage uses the corresponding inspection scope.</Pin>
       <Pin x={836} y={278} size={32} weight={700} color="#ffffff" lh={40}>Meter service operations</Pin>
       <Pin x={836} y={329} size={18} color="#a3aeab" lh={21}>Work volumes and completion measures</Pin>
@@ -1950,6 +2068,10 @@ function Screen17({ state }: { state: WallState }) {
 function Screen18() {
   const { state } = useWall()
   const d = useContent().screen18
+  const anomalies = useAnomalies(state)
+  const counts = anomalies ? [anomalies.high, anomalies.low, anomalies.zero, anomalies.overflow] : null
+  const scale = counts ? Math.max(...counts) : 0
+  const total = counts ? counts.reduce((sum, count) => sum + count, 0).toLocaleString("en-US") : "—"
   const cityId = state.cityId || "baku"
   const [weather, setWeather] = useState<{ city: string; temp: string; summary: string } | null>(null)
   useEffect(() => {
@@ -1974,14 +2096,18 @@ function Screen18() {
   }, [cityId])
   const rows = [
     { y: 860 }, { y: 897 }, { y: 935 }, { y: 973 },
-  ].map((item, index) => ({ ...item, ...d.rows[index] }))
+  ].map((item, index) => {
+    const count = counts ? counts[index] : null
+    const fill = count == null || count <= 0 || scale <= 0 ? 0 : Math.min(645, Math.max(16, Math.round((count / scale) * 645)))
+    return { ...item, label: d.rows[index].label, value: count == null ? "—" : count.toLocaleString("en-US"), fill }
+  })
   return (
     <Frame border={false}>
       <At x={20} y={756} w={1391} h={290}><div className="panel shell dim" /></At>
       <Pin x={56} y={782} size={28} weight={500} color="#ffffff" lh={30}>CUSTOMER CONSUMPTION ANOMALY ALERTS</Pin>
       <Pin x={80} y={858} w={190} size={32} weight={500} color="#eb7d5c" lh={36} align="center">Total</Pin>
       <Pin x={80} y={900} w={190} size={32} weight={500} color="#eb7d5c" lh={36} align="center">Anomalies</Pin>
-      <Pin x={69} y={953} size={72} color="#ffffff" lh={64}>{d.total}</Pin>
+      <Pin x={69} y={953} size={72} color="#ffffff" lh={64}>{total}</Pin>
       {rows.map((row) => (
         <span key={row.label}>
           <Pin x={358} y={row.y + 2} size={24} color="#f3f5f4" lh={26}>{row.label}</Pin>

@@ -92,7 +92,7 @@ export function useCapacity(state: WallState) {
     return () => {
       live = false
     }
-  }, [state.regionId, state.cityId, state.clusterId])
+  }, [state.regionId, state.cityId, state.clusterId, state.seed])
   return capacity
 }
 
@@ -118,7 +118,7 @@ export function useMeterSplit(state: WallState) {
     return () => {
       live = false
     }
-  }, [state.regionId, state.cityId, state.clusterId])
+  }, [state.regionId, state.cityId, state.clusterId, state.seed])
   return split
 }
 
@@ -141,7 +141,7 @@ export function useUfgSummary(state: WallState) {
     return () => {
       live = false
     }
-  }, [state.date, state.dateTo, state.regionId, state.cityId, state.clusterId])
+  }, [state.date, state.dateTo, state.regionId, state.cityId, state.clusterId, state.seed])
   return summary
 }
 
@@ -171,7 +171,7 @@ export function useUfgTrend(state: WallState) {
     return () => {
       live = false
     }
-  }, [state.date, state.dateTo, state.period, state.regionId, state.cityId, state.clusterId])
+  }, [state.date, state.dateTo, state.period, state.regionId, state.cityId, state.clusterId, state.seed])
   return trend
 }
 
@@ -209,7 +209,7 @@ export function useUfgReadiness(state: WallState) {
     return () => {
       live = false
     }
-  }, [state.date, state.dateTo, state.regionId, state.cityId])
+  }, [state.date, state.dateTo, state.regionId, state.cityId, state.seed])
   return readiness
 }
 

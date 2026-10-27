@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import pg from 'pg';
+import { cached, onClearCache } from '../server/cache.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -23,6 +24,7 @@ const SCHEMAS = {
   'sensor_data.duckdb': 'sensor_data',
   'tampering_events.duckdb': 'tampering_events',
   'ufg.duckdb': 'ufg',
+  'anomalies.duckdb': 'anomalies',
 };
 
 pg.types.setTypeParser(1082, (value) => value);
@@ -67,21 +69,18 @@ function getPool() {
     database: PGDATABASE,
     user: PGUSER,
     password: PGPASSWORD,
-    max: 8,
+    max: 16,
     statement_timeout: 180000,
   });
   pool.on('error', (error) => console.error(error));
   return pool;
 }
 
-let gate = Promise.resolve();
 const metaCache = new Map();
 let databaseList = null;
 
 function queued(work) {
-  const run = gate.then(work);
-  gate = run.then(() => {}, () => {});
-  return run;
+  return Promise.resolve().then(work);
 }
 
 function toPg(sql) {
@@ -130,34 +129,37 @@ async function databaseOrThrow(name) {
 
 async function openDatabase(name) {
   const file = await databaseOrThrow(name);
-  const cached = metaCache.get(file.name);
-  if (cached) return cached;
+  const cachedMeta = metaCache.get(file.name);
+  if (cachedMeta) return cachedMeta;
   const loaded = await loadMeta(SCHEMAS[file.name]);
   metaCache.set(file.name, loaded);
   return loaded;
 }
 
 async function query(database, sql, params = []) {
-  return queued(async () => {
-    await openDatabase(database);
-    const schema = SCHEMAS[database];
-    const client = await getPool().connect();
-    const onError = (error) => console.error(error);
-    client.on('error', onError);
-    try {
-      await client.query('BEGIN');
-      await client.query(`SET LOCAL search_path TO ${quoteIdent(schema)}`);
-      const result = await client.query(toPg(sql), params);
-      await client.query('COMMIT');
-      return result.rows;
-    } catch (error) {
-      try { await client.query('ROLLBACK'); } catch { /* connection already failed */ }
-      throw error;
-    } finally {
-      client.removeListener('error', onError);
-      client.release();
+  const schema = SCHEMAS[database];
+  if (!schema) {
+    const error = new Error('Unknown database');
+    error.status = 404;
+    throw error;
+  }
+  const client = await getPool().connect();
+  const onError = (error) => console.error(error);
+  client.on('error', onError);
+  try {
+    if (client._schema !== schema) {
+      await client.query(`SET search_path TO ${quoteIdent(schema)}; SET work_mem = '128MB'`);
+      client._schema = schema;
     }
-  });
+    const result = await client.query(toPg(sql), params);
+    return result.rows;
+  } catch (error) {
+    client._schema = null;
+    throw error;
+  } finally {
+    client.removeListener('error', onError);
+    client.release();
+  }
 }
 
 function quoteIdent(name) {
@@ -464,8 +466,10 @@ app.post('/api/query', async (req, res, next) => {
     const database = databaseFrom(req.body);
     await queued(() => openDatabase(database));
     const compiled = compileQuery(database, req.body, { limitCap: 500, withPaging: true });
-    const [countRow] = await query(database, compiled.countSql, compiled.params);
-    const rows = await query(database, compiled.sql, compiled.params);
+    const [[countRow], rows] = await Promise.all([
+      query(database, compiled.countSql, compiled.params),
+      query(database, compiled.sql, compiled.params),
+    ]);
     res.json({
       table: compiled.table.name,
       total: num(countRow?.n) ?? 0,
@@ -721,74 +725,77 @@ app.get('/api/pressure', async (req, res, next) => {
       throw error;
     }
 
-    let lowSensors = 0;
-    let lowViolations = 0;
-    if (lowRegion !== 'none') {
-      const region = lowRegion === 'all' ? '' : lowRegion;
-      const params = [from, to, region, cluster];
-      const [sensors] = await query(
-        'sensor_data.duckdb',
-        `SELECT count(*)::DOUBLE AS n
-         FROM sensor_master
-         WHERE sensor_type = 'Pressure'
-           AND $1::DATE <= $2::DATE
-           AND ($3 = '' OR region = $3)
-           AND ($4 = '' OR cluster = $4)`,
-        params,
-      );
-      const [violations] = await query(
-        'sensor_data.duckdb',
-        `SELECT count(DISTINCT r.device_id)::DOUBLE AS n
-         FROM sensor_readings r
-         JOIN sensor_master m ON m.device_id = r.device_id
-         WHERE m.sensor_type = 'Pressure'
-           AND r.reading_type = 'Pressure'
-           AND ($3 = '' OR m.region = $3)
-           AND ($4 = '' OR m.cluster = $4)
-           AND r.reading_time >= $1::TIMESTAMP
-           AND r.reading_time < $2::DATE + INTERVAL 1 DAY
-           AND (r.reading_value < 18 OR r.reading_value > 50)`,
-        params,
-      );
-      lowSensors = num(sensors?.n) ?? 0;
-      lowViolations = num(violations?.n) ?? 0;
-    }
+    const [lowRes, medRes] = await Promise.all([
+      lowRegion !== 'none'
+        ? (async () => {
+            const region = lowRegion === 'all' ? '' : lowRegion;
+            const params = [from, to, region, cluster];
+            const [row] = await query(
+              'sensor_data.duckdb',
+              `SELECT
+                 (SELECT count(*)::DOUBLE
+                  FROM sensor_master
+                  WHERE sensor_type = 'Pressure'
+                    AND $1::DATE <= $2::DATE
+                    AND ($3 = '' OR region = $3)
+                    AND ($4 = '' OR cluster = $4)) AS sensors,
+                 (SELECT count(DISTINCT r.device_id)::DOUBLE
+                  FROM sensor_readings r
+                  JOIN sensor_master m ON m.device_id = r.device_id
+                  WHERE m.sensor_type = 'Pressure'
+                    AND r.reading_type = 'Pressure'
+                    AND ($3 = '' OR m.region = $3)
+                    AND ($4 = '' OR m.cluster = $4)
+                    AND r.reading_time >= $1::TIMESTAMP
+                    AND r.reading_time < $2::DATE + INTERVAL 1 DAY
+                    AND (r.reading_value < 18 OR r.reading_value > 50)) AS violations`,
+              params,
+            );
+            return { lowSensors: num(row?.sensors) ?? 0, lowViolations: num(row?.violations) ?? 0 };
+          })()
+        : { lowSensors: 0, lowViolations: 0 },
+      medium !== 'none'
+        ? (async () => {
+            const pred = mediumPredicate(medium, sites, 3);
+            const params = [from, to, ...pred.params];
+            const [row] = await query(
+              'evc.duckdb',
+              `SELECT
+                 (SELECT count(*)::DOUBLE
+                  FROM "Master Sheet"
+                  WHERE $1::DATE <= $2::DATE
+                    AND (${pred.sql})) AS sensors,
+                 (SELECT count(DISTINCT p."MSN")::DOUBLE
+                  FROM "Monthly Pressure" p
+                  JOIN "Master Sheet" m ON m."EVC Serial Number" = p."MSN"
+                  WHERE p."P1Value (bar)" < 1.1
+                    AND p."RTC" >= $1::TIMESTAMP
+                    AND p."RTC" < $2::DATE + INTERVAL 1 DAY
+                    AND (${pred.sql})) AS violations`,
+              params,
+            );
+            return { mediumSensors: num(row?.sensors) ?? 0, mediumViolations: num(row?.violations) ?? 0 };
+          })()
+        : { mediumSensors: 0, mediumViolations: 0 },
+    ]);
 
-    let mediumSensors = 0;
-    let mediumViolations = 0;
-    if (medium !== 'none') {
-      const pred = mediumPredicate(medium, sites, 3);
-      const params = [from, to, ...pred.params];
-      const [sensors] = await query(
-        'evc.duckdb',
-        `SELECT count(*)::DOUBLE AS n
-         FROM "Master Sheet"
-         WHERE $1::DATE <= $2::DATE
-           AND (${pred.sql})`,
-        params,
-      );
-      const [violations] = await query(
-        'evc.duckdb',
-        `SELECT count(DISTINCT p."MSN")::DOUBLE AS n
-         FROM "Monthly Pressure" p
-         JOIN "Master Sheet" m ON m."EVC Serial Number" = p."MSN"
-         WHERE p."P1Value (bar)" < 1.1
-           AND p."RTC" >= $1::TIMESTAMP
-           AND p."RTC" < $2::DATE + INTERVAL 1 DAY
-           AND (${pred.sql})`,
-        params,
-      );
-      mediumSensors = num(sensors?.n) ?? 0;
-      mediumViolations = num(violations?.n) ?? 0;
-    }
-
-    res.json({ lowSensors, mediumSensors, lowViolations, mediumViolations });
+    res.json({
+      lowSensors: lowRes.lowSensors,
+      mediumSensors: medRes.mediumSensors,
+      lowViolations: lowRes.lowViolations,
+      mediumViolations: medRes.mediumViolations,
+    });
   } catch (error) {
     next(error);
   }
 });
 
 let nonResidentialIds = null;
+onClearCache(() => {
+  metaCache.clear();
+  databaseList = null;
+  nonResidentialIds = null;
+});
 
 async function loadNonResidentialIds() {
   if (nonResidentialIds) return nonResidentialIds;
@@ -836,88 +843,91 @@ app.get('/api/quality', async (req, res, next) => {
     }
 
     const days = inclusiveDays(from, to);
-    let total = 0;
-    let nonResidential = 0;
-    let receivedOverall = 0;
-    let receivedResidential = 0;
-    let receivedNonResidential = 0;
-    if (deviceRegion !== 'none') {
-      const ids = await loadNonResidentialIds();
-      const nonres = ids.length ? `"AccountId" IN (${ids.map((id) => `'${id}'`).join(', ')})` : 'FALSE';
-      const [row] = await query(
-        'meters-signal.duckdb',
-        `WITH hits AS (
-           SELECT "Retrofit Id" AS retrofit, CAST("RTC" AS DATE) AS dt
-           FROM comms
-           WHERE "RTC" >= $1::TIMESTAMP
-             AND "RTC" < $2::DATE + INTERVAL 1 DAY
-             AND "Retrofit Id" IS NOT NULL AND "Retrofit Id" <> ''
-           UNION
-           SELECT "Retrofit Id", CAST("RTC" AS DATE)
-           FROM daily
-           WHERE "RTC" >= $1::TIMESTAMP
-             AND "RTC" < $2::DATE + INTERVAL 1 DAY
-             AND "Retrofit Id" IS NOT NULL AND "Retrofit Id" <> ''
-         ),
-         dev AS (
-           SELECT "Retrofit id" AS retrofit, ${nonres} AS nonres
-           FROM devices
-           WHERE ($3 = '' OR "Region" = $3)
-             AND ($4 = '' OR "Cluster no" = $4)
-         )
-         SELECT
-           (SELECT count(*)::DOUBLE FROM dev) AS total,
-           (SELECT count(*)::DOUBLE FROM dev WHERE nonres) AS nonres,
-           (SELECT count(*)::DOUBLE FROM hits h WHERE h.retrofit IN (SELECT retrofit FROM dev)) AS overall_hits,
-           (SELECT count(*)::DOUBLE FROM hits h WHERE h.retrofit IN (SELECT retrofit FROM dev WHERE nonres)) AS nonres_hits,
-           (SELECT count(*)::DOUBLE FROM hits h WHERE h.retrofit IN (SELECT retrofit FROM dev WHERE NOT nonres)) AS res_hits`,
-        [from, to, deviceRegion, clusterNo],
-      );
-      total = num(row?.total) ?? 0;
-      nonResidential = num(row?.nonres) ?? 0;
-      receivedOverall = num(row?.overall_hits) ?? 0;
-      receivedNonResidential = num(row?.nonres_hits) ?? 0;
-      receivedResidential = num(row?.res_hits) ?? 0;
-    }
-
-    let balanceMeters = 0;
-    let receivedBalance = 0;
-    if (balance !== 'none') {
-      const pred = mediumPredicate(balance, sites, 3);
-      const [row] = await query(
-        'evc.duckdb',
-        `WITH meters AS (
-           SELECT "EVC Serial Number" AS msn
-           FROM "Master Sheet"
-           WHERE "EVC type" = 'Non-Commercial'
-             AND (${pred.sql})
-         )
-         SELECT
-           (SELECT count(*)::DOUBLE FROM meters) AS n,
-           (SELECT count(*)::DOUBLE FROM (
-              SELECT DISTINCT p."MSN", CAST(p."RTC" AS DATE) AS dt
-              FROM "Monthly Pressure" p
-              WHERE p."MSN" IN (SELECT msn FROM meters)
-                AND p."RTC" >= $1::TIMESTAMP
-                AND p."RTC" < $2::DATE + INTERVAL 1 DAY
-           )) AS hits`,
-        [from, to, ...pred.params],
-      );
-      balanceMeters = num(row?.n) ?? 0;
-      receivedBalance = num(row?.hits) ?? 0;
-    }
+    const [devMetrics, balMetrics] = await Promise.all([
+      deviceRegion !== 'none'
+        ? (async () => {
+            const ids = await loadNonResidentialIds();
+            const nonres = ids.length ? `"AccountId" IN (${ids.map((id) => `'${id}'`).join(', ')})` : 'FALSE';
+            const [row] = await query(
+              'meters-signal.duckdb',
+              `WITH dev AS MATERIALIZED (
+                 SELECT "Retrofit id" AS retrofit, ${nonres} AS nonres
+                 FROM devices
+                 WHERE ($3 = '' OR "Region" = $3)
+                   AND ($4 = '' OR "Cluster no" = $4)
+               ),
+               hits AS (
+                 SELECT "Retrofit Id" AS retrofit, CAST("RTC" AS DATE) AS dt
+                 FROM comms
+                 WHERE "RTC" >= $1::TIMESTAMP
+                   AND "RTC" < $2::DATE + INTERVAL 1 DAY
+                   AND "Retrofit Id" IS NOT NULL AND "Retrofit Id" <> ''
+                   AND ($3 = '' AND $4 = '' OR "Retrofit Id" IN (SELECT retrofit FROM dev))
+                 UNION
+                 SELECT "Retrofit Id", CAST("RTC" AS DATE)
+                 FROM daily
+                 WHERE "RTC" >= $1::TIMESTAMP
+                   AND "RTC" < $2::DATE + INTERVAL 1 DAY
+                   AND "Retrofit Id" IS NOT NULL AND "Retrofit Id" <> ''
+                   AND ($3 = '' AND $4 = '' OR "Retrofit Id" IN (SELECT retrofit FROM dev))
+               )
+               SELECT
+                 (SELECT count(*)::DOUBLE FROM dev) AS total,
+                 (SELECT count(*)::DOUBLE FROM dev WHERE nonres) AS nonres,
+                 count(*)::DOUBLE AS overall_hits,
+                 count(*) FILTER (WHERE d.nonres)::DOUBLE AS nonres_hits,
+                 count(*) FILTER (WHERE NOT d.nonres)::DOUBLE AS res_hits
+               FROM hits h
+               JOIN dev d ON d.retrofit = h.retrofit`,
+              [from, to, deviceRegion, clusterNo],
+            );
+            return {
+              total: num(row?.total) ?? 0,
+              nonResidential: num(row?.nonres) ?? 0,
+              receivedOverall: num(row?.overall_hits) ?? 0,
+              receivedNonResidential: num(row?.nonres_hits) ?? 0,
+              receivedResidential: num(row?.res_hits) ?? 0,
+            };
+          })()
+        : { total: 0, nonResidential: 0, receivedOverall: 0, receivedNonResidential: 0, receivedResidential: 0 },
+      balance !== 'none'
+        ? (async () => {
+            const pred = mediumPredicate(balance, sites, 3);
+            const [row] = await query(
+              'evc.duckdb',
+              `WITH meters AS (
+                 SELECT "EVC Serial Number" AS msn
+                 FROM "Master Sheet"
+                 WHERE "EVC type" = 'Non-Commercial'
+                   AND (${pred.sql})
+               )
+               SELECT
+                 (SELECT count(*)::DOUBLE FROM meters) AS n,
+                 (SELECT count(*)::DOUBLE FROM (
+                    SELECT DISTINCT p."MSN", CAST(p."RTC" AS DATE) AS dt
+                    FROM "Monthly Pressure" p
+                    WHERE p."MSN" IN (SELECT msn FROM meters)
+                      AND p."RTC" >= $1::TIMESTAMP
+                      AND p."RTC" < $2::DATE + INTERVAL 1 DAY
+                 )) AS hits`,
+              [from, to, ...pred.params],
+            );
+            return { balanceMeters: num(row?.n) ?? 0, receivedBalance: num(row?.hits) ?? 0 };
+          })()
+        : { balanceMeters: 0, receivedBalance: 0 },
+    ]);
 
     res.json({
       days,
-      total,
-      residential: total - nonResidential,
-      nonResidential,
-      balance: balanceMeters,
+      total: devMetrics.total,
+      residential: devMetrics.total - devMetrics.nonResidential,
+      nonResidential: devMetrics.nonResidential,
+      balance: balMetrics.balanceMeters,
       received: {
-        overall: receivedOverall,
-        residential: receivedResidential,
-        nonResidential: receivedNonResidential,
-        balance: receivedBalance,
+        overall: devMetrics.receivedOverall,
+        residential: devMetrics.receivedResidential,
+        nonResidential: devMetrics.receivedNonResidential,
+        balance: balMetrics.receivedBalance,
       },
     });
   } catch (error) {
@@ -1421,9 +1431,9 @@ function nextIsoDay(value) {
   return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
 }
 
-function accidentCallsSql(window) {
-  return `
-    WITH people AS (
+function accidentCallsSql(window, withCluster = false) {
+  const peopleCte = withCluster
+    ? `people AS (
       SELECT DISTINCT ON (id) id, cluster
       FROM (
         SELECT btrim("SUBID_") AS id, btrim("Klaster Nömrəsi") AS cluster, 1 AS src
@@ -1434,7 +1444,14 @@ function accidentCallsSql(window) {
       ) s
       WHERE id <> '' AND cluster ~ '^[0-9]+$'
       ORDER BY id, src
-    ),
+    ),`
+    : '';
+  const joinPeople = withCluster
+    ? `LEFT JOIN people p ON p.id = NULLIF(btrim(a."Abonent kodu"), '')`
+    : '';
+  const whereCluster = withCluster ? `AND p.cluster = $5` : '';
+  return `
+    WITH ${peopleCte}
     raw AS (
       SELECT
         btrim(a."Qeydiyyat tarixi") AS registered,
@@ -1447,15 +1464,14 @@ function accidentCallsSql(window) {
           WHEN btrim(a."Ümumi vaxt") ~ '^[0-9]+([.][0-9]+)?'
           THEN substring(btrim(a."Ümumi vaxt") from '^[0-9]+([.][0-9]+)?')::numeric
         END AS minutes,
-        btrim(a."Region") AS region,
-        p.cluster
+        btrim(a."Region") AS region
       FROM mfs.accident_call a
-      LEFT JOIN people p ON p.id = NULLIF(btrim(a."Abonent kodu"), '')
-      WHERE btrim(a."Qeydiyyat tarixi") >= $1
-        AND btrim(a."Qeydiyyat tarixi") < $2
-        AND ($3 = '' OR btrim(a."Region") = $3)
-        AND ($4 = '' OR btrim(a."Rayon") = $4)
-        AND ($5 = '' OR p.cluster = $5)
+      ${joinPeople}
+      WHERE a."Qeydiyyat tarixi" >= $1
+        AND a."Qeydiyyat tarixi" < $2
+        AND ($3 = '' OR a."Region" = $3)
+        AND ($4 = '' OR a."Rayon" = $4)
+        ${whereCluster}
     ),
     calls AS (
       SELECT
@@ -1501,41 +1517,10 @@ app.get('/api/accident-impact', async (req, res, next) => {
     }
     const end = nextIsoDay(to);
     const year = Number(from.slice(0, 4));
-    const scope = [region, rayon, cluster];
-    const [row] = await query(
-      'mfs.duckdb',
-      accidentCallsSql(`
-        SELECT
-          count(*)::float8 AS calls,
-          count(DISTINCT code)::float8 AS affected,
-          count(*) FILTER (WHERE category IN ('Yanğın', 'Partlayış', 'Dəm qazı'))::float8 AS serious,
-          count(*) FILTER (WHERE accepted IS NOT NULL)::float8 AS answered,
-          count(*) FILTER (WHERE status NOT IN ('Tamamlanıb', 'Passiv', 'Aşkar olunmadı', 'Təmirə göndərildi'))::float8 AS open,
-          count(*) FILTER (WHERE status = 'Tamamlanıb')::float8 AS closed,
-          count(*) FILTER (WHERE status = 'Təmirə göndərildi')::float8 AS escalated,
-          count(*) FILTER (WHERE status = 'Tamamlanıb' AND call_count = 1)::float8 AS first_resolved,
-          count(*) FILTER (WHERE status = 'Tamamlanıb' AND minutes <= 60)::float8 AS closed_hour,
-          count(*) FILTER (WHERE seq > 1)::float8 AS repeat_calls,
-          count(*) FILTER (WHERE seq > 1 AND had_completed)::float8 AS reopened,
-          count(*) FILTER (WHERE bucket = 'supply')::float8 AS no_supply,
-          count(*) FILTER (WHERE bucket = 'leak')::float8 AS leak,
-          count(*) FILTER (WHERE bucket = 'pressure')::float8 AS pressure,
-          count(*) FILTER (WHERE bucket = 'meter')::float8 AS meter,
-          count(*) FILTER (WHERE bucket = 'other')::float8 AS other
-        FROM calls
-      `),
-      [from, end, ...scope],
-    );
-    const heatRows = await query(
-      'mfs.duckdb',
-      `
-        SELECT
-          btrim("Region") AS rqii,
-          substring(btrim("Qeydiyyat tarixi") from 6 for 2) AS month,
-          count(*) FILTER (WHERE btrim("Status") = 'Tamamlanıb')::float8 AS done,
-          count(*)::float8 AS n
-        FROM mfs.accident_call a
-        LEFT JOIN (
+    const hasCluster = Boolean(cluster);
+    const scope = hasCluster ? [region, rayon, cluster] : [region, rayon];
+    const heatJoin = hasCluster
+      ? `LEFT JOIN (
           SELECT DISTINCT ON (id) id, cluster
           FROM (
             SELECT btrim("SUBID_") AS id, btrim("Klaster Nömrəsi") AS cluster, 1 AS src
@@ -1546,16 +1531,54 @@ app.get('/api/accident-impact', async (req, res, next) => {
           ) s
           WHERE id <> '' AND cluster ~ '^[0-9]+$'
           ORDER BY id, src
-        ) p ON p.id = NULLIF(btrim(a."Abonent kodu"), '')
-        WHERE btrim(a."Qeydiyyat tarixi") >= $1
-          AND btrim(a."Qeydiyyat tarixi") < $2
-          AND ($3 = '' OR btrim(a."Region") = $3)
-          AND ($4 = '' OR btrim(a."Rayon") = $4)
-          AND ($5 = '' OR p.cluster = $5)
-        GROUP BY 1, 2
-      `,
-      [`${year}-01-01`, `${year + 1}-01-01`, ...scope],
-    );
+        ) p ON p.id = NULLIF(btrim(a."Abonent kodu"), '')`
+      : '';
+    const heatClusterWhere = hasCluster ? `AND p.cluster = $5` : '';
+    const [[row], heatRows] = await Promise.all([
+      query(
+        'mfs.duckdb',
+        accidentCallsSql(`
+          SELECT
+            count(*)::float8 AS calls,
+            count(DISTINCT code)::float8 AS affected,
+            count(*) FILTER (WHERE category IN ('Yanğın', 'Partlayış', 'Dəm qazı'))::float8 AS serious,
+            count(*) FILTER (WHERE accepted IS NOT NULL)::float8 AS answered,
+            count(*) FILTER (WHERE status NOT IN ('Tamamlanıb', 'Passiv', 'Aşkar olunmadı', 'Təmirə göndərildi'))::float8 AS open,
+            count(*) FILTER (WHERE status = 'Tamamlanıb')::float8 AS closed,
+            count(*) FILTER (WHERE status = 'Təmirə göndərildi')::float8 AS escalated,
+            count(*) FILTER (WHERE status = 'Tamamlanıb' AND call_count = 1)::float8 AS first_resolved,
+            count(*) FILTER (WHERE status = 'Tamamlanıb' AND minutes <= 60)::float8 AS closed_hour,
+            count(*) FILTER (WHERE seq > 1)::float8 AS repeat_calls,
+            count(*) FILTER (WHERE seq > 1 AND had_completed)::float8 AS reopened,
+            count(*) FILTER (WHERE bucket = 'supply')::float8 AS no_supply,
+            count(*) FILTER (WHERE bucket = 'leak')::float8 AS leak,
+            count(*) FILTER (WHERE bucket = 'pressure')::float8 AS pressure,
+            count(*) FILTER (WHERE bucket = 'meter')::float8 AS meter,
+            count(*) FILTER (WHERE bucket = 'other')::float8 AS other
+          FROM calls
+        `, hasCluster),
+        [from, end, ...scope],
+      ),
+      query(
+        'mfs.duckdb',
+        `
+          SELECT
+            btrim("Region") AS rqii,
+            substring(btrim("Qeydiyyat tarixi") from 6 for 2) AS month,
+            count(*) FILTER (WHERE "Status" = 'Tamamlanıb')::float8 AS done,
+            count(*)::float8 AS n
+          FROM mfs.accident_call a
+          ${heatJoin}
+          WHERE a."Qeydiyyat tarixi" >= $1
+            AND a."Qeydiyyat tarixi" < $2
+            AND ($3 = '' OR a."Region" = $3)
+            AND ($4 = '' OR a."Rayon" = $4)
+            ${heatClusterWhere}
+          GROUP BY 1, 2
+        `,
+        [`${year}-01-01`, `${year + 1}-01-01`, ...scope],
+      ),
+    ]);
     const calls = num(row?.calls) ?? 0;
     const pct = (part) => (calls > 0 ? ((num(part) ?? 0) / calls) * 100 : null);
     res.json({
@@ -1592,97 +1615,145 @@ app.get('/api/accident-impact', async (req, res, next) => {
 
 const fieldRayons = new Set(['Sumqayıt', 'Ağsu', 'İsmayıllı', 'Kürdəmir', 'Ucar', 'Sabunçu']);
 
+function consumerClusterExpr(regionCode, city, number, name) {
+  const slug = (col) =>
+    `regexp_replace(translate(lower(replace(replace(btrim(${col}), 'İ', 'i'), 'I', 'i')), 'ıəğöüşç', 'iegousc'), '[^a-z0-9]+', '_', 'g')`;
+  return `CASE
+    WHEN btrim(${number}) ~ '^[0-9]+$' THEN btrim(${number})
+    WHEN btrim(coalesce(${name}, '')) <> '' THEN
+      'c' || CASE WHEN btrim(${regionCode}) = '1' THEN '01' WHEN btrim(${regionCode}) = '25' THEN '24' ELSE btrim(${regionCode}) END
+      || '_' || ${slug(city)}
+      || '_' || trim(both '_' from ${slug(`coalesce(${name}, '')`)})
+  END`;
+}
+
 function fieldClusterSql(column) {
   return `AND EXISTS (
     SELECT 1 FROM people p
     WHERE p.id = NULLIF(btrim(${column}), '')
-      AND p.cluster = $5
+      AND (p.cluster = $5 OR 'c_' || p.cluster = $5)
   )`;
 }
 
-function fieldOpsSql(cluster) {
-  const people = cluster
-    ? `
-    WITH people AS (
+function fieldOpsSql(cluster, october = false) {
+  const clusterExpr = consumerClusterExpr('"Region Kodu"', '"Şəhər Adı"', '"Klaster Nömrəsi"', '"Klaster Adı"');
+  const peopleCte = cluster
+    ? `people AS (
       SELECT DISTINCT ON (id) id, cluster
       FROM (
-        SELECT btrim("SUBID_") AS id, btrim("Klaster Nömrəsi") AS cluster, 1 AS src
+        SELECT btrim("SUBID_") AS id, ${clusterExpr} AS cluster, 1 AS src
         FROM consumers."ƏHALİ"
         UNION ALL
-        SELECT btrim("SUBID_"), btrim("Klaster Nömrəsi"), 2
+        SELECT btrim("SUBID_"), ${clusterExpr}, 2
         FROM consumers."QEYRİ-ƏHALİ"
       ) s
-      WHERE id <> '' AND cluster ~ '^[0-9]+$'
+      WHERE id <> '' AND cluster IS NOT NULL
       ORDER BY id, src
     )`
     : '';
+  const metersCte = october
+    ? `meters AS (
+      SELECT DISTINCT ON (msn)
+        msn,
+        CASE WHEN region = 'Bakı RQSD' THEN 'Bakı RQİİ' ELSE region END AS region,
+        rayon,
+        cluster
+      FROM (
+        SELECT
+          btrim("Sayğac №") AS msn,
+          btrim("Region Adı") AS region,
+          btrim("Şəhər Adı") AS rayon,
+          ${clusterExpr} AS cluster,
+          1 AS src
+        FROM consumers."ƏHALİ"
+        WHERE btrim("Sayğac №") IN (SELECT btrim("MSN") FROM mfs.valve_commands)
+        UNION ALL
+        SELECT
+          btrim("SAYGAC_ NOMRE_") AS msn,
+          btrim("Region Adı") AS region,
+          btrim("Şəhər Adı") AS rayon,
+          ${clusterExpr} AS cluster,
+          2 AS src
+        FROM consumers."QEYRİ-ƏHALİ"
+        WHERE btrim("SAYGAC_ NOMRE_") IN (SELECT btrim("MSN") FROM mfs.valve_commands)
+      ) s
+      WHERE msn <> ''
+      ORDER BY msn, src
+    )`
+    : '';
+  const ctes = [peopleCte, metersCte].filter(Boolean);
+  const withClause = ctes.length ? `WITH ${ctes.join(',\n')}` : '';
   const match = (column) => (cluster ? fieldClusterSql(column) : '');
-  return `
-    ${people}
-    SELECT
-      acc.calls, acc.resolved, acc.leaks, acc.tamper, acc.emergency,
-      op.n AS reconnection, op.done AS reconnection_done, op.same_day AS reconnection_same,
-      cl.n AS disconnection, cl.within7 AS disconnection_within7, cl.cut_off AS meter_cut,
-      rp.n AS replacements, rp.same_day AS replacement_same,
-      rg.n AS regulators
-    FROM (
+  const valveClusterMatch = cluster ? `AND (m.cluster = $5 OR 'c_' || m.cluster = $5)` : '';
+  const meterOpsSql = october
+    ? `
+    (
       SELECT
-        count(*)::float8 AS calls,
-        count(*) FILTER (WHERE btrim(coalesce("Bitirmə tarixi", '')) <> '')::float8 AS resolved,
-        count(*) FILTER (WHERE btrim("Kategoriya") = 'Qaz sızma/Qaz iyi')::float8 AS leaks,
-        count(*) FILTER (
-          WHERE coalesce("Görülmüş işler", '') ILIKE '%müdaxilə%'
-             OR coalesce("İcraçının qeydləri", '') ILIKE '%müdaxilə%'
-        )::float8 AS tamper,
-        count(*) FILTER (WHERE btrim("Kategoriya") IN ('Yanğın', 'Partlayış', 'Dəm qazı'))::float8 AS emergency
-      FROM mfs.accident_call
-      WHERE btrim("Qeydiyyat tarixi") >= $1
-        AND btrim("Qeydiyyat tarixi") < $2
-        AND ($3 = '' OR btrim("Region") = $3)
-        AND ($4 = '' OR btrim("Rayon") = $4)
-        ${match('"Abonent kodu"')}
-    ) acc,
+        op_count AS n,
+        op_count AS done,
+        op_count AS same_day
+      FROM (
+        SELECT count(*)::float8 AS op_count
+        FROM mfs.valve_commands v
+        LEFT JOIN meters m ON m.msn = btrim(v."MSN")
+        WHERE btrim(v."Command Name") = 'Open'
+          AND substring(btrim(v."Request Time") from 1 for 10)::date >= $1::date
+          AND substring(btrim(v."Request Time") from 1 for 10)::date < $2::date
+          AND ($3 = '' OR m.region = $3)
+          AND ($4 = '' OR m.rayon = $4)
+          ${valveClusterMatch}
+      ) opened
+    ) op,
+    (
+      SELECT
+        cl_count AS n,
+        cl_count AS within7,
+        0::float8 AS cut_off
+      FROM (
+        SELECT count(*)::float8 AS cl_count
+        FROM mfs.valve_commands v
+        LEFT JOIN meters m ON m.msn = btrim(v."MSN")
+        WHERE btrim(v."Command Name") = 'Close'
+          AND substring(btrim(v."Request Time") from 1 for 10)::date >= $1::date
+          AND substring(btrim(v."Request Time") from 1 for 10)::date < $2::date
+          AND ($3 = '' OR m.region = $3)
+          AND ($4 = '' OR m.rayon = $4)
+          ${valveClusterMatch}
+      ) closed
+    ) cl,
+    (
+      SELECT 0::float8 AS n, 0::float8 AS same_day
+    ) rp,`
+    : `
     (
       SELECT
         count(*)::float8 AS n,
-        count(*) FILTER (WHERE status = 'Tamamlandı')::float8 AS done,
-        count(*) FILTER (WHERE loaded IS NOT NULL AND cut IS NOT NULL AND loaded = cut)::float8 AS same_day
-      FROM (
-        SELECT
-          CASE WHEN btrim("Yüklənmə tarixi") ~ '^[0-9]{2}[.][0-9]{2}[.][0-9]{4}'
-            THEN to_date(substring(btrim("Yüklənmə tarixi") from '^[0-9]{2}[.][0-9]{2}[.][0-9]{4}'), 'DD.MM.YYYY')
-          END AS loaded,
-          CASE WHEN btrim("Kəsilmə tarixi") ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
-            THEN substring(btrim("Kəsilmə tarixi") from '^[0-9]{4}-[0-9]{2}-[0-9]{2}')::date
-          END AS cut,
-          btrim("Cari status") AS status
-        FROM mfs.meter_opening
-        WHERE ($3 = '' OR btrim("Region") = $3)
-          AND ($4 = '' OR btrim("Rayon") = $4)
-          ${match('"Abonent kodu"')}
-      ) opened
-      WHERE loaded >= $1::date AND loaded < $2::date
+        count(*) FILTER (WHERE btrim("Cari status") = 'Tamamlandı')::float8 AS done,
+        count(*) FILTER (
+          WHERE left(btrim("Kəsilmə tarixi"), 10) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+            AND left(btrim("Kəsilmə tarixi"), 10)::date = to_date(left(btrim("Yüklənmə tarixi"), 10), 'DD.MM.YYYY')
+        )::float8 AS same_day
+      FROM mfs.meter_opening
+      WHERE substring(btrim("Yüklənmə tarixi"), 7, 4) || '-' || substring(btrim("Yüklənmə tarixi"), 4, 2) || '-' || substring(btrim("Yüklənmə tarixi"), 1, 2) >= $1
+        AND substring(btrim("Yüklənmə tarixi"), 7, 4) || '-' || substring(btrim("Yüklənmə tarixi"), 4, 2) || '-' || substring(btrim("Yüklənmə tarixi"), 1, 2) < $2
+        AND ($3 = '' OR btrim("Region") = $3)
+        AND ($4 = '' OR btrim("Rayon") = $4)
+        ${match('"Abonent kodu"')}
     ) op,
     (
       SELECT
         count(*)::float8 AS n,
-        count(*) FILTER (WHERE loaded IS NOT NULL AND cut IS NOT NULL AND abs(cut - loaded) < 7)::float8 AS within7,
-        count(*) FILTER (WHERE result = 'Qaz kəsildi (plombla)')::float8 AS cut_off
-      FROM (
-        SELECT
-          CASE WHEN btrim("Yüklənmə tarixi") ~ '^[0-9]{2}[.][0-9]{2}[.][0-9]{4}'
-            THEN to_date(substring(btrim("Yüklənmə tarixi") from '^[0-9]{2}[.][0-9]{2}[.][0-9]{4}'), 'DD.MM.YYYY')
-          END AS loaded,
-          CASE WHEN btrim("Kəsilmə tarixi") ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
-            THEN substring(btrim("Kəsilmə tarixi") from '^[0-9]{4}-[0-9]{2}-[0-9]{2}')::date
-          END AS cut,
-          btrim("Kəsilmə nəticəsi") AS result
-        FROM mfs.meter_closing
-        WHERE ($3 = '' OR btrim("Region") = $3)
-          AND ($4 = '' OR btrim("Rayon") = $4)
-          ${match('"Abonent kodu"')}
-      ) closed
-      WHERE loaded >= $1::date AND loaded < $2::date
+        count(*) FILTER (
+          WHERE left(btrim("Kəsilmə tarixi"), 10) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+            AND abs(left(btrim("Kəsilmə tarixi"), 10)::date - to_date(left(btrim("Yüklənmə tarixi"), 10), 'DD.MM.YYYY')) < 7
+        )::float8 AS within7,
+        count(*) FILTER (WHERE btrim("Kəsilmə nəticəsi") = 'Qaz kəsildi (plombla)')::float8 AS cut_off
+      FROM mfs.meter_closing
+      WHERE substring(btrim("Yüklənmə tarixi"), 7, 4) || '-' || substring(btrim("Yüklənmə tarixi"), 4, 2) || '-' || substring(btrim("Yüklənmə tarixi"), 1, 2) >= $1
+        AND substring(btrim("Yüklənmə tarixi"), 7, 4) || '-' || substring(btrim("Yüklənmə tarixi"), 4, 2) || '-' || substring(btrim("Yüklənmə tarixi"), 1, 2) < $2
+        AND ($3 = '' OR btrim("Region") = $3)
+        AND ($4 = '' OR btrim("Rayon") = $4)
+        ${match('"Abonent kodu"')}
     ) cl,
     (
       SELECT
@@ -1702,7 +1773,69 @@ function fieldOpsSql(cluster) {
           ${match('"Abonent kodu"')}
       ) replaced
       WHERE born >= $1::date AND born < $2::date
-    ) rp,
+    ) rp,`;
+  return `
+    ${withClause}
+    SELECT
+      acc.calls, acc.resolved, acc.leaks, acc.tamper, acc.emergency,
+      op.n AS reconnection, op.done AS reconnection_done, op.same_day AS reconnection_same,
+      cl.n AS disconnection, cl.within7 AS disconnection_within7, cl.cut_off AS meter_cut,
+      rp.n AS replacements, rp.same_day AS replacement_same,
+      pp.n AS pipelines, pp.done AS pipelines_done, pp.same_day AS pipelines_same,
+      rg.n AS regulators
+    FROM (
+      SELECT
+        count(*)::float8 AS calls,
+        count(*) FILTER (WHERE btrim(coalesce("Bitirmə tarixi", '')) <> '')::float8 AS resolved,
+        count(*) FILTER (WHERE "Kategoriya" = 'Qaz sızma/Qaz iyi')::float8 AS leaks,
+        count(*) FILTER (
+          WHERE coalesce("Görülmüş işler", '') ILIKE '%müdaxilə%'
+             OR coalesce("İcraçının qeydləri", '') ILIKE '%müdaxilə%'
+        )::float8 AS tamper,
+        count(*) FILTER (WHERE "Kategoriya" IN ('Yanğın', 'Partlayış', 'Dəm qazı'))::float8 AS emergency
+      FROM mfs.accident_call
+      WHERE "Qeydiyyat tarixi" >= $1
+        AND "Qeydiyyat tarixi" < $2
+        AND ($3 = '' OR "Region" = $3)
+        AND ($4 = '' OR "Rayon" = $4)
+        ${match('"Abonent kodu"')}
+    ) acc,
+    ${meterOpsSql}
+    (
+      SELECT
+        count(*)::float8 AS n,
+        count(*) FILTER (WHERE status = 'Tamamlanıb')::float8 AS done,
+        count(*) FILTER (
+          WHERE status = 'Tamamlanıb'
+            AND inspected IS NOT NULL
+            AND (recorded IS NULL OR abs(recorded - inspected) <= 1)
+        )::float8 AS same_day
+      FROM (
+        SELECT DISTINCT ON (btrim("Id"))
+          btrim("Id") AS id,
+          btrim("status") AS status,
+          CASE WHEN btrim("Yoxlama tarixi") ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+            THEN substring(btrim("Yoxlama tarixi") from 1 for 10)::date
+          END AS inspected,
+          CASE WHEN btrim("Tarix") ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+            THEN substring(btrim("Tarix") from 1 for 10)::date
+          END AS recorded
+        FROM mfs.plan_pipeline
+        WHERE btrim(coalesce("Id", '')) <> ''
+          AND btrim("Yoxlama tarixi") >= $1
+          AND btrim("Yoxlama tarixi") < $2
+          AND ($3 = '' OR btrim("Region") = $3)
+          AND ($4 = '' OR btrim("Rayon") = $4)
+        ORDER BY
+          btrim("Id"),
+          (btrim("status") = 'Tamamlanıb') DESC,
+          CASE
+            WHEN btrim("Tarix") ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+             AND btrim("Yoxlama tarixi") ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+            THEN abs(substring(btrim("Tarix") from 1 for 10)::date - substring(btrim("Yoxlama tarixi") from 1 for 10)::date)
+          END ASC NULLS LAST
+      ) pp
+    ) pp,
     (
       SELECT count(DISTINCT NULLIF(btrim("Qurğu"), ''))::float8 AS n
       FROM mfs.plan_regulator
@@ -1726,14 +1859,15 @@ app.get('/api/field-ops', async (req, res, next) => {
     const region = String(req.query.region || '');
     const rayon = String(req.query.rayon || '');
     const cluster = String(req.query.cluster || '');
-    if ((region && !accidentRegions.has(region)) || (rayon && !fieldRayons.has(rayon)) || (cluster && !/^\d{1,4}$/.test(cluster))) {
+    if ((region && !accidentRegions.has(region)) || (rayon && !fieldRayons.has(rayon)) || (cluster && !/^[A-Za-z0-9_]{1,80}$/.test(cluster))) {
       const error = new Error('bad scope');
       error.status = 400;
       throw error;
     }
+    const october = to >= '2026-10-01' && from <= '2026-10-31';
     const params = [from, nextIsoDay(to), region, rayon];
     if (cluster) params.push(cluster);
-    const [row] = await query('mfs.duckdb', fieldOpsSql(Boolean(cluster)), params);
+    const [row] = await query('mfs.duckdb', fieldOpsSql(Boolean(cluster), october), params);
     res.json({
       calls: num(row?.calls) ?? 0,
       resolved: num(row?.resolved) ?? 0,
@@ -1748,7 +1882,250 @@ app.get('/api/field-ops', async (req, res, next) => {
       meterCut: num(row?.meter_cut) ?? 0,
       replacements: num(row?.replacements) ?? 0,
       replacementSameDay: num(row?.replacement_same) ?? 0,
+      pipelines: cluster ? null : (num(row?.pipelines) ?? 0),
+      pipelinesDone: cluster ? null : (num(row?.pipelines_done) ?? 0),
+      pipelinesSameDay: cluster ? null : (num(row?.pipelines_same) ?? 0),
       regulators: cluster ? null : (num(row?.regulators) ?? 0),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+async function loadBillingCube() {
+  return cached('duckdb:billing-idp-cube-v2', async () => {
+    const clusterExpr = consumerClusterExpr('"Region Kodu"', '"Şəhər Adı"', '"Klaster Nömrəsi"', '"Klaster Adı"');
+    return query(
+      'billing.duckdb',
+      `WITH people AS (
+         SELECT DISTINCT ON (id) id, region, rayon, cluster
+         FROM (
+           SELECT
+             btrim("SUBID_") AS id,
+             CASE
+               WHEN btrim("Region Adı") IN ('Bakı RQSD', 'BRQİİ', 'Bakı RQİİ') THEN 'Bakı RQİİ'
+               WHEN btrim("Region Adı") IN ('Sumqayıt RQİİ', 'Sumqayıt Qİİ') THEN 'Sumqayıt RQİİ'
+               WHEN btrim("Region Adı") = 'Ağsu RQİİ' THEN 'Ağsu RQİİ'
+               ELSE btrim("Region Adı")
+             END AS region,
+             btrim("Şəhər Adı") AS rayon,
+             ${clusterExpr} AS cluster,
+             1 AS src
+           FROM consumers."ƏHALİ"
+           UNION ALL
+           SELECT
+             btrim("SUBID_"),
+             CASE
+               WHEN btrim("Region Adı") IN ('Bakı RQSD', 'BRQİİ', 'Bakı RQİİ') THEN 'Bakı RQİİ'
+               WHEN btrim("Region Adı") IN ('Sumqayıt RQİİ', 'Sumqayıt Qİİ') THEN 'Sumqayıt RQİİ'
+               WHEN btrim("Region Adı") = 'Ağsu RQİİ' THEN 'Ağsu RQİİ'
+               ELSE btrim("Region Adı")
+             END,
+             btrim("Şəhər Adı"),
+             ${clusterExpr},
+             2
+           FROM consumers."QEYRİ-ƏHALİ"
+           UNION ALL
+           SELECT
+             btrim("SUBID_"),
+             CASE
+               WHEN btrim("Region Adı") IN ('Bakı RQSD', 'BRQİİ', 'Bakı RQİİ') THEN 'Bakı RQİİ'
+               WHEN btrim("Region Adı") IN ('Sumqayıt RQİİ', 'Sumqayıt Qİİ') THEN 'Sumqayıt RQİİ'
+               WHEN btrim("Region Adı") = 'Ağsu RQİİ' THEN 'Ağsu RQİİ'
+               ELSE btrim("Region Adı")
+             END,
+             btrim("Şəhər Adı"),
+             ${clusterExpr},
+             3
+           FROM consumers."silinən"
+           UNION ALL
+           SELECT
+             btrim("AccountId"),
+             CASE "Region"
+               WHEN 'Baku' THEN 'Bakı RQİİ'
+               WHEN 'Sumgayit/Sumgayit' THEN 'Sumqayıt RQİİ'
+               WHEN 'Agsu' THEN 'Ağsu RQİİ'
+             END,
+             CASE "Region"
+               WHEN 'Baku' THEN 'Sabunçu'
+               WHEN 'Sumgayit/Sumgayit' THEN 'Sumqayıt'
+             END,
+             CASE WHEN btrim("Cluster no") ~ '^[0-9]+$' THEN btrim("Cluster no") END,
+             4
+           FROM meters_signal.devices
+         ) s
+         WHERE id <> ''
+         ORDER BY id, src
+       ),
+       scoped AS (
+         SELECT
+           b.billing_month,
+           b.consumption_azn,
+           b.payments_amount AS paid,
+           b."Qalıq məbləğ" AS balance,
+           coalesce(
+             p.region,
+             CASE
+               WHEN btrim(b."Region") IN ('BRQİİ', 'Bakı RQSD', 'Bakı RQİİ') THEN 'Bakı RQİİ'
+               WHEN btrim(b."Region") IN ('Sumqayıt RQİİ', 'Sumqayıt Qİİ') THEN 'Sumqayıt RQİİ'
+               WHEN btrim(b."Region") = 'Ağsu RQİİ' THEN 'Ağsu RQİİ'
+               ELSE btrim(b."Region")
+             END
+           ) AS region,
+           coalesce(p.rayon, btrim(b."Xidmət sahəsi")) AS rayon,
+           coalesce(p.cluster, '') AS cluster
+         FROM billing.idp_data b
+         LEFT JOIN people p ON p.id = btrim(b.subid)
+       )
+       SELECT
+         to_char(billing_month, 'YYYY-MM') AS ym,
+         region,
+         rayon,
+         cluster,
+         count(*)::float8 AS consumers,
+         count(*) FILTER (WHERE consumption_azn <> 0)::float8 AS consumption_consumers,
+         count(*) FILTER (WHERE consumption_azn <> 0 AND paid <> 0)::float8 AS paid_consumption_consumers,
+         count(*) FILTER (WHERE balance > 0)::float8 AS positive_balance_consumers,
+         coalesce(sum(consumption_azn), 0)::float8 AS consumption_azn,
+         coalesce(sum(paid), 0)::float8 AS collected,
+         coalesce(sum(LEAST(GREATEST(paid, 0), GREATEST(consumption_azn, 0))), 0)::float8 AS net_collected,
+         coalesce(sum(balance) FILTER (WHERE balance < 0), 0)::float8 AS credit,
+         coalesce(sum(balance) FILTER (WHERE balance > 0), 0)::float8 AS debt
+       FROM scoped
+       GROUP BY 1, 2, 3, 4
+       ORDER BY 1`,
+      [],
+    );
+  });
+}
+
+app.get('/api/billing-idp', async (req, res, next) => {
+  try {
+    const region = String(req.query.region || '');
+    const rayon = String(req.query.rayon || '');
+    const cluster = String(req.query.cluster || '');
+    if ((region && !accidentRegions.has(region)) || (rayon && !fieldRayons.has(rayon)) || (cluster && !/^[A-Za-z0-9_]{1,80}$/.test(cluster))) {
+      const error = new Error('bad scope');
+      error.status = 400;
+      throw error;
+    }
+    const cube = await loadBillingCube();
+    const byYm = new Map();
+    for (const row of cube) {
+      if (region && row.region !== region) continue;
+      if (rayon && row.rayon !== rayon) continue;
+      if (cluster && row.cluster !== cluster && `c_${row.cluster}` !== cluster) continue;
+      const ym = String(row.ym);
+      const bucket = byYm.get(ym) || {
+        ym,
+        consumers: 0,
+        consumption_consumers: 0,
+        paid_consumption_consumers: 0,
+        positive_balance_consumers: 0,
+        consumption_azn: 0,
+        collected: 0,
+        net_collected: 0,
+        credit: 0,
+        debt: 0,
+      };
+      bucket.consumers += num(row.consumers) ?? 0;
+      bucket.consumption_consumers += num(row.consumption_consumers) ?? 0;
+      bucket.paid_consumption_consumers += num(row.paid_consumption_consumers) ?? 0;
+      bucket.positive_balance_consumers += num(row.positive_balance_consumers) ?? 0;
+      bucket.consumption_azn += num(row.consumption_azn) ?? 0;
+      bucket.collected += num(row.collected) ?? 0;
+      bucket.net_collected += num(row.net_collected) ?? 0;
+      bucket.credit += num(row.credit) ?? 0;
+      bucket.debt += num(row.debt) ?? 0;
+      byYm.set(ym, bucket);
+    }
+    const rows = [...byYm.keys()].sort().map((ym) => byYm.get(ym));
+    const share = (part, whole) => (whole > 0 ? (part / whole) * 100 : null);
+    const months = rows.map((row) => {
+      const consumers = num(row.consumers) ?? 0;
+      const consumptionConsumers = num(row.consumption_consumers) ?? 0;
+      const paidConsumptionConsumers = num(row.paid_consumption_consumers) ?? 0;
+      const positiveBalanceConsumers = num(row.positive_balance_consumers) ?? 0;
+      const consumptionAzn = num(row.consumption_azn) ?? 0;
+      const collected = num(row.collected) ?? 0;
+      const netCollected = num(row.net_collected) ?? 0;
+      return {
+        ym: String(row.ym),
+        consumers,
+        consumptionConsumers,
+        paidConsumptionConsumers,
+        positiveBalanceConsumers,
+        consumptionAzn,
+        collected,
+        netCollected,
+        outstandingCredit: Math.abs(num(row.credit) ?? 0),
+        outstandingBalance: num(row.debt) ?? 0,
+        revenueRealizationGross: share(collected, consumptionAzn),
+        revenueRealizationNet: share(netCollected, consumptionAzn),
+        billPaymentRate: share(paidConsumptionConsumers, consumptionConsumers),
+        positiveBalanceShare: share(positiveBalanceConsumers, consumers),
+      };
+    });
+    res.json({ months });
+  } catch (error) {
+    next(error);
+  }
+});
+
+function monthsCovered(from, to) {
+  const months = [];
+  let year = Number(from.slice(0, 4));
+  let month = Number(from.slice(5, 7));
+  const end = to.slice(0, 7);
+  while (`${year}-${String(month).padStart(2, '0')}` <= end) {
+    months.push(`${year}-${String(month).padStart(2, '0')}`);
+    month += 1;
+    if (month === 13) {
+      month = 1;
+      year += 1;
+    }
+    if (months.length > 24) {
+      const error = new Error('range is too wide');
+      error.status = 400;
+      throw error;
+    }
+  }
+  return months;
+}
+
+app.get('/api/anomalies', async (req, res, next) => {
+  try {
+    const from = dayOrThrow(req.query.from, 'from');
+    const to = dayOrThrow(req.query.to, 'to');
+    if (from > to) {
+      const error = new Error('from must be on or before to');
+      error.status = 400;
+      throw error;
+    }
+    const region = String(req.query.region || '');
+    const rayon = String(req.query.rayon || '');
+    const cluster = String(req.query.cluster || '');
+    if ((region && !accidentRegions.has(region)) || (rayon && !fieldRayons.has(rayon)) || (cluster && !/^[A-Za-z0-9_]{1,80}$/.test(cluster))) {
+      const error = new Error('bad scope');
+      error.status = 400;
+      throw error;
+    }
+    const months = monthsCovered(from, to);
+    const [row] = await query(
+      'anomalies.duckdb',
+      `SELECT
+         (SELECT count(*)::float8 FROM abnormal_high WHERE ym = ANY($1::text[]) AND ($2 = '' OR region = $2) AND ($3 = '' OR service_area = $3) AND ($4 = '' OR cluster_id = $4)) AS high,
+         (SELECT count(*)::float8 FROM abnormal_low WHERE ym = ANY($1::text[]) AND ($2 = '' OR region = $2) AND ($3 = '' OR service_area = $3) AND ($4 = '' OR cluster_id = $4)) AS low,
+         (SELECT count(*)::float8 FROM zero_consumption WHERE ym = ANY($1::text[]) AND ($2 = '' OR region = $2) AND ($3 = '' OR service_area = $3) AND ($4 = '' OR cluster_id = $4)) AS zero,
+         (SELECT count(*)::float8 FROM overflow WHERE ym = ANY($1::text[]) AND ($2 = '' OR region = $2) AND ($3 = '' OR service_area = $3) AND ($4 = '' OR cluster_id = $4)) AS overflow`,
+      [months, region, rayon, cluster],
+    );
+    res.json({
+      high: num(row?.high) ?? 0,
+      low: num(row?.low) ?? 0,
+      zero: num(row?.zero) ?? 0,
+      overflow: num(row?.overflow) ?? 0,
+      months,
     });
   } catch (error) {
     next(error);

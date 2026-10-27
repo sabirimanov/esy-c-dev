@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react"
 import { readPanel, type Panel } from "../snoc/format"
 
-const URL = "/socnoc/monitoring/screen1/api/dashboard?range=now"
+const BASE_URL = String(import.meta.env.VITE_SOC_DASHBOARD_URL || "/socnoc/monitoring/screen1/api/dashboard").replace(/^https?:\/\/127\.0\.0\.1:8443\/api\/dashboard$/, "/soc-live")
+const URL = `${BASE_URL}?range=now`
 const POLL_MS = 10_000
 
 export function useSocPanel() {

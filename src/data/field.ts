@@ -16,6 +16,9 @@ export type FieldStats = {
   meterCut: number
   replacements: number
   replacementSameDay: number
+  pipelines: number | null
+  pipelinesDone: number | null
+  pipelinesSameDay: number | null
   regulators: number | null
 }
 
@@ -44,6 +47,6 @@ export function useFieldOps(state: WallState) {
     return () => {
       live = false
     }
-  }, [state.date, state.dateTo, state.regionId, state.cityId, state.clusterId])
+  }, [state.date, state.dateTo, state.regionId, state.cityId, state.clusterId, state.seed])
   return stats
 }

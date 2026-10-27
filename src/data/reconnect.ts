@@ -28,6 +28,6 @@ export function useReconnect(state: WallState) {
     return () => {
       live = false
     }
-  }, [state.date, state.dateTo, state.regionId, state.cityId])
+  }, [state.date, state.dateTo, state.regionId, state.cityId, state.seed])
   return stats
 }

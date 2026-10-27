@@ -1,8 +1,8 @@
-import { useMemo } from "react"
 import layout from "./layout.json"
 import { SHOW_DATE_SELECTION, SnocCalendar } from "./calendar"
 import { useDash } from "./dashboard"
 import { EventsFeed, tallyAlerts } from "./feed"
+import { liveCopy } from "./slots"
 import type { Alert } from "./format"
 
 type Box = [0 | 1, number, number, number, number, number, string, string, number]
@@ -12,55 +12,10 @@ type Item = Box | Label | Mark
 
 const items = layout.items as Item[]
 
-const KEYS: Record<string, string> = {
-  "Integration Success": "int.integration_success",
-  "API Success": "int.api_success",
-  "Failed Transactions": "int.failed_transactions",
-  "Delayed Interfaces": "int.delayed_interfaces",
-  "Critical Failures": "int.critical_failures",
-  "DCI Health": "dc.dci_health",
-  "Infrastructure Availability": "dc.infra_availability",
-  "Database Health": "dc.database_health",
-  "Backup Success": "dc.backup_success",
-  "DR Readiness": "dc.dr_readiness",
-  "Application Availability": "app.availability",
-  "Critical Apps Healthy": "app.critical_healthy",
-  "App Error Rate": "app.error_rate",
-  "Active Incidents": "app.active_incidents",
-  "SLA Compliance": "app.sla_compliance",
-  "Communication Success": "comm.success",
-  "Online Devices": "comm.online_devices",
-  "Offline Devices": "comm.offline_devices",
-  "Gateway Availability": "comm.gateway_availability",
-  "Packet Loss": "comm.packet_loss",
-  "Equipment Health Index": "eq.health_index",
-  "Active Equipment": "eq.active",
-  "Faulty Equipment": "eq.faulty",
-  "Battery Risk": "eq.battery_risk",
-  "Sensor Availability": "eq.sensor_availability",
-  "Gateway Health": "eq.gateway_health",
-  "SOC Readiness": "soc.readiness",
-  "Active Safety Alerts": "soc.active_alerts",
-  "Critical Alerts": "soc.critical_alerts",
-  "Average Triage Time": "soc.triage_time",
-  "Escalation SLA": "soc.escalation_sla",
-  "Open Critical Cases": "soc.open_critical_cases",
-}
-
-function keyFor(label: string, x: number) {
-  if (label === "Average Latency") return x < 1920 ? "int.avg_latency" : x >= 5760 ? "comm.avg_latency" : ""
-  if (label === "Average Response Time") return x < 1920 ? "app.avg_response" : ""
-  return KEYS[label] ?? ""
-}
-
 function paintVisible(paint: string) {
   if (!paint) return false
   if (paint.includes("#")) return true
   return [...paint.matchAll(/rgba\([^)]*?,\s*([0-9.]+)\)/g)].some((match) => Number(match[1]) > 0.01)
-}
-
-function isLabel(item: Item): item is Label {
-  return item[0] === 2
 }
 
 function isKpiShell(kind: number, h: number, radius: number, fill: string) {
@@ -86,23 +41,9 @@ function hiddenNode(item: Item) {
   return /^\d{1,2}$/.test(chars) && x >= 3980 && x <= 4700 && y >= 150 && y <= 430
 }
 
-function feedCopy(x: number, y: number, chars: string, alerts: Alert[]) {
-  const counts = tallyAlerts(alerts)
-  const pad = (value: number) => String(value).padStart(2, "0")
-  if (near(x, y, 3940, 588)) return pad(alerts.length)
-  if (near(x, y, 4410, 592)) return pad(counts.critical)
-  if (near(x, y, 4866, 591)) return pad(counts.high)
-  if (near(x, y, 5299, 591)) return pad(counts.info)
-  if (near(x, y, 5509, 749)) return pad(counts.critical)
-  if (near(x, y, 5509, 822)) return pad(counts.high)
-  if (near(x, y, 5509, 896)) return pad(counts.info)
-  if (chars.includes("events marked Critical")) return `${counts.critical} events marked Critical`
-  if (chars.includes("High-priority")) return `${counts.high} High-priority escalation`
-  return null
-}
-
-function feedBar(x: number, y: number, fill: string, alerts: Alert[]) {
+function feedBar(x: number, y: number, fill: string, alerts: Alert[] | null) {
   if (Math.abs(x - 3981) > 2 || !fill.includes("90deg")) return null
+  if (!alerts) return 0
   const counts = tallyAlerts(alerts)
   const max = Math.max(counts.critical, counts.high, counts.info, 1)
   const value = Math.abs(y - 786) < 8 ? counts.critical : Math.abs(y - 860) < 8 ? counts.high : Math.abs(y - 933) < 8 ? counts.info : null
@@ -110,39 +51,56 @@ function feedBar(x: number, y: number, fill: string, alerts: Alert[]) {
   return Math.round((value / max) * 1627)
 }
 
+const RESOURCE: [number, string][] = [
+  [1426, "dc.cpu"],
+  [1469, "dc.memory"],
+  [1512, "dc.storage"],
+  [1555, "dc.network"],
+  [1598, "dc.database_load"],
+]
+
+function resourceWidth(x: number, y: number, w: number, fill: string, read: (key: string) => { value: number | null }) {
+  if (Math.abs(x - 205) > 2 || w > 500 || !fill.includes("90deg")) return null
+  const key = RESOURCE.find(([row]) => Math.abs(y - row) < 8)?.[1]
+  if (!key) return null
+  const value = read(key).value
+  if (value === null) return 0
+  return Math.round(Math.max(0, Math.min(1, value)) * 551)
+}
+
+function Spark({ x, y, w, h, color, points }: { x: number; y: number; w: number; h: number; color: string; points: [number, number][] }) {
+  if (points.length < 2) return null
+  const ys = points.map((point) => point[1])
+  const min = Math.min(...ys)
+  const span = Math.max(...ys) - min || 1
+  const d = points
+    .map((point, index) => {
+      const px = (index / (points.length - 1)) * w
+      const py = h - ((point[1] - min) / span) * (h - 4) - 2
+      return `${index ? "L" : "M"}${px.toFixed(1)} ${py.toFixed(1)}`
+    })
+    .join(" ")
+  return (
+    <svg className="snoc-node" style={{ left: x, top: y, width: w, height: h }}>
+      <path d={d} fill="none" stroke={color} strokeWidth={3} />
+    </svg>
+  )
+}
+
 export function SnocScreen({ id }: { id: number }) {
-  const { read, ready, alerts } = useDash()
+  const { read, ready, live, alerts, series, samples } = useDash()
   const col = (id - 1) % 4
   const row = Math.floor((id - 1) / 4)
-  const text = useMemo(() => {
-    const next = new Map<number, string>()
-    if (!ready) return next
-    const labels = items.filter(isLabel)
-    labels.forEach((value, index) => {
-      if (value[5] < 30) return
-      const label = labels
-        .filter((item) => item[5] <= 28 && item[2] < value[2] && value[2] - item[2] <= 80 && Math.abs(item[1] - value[1]) <= 20)
-        .sort((a, b) => b[2] - a[2])[0]
-      if (!label) return
-      const key = keyFor(label[9], value[1])
-      if (!key) return
-      const reading = read(key)
-      if (reading.text !== "—") next.set(index, reading.text)
-    })
-    return next
-  }, [read, ready])
-
-  let labelIndex = -1
+  const copy = { ready, live, alerts, read, samples }
   return (
     <div className="snoc-clip">
       <div className="snoc-wall" style={{ transform: `translate(${-col * 1920}px, ${-row * 1080}px)` }}>
         {items.map((item, index) => {
-          if (hiddenNode(item)) {
-            if (item[0] === 2) labelIndex += 1
-            return null
-          }
+          if (hiddenNode(item)) return null
           if (item[0] === 3) {
             const [, x, y, w, h, d, fill, stroke, sw] = item
+            if (near(x, y, 124, 2948)) return <Spark key={index} x={124} y={2910} w={693} h={160} color="#f07865" points={ready ? series("app.error_rate_chart") : []} />
+            if (near(x, y, 1080, 2922)) return <Spark key={index} x={1081} y={2908} w={615} h={168} color="#b7fe5d" points={ready ? series("app.response_time_chart") : []} />
             return (
               <svg key={index} className="snoc-node" style={{ left: x, top: y, width: w, height: h }}>
                 <path d={d} fill={paintVisible(fill) ? fill : "none"} stroke={paintVisible(stroke) ? stroke : "none"} strokeWidth={sw} />
@@ -150,9 +108,9 @@ export function SnocScreen({ id }: { id: number }) {
             )
           }
           if (item[0] === 2) {
-            labelIndex += 1
             const [, x, y, w, h, size, weight, color, align, chars] = item
             const quickLift = chars === "QUICK SELECT" || chars === "Common time periods" ? 95 : 0
+            const text = liveCopy(chars, x, y, copy)
             return (
               <div
                 key={index}
@@ -169,14 +127,14 @@ export function SnocScreen({ id }: { id: number }) {
                   textAlign: align === 1 ? "center" : align === 2 ? "right" : "left",
                 }}
               >
-                {(ready ? feedCopy(x, y, chars, alerts) : null) ?? text.get(labelIndex) ?? chars}
+                {text === null ? chars : text}
               </div>
             )
           }
           const [kind, x, y, w, h, radius, fill, stroke, sw] = item
           const kpi = isKpiShell(kind, h, radius, fill)
           const edge = !kpi && paintVisible(stroke)
-          const bar = ready ? feedBar(x, y, fill, alerts) : null
+          const bar = feedBar(x, y, fill, ready ? alerts : null) ?? resourceWidth(x, y, w, fill, read)
           return (
             <div
               key={index}

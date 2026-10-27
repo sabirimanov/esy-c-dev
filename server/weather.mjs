@@ -1,3 +1,5 @@
+import { cached } from "./cache.mjs"
+
 const cities = {
   baku: { name: "Baku", lat: 40.3667, lon: 49.8352 },
   sumgayit: { name: "Sumgayit", lat: 40.5961, lon: 49.67 },
@@ -39,7 +41,6 @@ const phrases = {
   99: "Thunderstorm",
 }
 
-const cache = new Map()
 const ttl = 10 * 60 * 1000
 
 function send(res, status, body) {
@@ -49,23 +50,25 @@ function send(res, status, body) {
 
 async function load(id) {
   const city = cities[id] || cities.baku
-  const hit = cache.get(city.name)
-  if (hit && hit.until > Date.now()) return hit.body
-  const url = new URL("https://api.open-meteo.com/v1/forecast")
-  url.searchParams.set("latitude", String(city.lat))
-  url.searchParams.set("longitude", String(city.lon))
-  url.searchParams.set("current", "temperature_2m,weather_code")
-  url.searchParams.set("timezone", "Asia/Baku")
-  const remote = await fetch(url)
-  if (!remote.ok) throw new Error(String(remote.status))
-  const data = await remote.json()
-  const body = {
-    city: city.name,
-    temp: `${Math.round(data.current.temperature_2m)}°`,
-    summary: phrases[data.current.weather_code] || "Unknown",
-  }
-  cache.set(city.name, { until: Date.now() + ttl, body })
-  return body
+  return cached(
+    `weather:${city.name}`,
+    async () => {
+      const url = new URL("https://api.open-meteo.com/v1/forecast")
+      url.searchParams.set("latitude", String(city.lat))
+      url.searchParams.set("longitude", String(city.lon))
+      url.searchParams.set("current", "temperature_2m,weather_code")
+      url.searchParams.set("timezone", "Asia/Baku")
+      const remote = await fetch(url)
+      if (!remote.ok) throw new Error(String(remote.status))
+      const data = await remote.json()
+      return {
+        city: city.name,
+        temp: `${Math.round(data.current.temperature_2m)}°`,
+        summary: phrases[data.current.weather_code] || "Unknown",
+      }
+    },
+    ttl,
+  )
 }
 
 export function handleWeather(req, res) {
@@ -78,12 +81,7 @@ export function handleWeather(req, res) {
   const id = url.searchParams.get("city") || "baku"
   load(id).then(
     (body) => send(res, 200, body),
-    () => {
-      const city = cities[id] || cities.baku
-      const hit = cache.get(city.name)
-      if (hit) send(res, 200, hit.body)
-      else res.writeHead(502).end()
-    },
+    () => res.writeHead(502).end(),
   )
   return true
 }

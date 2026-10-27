@@ -2,4 +2,5 @@
 
 interface Window {
   setRegion: (id: string | null) => void
+  clearCache: () => void
 }

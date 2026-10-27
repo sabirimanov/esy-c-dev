@@ -1,3 +1,4 @@
+import { cached } from "./cache.mjs"
 import { duckdbUrl } from "./duckdb-origin.mjs"
 
 const regionNames = {
@@ -54,20 +55,22 @@ export function handleImpact(req, res) {
     send(res, 400, { error: "bad filter" })
     return true
   }
-  const remote = duckdbUrl("/api/accident-impact")
-  remote.searchParams.set("from", from)
-  remote.searchParams.set("to", to)
   const region = regionNames[filter.region] || ""
   const rayon = rayonNames[filter.zone] || ""
   const cluster = filter.cluster ? clusterNumber(filter.cluster) : ""
-  if (region) remote.searchParams.set("region", region)
-  if (rayon) remote.searchParams.set("rayon", rayon)
-  if (cluster) remote.searchParams.set("cluster", cluster)
-  fetch(remote)
-    .then(async (response) => {
-      if (!response.ok) throw new Error(String(response.status))
-      send(res, 200, await response.json())
-    })
+  const key = `impact:${from}|${to}|${region}|${rayon}|${cluster}`
+  cached(key, async () => {
+    const remote = duckdbUrl("/api/accident-impact")
+    remote.searchParams.set("from", from)
+    remote.searchParams.set("to", to)
+    if (region) remote.searchParams.set("region", region)
+    if (rayon) remote.searchParams.set("rayon", rayon)
+    if (cluster) remote.searchParams.set("cluster", cluster)
+    const response = await fetch(remote)
+    if (!response.ok) throw new Error(String(response.status))
+    return response.json()
+  })
+    .then((body) => send(res, 200, body))
     .catch(() => res.writeHead(502).end())
   return true
 }

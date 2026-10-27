@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { noteWallClock } from "../data/alertScroll"
 import { readPanel, type Alert, type Panel, type Reading, type Sample } from "./format"
 
+const DASHBOARD_URL = String(import.meta.env.VITE_SOC_DASHBOARD_URL || "/socnoc/monitoring/screen1/api/dashboard").replace(/^https?:\/\/127\.0\.0\.1:8443\/api\/dashboard$/, "/soc-live")
 const POLL_MS = 10_000
 const STORAGE = "snoc-dashboard-query"
 const BAKU = 4 * 3600
@@ -130,7 +131,7 @@ export function SnocProvider({ children }: { children: ReactNode }) {
     async function load() {
       const end = query.end ?? bakuNow()
       try {
-        const res = await fetch(`/socnoc/monitoring/screen1/api/dashboard?range=${query.range}&end=${end}`, { cache: "no-store" })
+        const res = await fetch(`${DASHBOARD_URL}?range=${query.range}&end=${end}`, { cache: "no-store" })
         if (!res.ok) throw new Error(String(res.status))
         const body = (await res.json()) as Payload
         if (!stop) setData(body)

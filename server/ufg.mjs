@@ -1,14 +1,7 @@
+import { cached, getCached, setCached } from "./cache.mjs"
 import { duckdbUrl } from "./duckdb-origin.mjs"
 
 const origin = "https://cccdev.esyasoft.app/cccapi/"
-let capacityCache = null
-const ttl = 10 * 60 * 1000
-const regionCache = new Map()
-const consumerCache = new Map()
-const meterCache = new Map()
-const hourlyCache = new Map()
-let hierarchyCache = null
-let alarmCache = null
 
 function send(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" })
@@ -31,69 +24,57 @@ export function loadUfgHierarchy() {
 
 export async function loadClusterDemand(clusterId, from, to) {
   if (!/^[A-Za-z0-9_]{1,80}$/.test(clusterId)) return new Map()
-  const key = `${clusterId}|${from}|${to}`
-  const hit = hourlyCache.get(key)
-  if (hit && hit.until > Date.now()) return hit.days
-  const data = await fetchCcc(`/api/v1/cluster_hourly/${clusterId}`, {
-    gasDay: to,
-    gasDayFrom: from,
-    series: "true",
+  const key = `ufg:hourly:${clusterId}|${from}|${to}`
+  const record = await cached(key, async () => {
+    const data = await fetchCcc(`/api/v1/cluster_hourly/${clusterId}`, {
+      gasDay: to,
+      gasDayFrom: from,
+      series: "true",
+    })
+    const out = {}
+    for (const row of data.hours || []) {
+      const date = String(row.gas_day || "").slice(0, 10)
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+      const bucket = out[date] || { supply: 0, demand: 0 }
+      const supply = Number(row.supply_kwh)
+      const demand = Number(row.demand_kwh)
+      if (Number.isFinite(supply)) bucket.supply += supply
+      if (Number.isFinite(demand)) bucket.demand += demand
+      out[date] = bucket
+    }
+    return out
   })
-  const days = new Map()
-  for (const row of data.hours || []) {
-    const date = String(row.gas_day || "").slice(0, 10)
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
-    const bucket = days.get(date) || { supply: 0, demand: 0 }
-    const supply = Number(row.supply_kwh)
-    const demand = Number(row.demand_kwh)
-    if (Number.isFinite(supply)) bucket.supply += supply
-    if (Number.isFinite(demand)) bucket.demand += demand
-    days.set(date, bucket)
-  }
-  hourlyCache.set(key, { until: Date.now() + ttl, days })
-  return days
+  return new Map(Object.entries(record || {}))
 }
 
 async function hierarchy() {
-  if (hierarchyCache && hierarchyCache.until > Date.now()) return hierarchyCache.body
-  const data = await fetchCcc("/api/v1/hierarchy")
-  const zones = new Map()
-  for (const zone of data.zones || []) zones.set(zone.zone_id, zone.region_id)
-  const clusters = new Map()
-  for (const cluster of data.clusters || []) {
-    clusters.set(cluster.cluster_id, { region_id: cluster.region_id, zone_id: cluster.zone_id })
-  }
-  const body = {
-    zones: (data.zones || []).map((zone) => ({
-      zone_id: zone.zone_id,
-      region_id: zone.region_id,
-      name_en: zone.name_en || zone.name_az || zone.zone_id,
-    })),
-    clusters: (data.clusters || []).map((cluster) => ({
-      cluster_id: cluster.cluster_id,
-      region_id: cluster.region_id,
-      zone_id: cluster.zone_id,
-      name_en: cluster.name_en || cluster.name_az || cluster.cluster_id,
-    })),
-    index: { zones, clusters },
-  }
-  hierarchyCache = { until: Date.now() + ttl, body }
-  return body
+  return cached("ufg:hierarchy", async () => {
+    const data = await fetchCcc("/api/v1/hierarchy")
+    return {
+      zones: (data.zones || []).map((zone) => ({
+        zone_id: zone.zone_id,
+        region_id: zone.region_id,
+        name_en: zone.name_en || zone.name_az || zone.zone_id,
+      })),
+      clusters: (data.clusters || []).map((cluster) => ({
+        cluster_id: cluster.cluster_id,
+        region_id: cluster.region_id,
+        zone_id: cluster.zone_id,
+        name_en: cluster.name_en || cluster.name_az || cluster.cluster_id,
+      })),
+    }
+  })
 }
-
-const viewCache = new Map()
 
 async function loadClusterView(clusterId, gasDay) {
   if (!/^[A-Za-z0-9_]{1,80}$/.test(clusterId)) return null
-  const key = `${clusterId}|${gasDay}`
-  const hit = viewCache.get(key)
-  if (hit && hit.until > Date.now()) return hit.sheet
-  const data = await fetchCcc(`/api/v1/cluster_view/${clusterId}`, { gasDay, version: "1" })
-  const supply = Number(data.sheet?.supply_kwh)
-  const demand = Number(data.sheet?.demand_kwh)
-  const sheet = Number.isFinite(supply) && Number.isFinite(demand) ? { supply, demand } : null
-  viewCache.set(key, { until: Date.now() + ttl, sheet })
-  return sheet
+  const key = `ufg:view:${clusterId}|${gasDay}`
+  return cached(key, async () => {
+    const data = await fetchCcc(`/api/v1/cluster_view/${clusterId}`, { gasDay, version: "1" })
+    const supply = Number(data.sheet?.supply_kwh)
+    const demand = Number(data.sheet?.demand_kwh)
+    return Number.isFinite(supply) && Number.isFinite(demand) ? { supply, demand } : null
+  })
 }
 
 function scopedClusters(clusters, filter) {
@@ -116,6 +97,39 @@ function ufgPercent(supply, demand) {
 async function collectSheets(clusters, days) {
   const byDay = new Map(days.map((day) => [day, { supply: 0, demand: 0, found: false }]))
   const byCluster = new Map(clusters.map((cluster) => [cluster.cluster_id, { supply: 0, demand: 0, found: false }]))
+  if (!clusters.length || !days.length) return { byDay, byCluster }
+
+  const uncachedClusters = new Set()
+  for (const cluster of clusters) {
+    for (const day of days) {
+      if (getCached(`ufg:view:${cluster.cluster_id}|${day}`) === undefined) {
+        uncachedClusters.add(cluster.cluster_id)
+      }
+    }
+  }
+
+  if (uncachedClusters.size > 0 && days.length > 1) {
+    const firstDay = days[0]
+    const lastDay = days[days.length - 1]
+    await Promise.all(
+      [...uncachedClusters].map(async (clusterId) => {
+        try {
+          const hourlyDays = await loadClusterDemand(clusterId, firstDay, lastDay)
+          for (const day of days) {
+            const viewKey = `ufg:view:${clusterId}|${day}`
+            if (getCached(viewKey) !== undefined) continue
+            const bucket = hourlyDays.get(day)
+            if (!bucket || !(bucket.supply > 0)) {
+              setCached(viewKey, null)
+            }
+          }
+        } catch {
+          // fallback to direct cluster_view calls
+        }
+      }),
+    )
+  }
+
   const jobs = []
   for (const cluster of clusters) {
     for (const day of days) jobs.push([cluster.cluster_id, day])
@@ -141,7 +155,7 @@ async function collectSheets(clusters, days) {
       }
     }
   }
-  await Promise.all(Array.from({ length: Math.min(4, jobs.length) }, () => worker()))
+  await Promise.all(Array.from({ length: Math.min(48, jobs.length) }, () => worker()))
   return { byDay, byCluster }
 }
 
@@ -196,28 +210,29 @@ function seriesFrom(days, sheets) {
 }
 
 async function trend(filter, clusters, from, to, prevFrom, prevTo) {
-  const currentDays = daysOf(from, to)
-  const previousDays = daysOf(prevFrom, prevTo)
-  const scope = scopedClusters(clusters, filter)
-  const [currentSheets, previousSheets] = await Promise.all([
-    collectSheets(scope, currentDays),
-    collectSheets(scope, previousDays),
-  ])
-  return {
-    current: seriesFrom(currentDays, currentSheets),
-    previous: seriesFrom(previousDays, previousSheets),
-    hourly: false,
-    hours: [],
-  }
+  const key = `ufg:trend:${filter.region}|${filter.zone}|${filter.cluster}|${from}|${to}|${prevFrom}|${prevTo}`
+  return cached(key, async () => {
+    const currentDays = daysOf(from, to)
+    const previousDays = daysOf(prevFrom, prevTo)
+    const scope = scopedClusters(clusters, filter)
+    const [currentSheets, previousSheets] = await Promise.all([
+      collectSheets(scope, currentDays),
+      collectSheets(scope, previousDays),
+    ])
+    return {
+      current: seriesFrom(currentDays, currentSheets),
+      previous: seriesFrom(previousDays, previousSheets),
+      hourly: false,
+      hours: [],
+    }
+  })
 }
 
 async function loadRegions(gasDay) {
-  const hit = regionCache.get(gasDay)
-  if (hit && hit.until > Date.now()) return hit.rows
-  const data = await fetchCcc("/api/v1/map_regions", { gasDay })
-  const rows = Array.isArray(data.regions) ? data.regions : []
-  regionCache.set(gasDay, { until: Date.now() + ttl, rows })
-  return rows
+  return cached(`ufg:regions:${gasDay}`, async () => {
+    const data = await fetchCcc("/api/v1/map_regions", { gasDay })
+    return Array.isArray(data.regions) ? data.regions : []
+  })
 }
 
 async function latestRegions(days) {
@@ -230,19 +245,18 @@ async function latestRegions(days) {
 }
 
 async function loadAlarms() {
-  if (alarmCache && alarmCache.until > Date.now()) return alarmCache.body
-  const data = await fetchCcc("/api/v1/alarms")
-  const body = (Array.isArray(data.alarms) ? data.alarms : []).map((row) => ({
-    id: row.id,
-    category: row.category || "",
-    source: row.source || "",
-    severity: row.severity || "",
-    state: row.state || "",
-    currentValue: row.currentValue || "",
-    time: row.time || "",
-  }))
-  alarmCache = { until: Date.now() + ttl, body }
-  return body
+  return cached("ufg:alarms", async () => {
+    const data = await fetchCcc("/api/v1/alarms")
+    return (Array.isArray(data.alarms) ? data.alarms : []).map((row) => ({
+      id: row.id,
+      category: row.category || "",
+      source: row.source || "",
+      severity: row.severity || "",
+      state: row.state || "",
+      currentValue: row.currentValue || "",
+      time: row.time || "",
+    }))
+  })
 }
 
 function readinessOf(clusters, snapshot, filter) {
@@ -304,82 +318,78 @@ function consumerRegion(filter, cluster) {
 }
 
 async function loadConsumers(numbers, region = "") {
-  const key = region ? `region:${region}` : numbers == null ? "*" : numbers.slice().sort().join(",")
-  const hit = consumerCache.get(key)
-  if (hit && hit.until > Date.now()) return hit.total
-  const remote = await fetch(duckdbUrl("/api/query"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      database: "meters-signal.duckdb",
-      table: "devices",
-      limit: 1,
-      filters: region
-        ? [{ column: "Region", op: "eq", value: region }]
-        : numbers == null ? [] : [{ column: "Cluster no", op: "in", values: numbers }],
-    }),
+  const key = `ufg:consumers:${region ? `region:${region}` : numbers == null ? "*" : numbers.slice().sort().join(",")}`
+  return cached(key, async () => {
+    const remote = await fetch(duckdbUrl("/api/query"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        database: "meters-signal.duckdb",
+        table: "devices",
+        limit: 1,
+        filters: region
+          ? [{ column: "Region", op: "eq", value: region }]
+          : numbers == null ? [] : [{ column: "Cluster no", op: "in", values: numbers }],
+      }),
+    })
+    if (!remote.ok) throw new Error(String(remote.status))
+    const data = await remote.json()
+    const total = Number(data.total)
+    if (!Number.isFinite(total)) throw new Error("bad total")
+    return total
   })
-  if (!remote.ok) throw new Error(String(remote.status))
-  const data = await remote.json()
-  const total = Number(data.total)
-  if (!Number.isFinite(total)) throw new Error("bad total")
-  consumerCache.set(key, { until: Date.now() + ttl, total })
-  return total
 }
 
 async function loadMeterSplit(numbers, region = "") {
   const byRegion = Boolean(region) && !(numbers && numbers.length)
   if (numbers && numbers.length === 0 && !byRegion) return { smart: 0, retrofit: 0 }
-  const key = byRegion ? `region:${region}` : numbers == null ? "*" : numbers.slice().sort().join(",")
-  const hit = meterCache.get(key)
-  if (hit && hit.until > Date.now()) return hit.body
-  const url = duckdbUrl("/api/meters")
-  if (byRegion) url.searchParams.set("region", region)
-  else if (numbers) url.searchParams.set("clusters", numbers.join(","))
-  const remote = await fetch(url)
-  if (!remote.ok) throw new Error(String(remote.status))
-  const data = await remote.json()
-  const smart = Number(data.smart)
-  const retrofit = Number(data.retrofit)
-  if (!Number.isFinite(smart) || !Number.isFinite(retrofit)) throw new Error("bad meters")
-  const body = { smart, retrofit }
-  meterCache.set(key, { until: Date.now() + ttl, body })
-  return body
+  const key = `ufg:meters:${byRegion ? `region:${region}` : numbers == null ? "*" : numbers.slice().sort().join(",")}`
+  return cached(key, async () => {
+    const url = duckdbUrl("/api/meters")
+    if (byRegion) url.searchParams.set("region", region)
+    else if (numbers) url.searchParams.set("clusters", numbers.join(","))
+    const remote = await fetch(url)
+    if (!remote.ok) throw new Error(String(remote.status))
+    const data = await remote.json()
+    const smart = Number(data.smart)
+    const retrofit = Number(data.retrofit)
+    if (!Number.isFinite(smart) || !Number.isFinite(retrofit)) throw new Error("bad meters")
+    return { smart, retrofit }
+  })
 }
 
 const bakuCapacitySite = "Hacı Seyfəlli xətti (Nardaran QPS)"
 
 async function loadCapacityMap() {
-  if (capacityCache && capacityCache.until > Date.now()) return capacityCache.sheet
-  const remote = await fetch(duckdbUrl("/api/query"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ database: "evc.duckdb", table: "Master Sheet", limit: 50, filters: [] }),
+  return cached("ufg:capacityMap", async () => {
+    const remote = await fetch(duckdbUrl("/api/query"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ database: "evc.duckdb", table: "Master Sheet", limit: 50, filters: [] }),
+    })
+    if (!remote.ok) throw new Error(String(remote.status))
+    const data = await remote.json()
+    const clusters = {}
+    let baku = null
+    for (const row of data.rows || []) {
+      const site = String(row["Site Name / QPS ID/ Cluster ID / Customer ID"] || "")
+      const value = Number(row.max_capacity)
+      if (!Number.isFinite(value)) continue
+      const daily = value * 24
+      const match = /^Cluster (\d+)$/.exec(site)
+      if (match) clusters[match[1]] = daily
+      else if (site === bakuCapacitySite) baku = daily
+    }
+    return { clusters, baku }
   })
-  if (!remote.ok) throw new Error(String(remote.status))
-  const data = await remote.json()
-  const clusters = new Map()
-  let baku = null
-  for (const row of data.rows || []) {
-    const site = String(row["Site Name / QPS ID/ Cluster ID / Customer ID"] || "")
-    const value = Number(row.max_capacity)
-    if (!Number.isFinite(value)) continue
-    const daily = value * 24
-    const match = /^Cluster (\d+)$/.exec(site)
-    if (match) clusters.set(match[1], daily)
-    else if (site === bakuCapacitySite) baku = daily
-  }
-  const sheet = { clusters, baku }
-  capacityCache = { until: Date.now() + ttl, sheet }
-  return sheet
 }
 
-function capacityTotal(map, numbers) {
-  const keys = numbers == null ? [...map.keys()] : numbers
+function capacityTotal(clustersObj, numbers) {
+  const keys = numbers == null ? Object.keys(clustersObj || {}) : numbers
   let sum = 0
   let found = false
   for (const key of keys) {
-    const value = map.get(key)
+    const value = clustersObj?.[key]
     if (value == null) continue
     sum += value
     found = true
@@ -475,8 +485,12 @@ export function handleUfg(req, res) {
     return true
   }
   if (url.pathname === "/ufg/readiness") {
-    hierarchy()
-      .then((body) => latestRegions(days).then((snapshot) => readinessOf(body.clusters, snapshot, filter)))
+    const key = `ufg:readiness:${filter.region}|${filter.zone}|${from}|${to}`
+    cached(key, async () => {
+      const body = await hierarchy()
+      const snapshot = await latestRegions(days)
+      return readinessOf(body.clusters, snapshot, filter)
+    })
       .then((body) => send(res, 200, body))
       .catch(() => res.writeHead(502).end())
     return true
@@ -495,44 +509,46 @@ export function handleUfg(req, res) {
       .catch(() => res.writeHead(502).end())
     return true
   }
-  hierarchy()
-    .then(async (body) => {
-      const selectedClusters = scopedClusters(body.clusters, filter)
-      const compared = filter.region ? scopedClusters(body.clusters, { region: filter.region, zone: filter.zone, cluster: "" }) : []
-      const union = []
-      const seen = new Set()
-      for (const cluster of [...selectedClusters, ...compared]) {
-        if (seen.has(cluster.cluster_id)) continue
-        seen.add(cluster.cluster_id)
-        union.push(cluster)
-      }
-      const sheets = await collectSheets(union, days)
-      const volume = volumeOf(selectedClusters, sheets)
-      const target = 5
-      const current = volume.current
-      const numbers = filter.region || filter.zone || filter.cluster ? consumerNumbers(body.clusters, filter) : null
-      const selected = filter.cluster ? body.clusters.find((item) => item.cluster_id === filter.cluster) : null
-      const regionName = filter.region || filter.zone || filter.cluster ? consumerRegion(filter, selected) : ""
-      let consumers = null
+  const summaryKey = `ufg:summary:${filter.region}|${filter.zone}|${filter.cluster}|${from}|${to}`
+  cached(summaryKey, async () => {
+    const body = await hierarchy()
+    const selectedClusters = scopedClusters(body.clusters, filter)
+    const compared = filter.region ? scopedClusters(body.clusters, { region: filter.region, zone: filter.zone, cluster: "" }) : []
+    const union = []
+    const seen = new Set()
+    for (const cluster of [...selectedClusters, ...compared]) {
+      if (seen.has(cluster.cluster_id)) continue
+      seen.add(cluster.cluster_id)
+      union.push(cluster)
+    }
+    const numbers = filter.region || filter.zone || filter.cluster ? consumerNumbers(body.clusters, filter) : null
+    const selected = filter.cluster ? body.clusters.find((item) => item.cluster_id === filter.cluster) : null
+    const regionName = filter.region || filter.zone || filter.cluster ? consumerRegion(filter, selected) : ""
+    const consumersPromise = (async () => {
       try {
-        if (filter.cluster && numbers && numbers.length) consumers = await loadConsumers(numbers)
-        else if (regionName) consumers = await loadConsumers(null, regionName)
-        else if (numbers && numbers.length === 0) consumers = 0
-        else consumers = await loadConsumers(numbers)
+        if (filter.cluster && numbers && numbers.length) return await loadConsumers(numbers)
+        if (regionName) return await loadConsumers(null, regionName)
+        if (numbers && numbers.length === 0) return 0
+        return await loadConsumers(numbers)
       } catch {
-        consumers = null
+        return null
       }
-      return {
-        current,
-        target,
-        loss: volume.loss,
-        closure: current ? (target / current) * 100 : null,
-        supply: volume.supply,
-        sale: volume.sale,
-        extremes: filter.region ? extremesFrom(compared, sheets) : null,
-        consumers,
-      }
-    })
+    })()
+    const [sheets, consumers] = await Promise.all([collectSheets(union, days), consumersPromise])
+    const volume = volumeOf(selectedClusters, sheets)
+    const target = 5
+    const current = volume.current
+    return {
+      current,
+      target,
+      loss: volume.loss,
+      closure: current ? (target / current) * 100 : null,
+      supply: volume.supply,
+      sale: volume.sale,
+      extremes: filter.region ? extremesFrom(compared, sheets) : null,
+      consumers,
+    }
+  })
     .then((body) => send(res, 200, body))
     .catch(() => res.writeHead(502).end())
   return true

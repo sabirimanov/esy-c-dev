@@ -1,8 +1,7 @@
+import { cached } from "./cache.mjs"
 import { loadClusterDemand, loadUfgHierarchy } from "./ufg.mjs"
-
 import { duckdbUrl } from "./duckdb-origin.mjs"
-const ttl = 10 * 60 * 1000
-const cache = new Map()
+
 const empty = { total: 0, supply: 0, points: [], peak: null, forecast: null }
 
 function send(res, status, body) {
@@ -89,16 +88,14 @@ async function loadForecast(forecast, from, to) {
 }
 
 async function loadDemand(scope, from, to) {
-  const key = JSON.stringify({ clusters: scope.clusters, forecast: scope.forecast, from, to })
-  const hit = cache.get(key)
-  if (hit && hit.until > Date.now()) return hit.body
-  const [actual, forecast] = await Promise.all([
-    loadActual(scope.clusters, from, to),
-    loadForecast(scope.forecast, from, to),
-  ])
-  const body = { ...actual, forecast }
-  cache.set(key, { until: Date.now() + ttl, body })
-  return body
+  const key = `demand:${JSON.stringify({ clusters: scope.clusters, forecast: scope.forecast, from, to })}`
+  return cached(key, async () => {
+    const [actual, forecast] = await Promise.all([
+      loadActual(scope.clusters, from, to),
+      loadForecast(scope.forecast, from, to),
+    ])
+    return { ...actual, forecast }
+  })
 }
 
 export function handleDemand(req, res) {
