@@ -1,5 +1,8 @@
+import fs from "node:fs"
 import { cached, getCached, setCached } from "./cache.mjs"
 import { duckdbUrl } from "./duckdb-origin.mjs"
+
+const hierarchyFallback = JSON.parse(fs.readFileSync(new URL("./ufg-hierarchy.json", import.meta.url), "utf8"))
 
 const origin = "https://cccdev.esyasoft.app/cccapi/"
 
@@ -49,19 +52,24 @@ export async function loadClusterDemand(clusterId, from, to) {
 
 async function hierarchy() {
   return cached("ufg:hierarchy", async () => {
-    const data = await fetchCcc("/api/v1/hierarchy")
-    return {
-      zones: (data.zones || []).map((zone) => ({
-        zone_id: zone.zone_id,
-        region_id: zone.region_id,
-        name_en: zone.name_en || zone.name_az || zone.zone_id,
-      })),
-      clusters: (data.clusters || []).map((cluster) => ({
-        cluster_id: cluster.cluster_id,
-        region_id: cluster.region_id,
-        zone_id: cluster.zone_id,
-        name_en: cluster.name_en || cluster.name_az || cluster.cluster_id,
-      })),
+    try {
+      const data = await fetchCcc("/api/v1/hierarchy")
+      if (!Array.isArray(data.zones) || !data.zones.length || !Array.isArray(data.clusters)) throw new Error("bad hierarchy")
+      return {
+        zones: data.zones.map((zone) => ({
+          zone_id: zone.zone_id,
+          region_id: zone.region_id,
+          name_en: zone.name_en || zone.name_az || zone.zone_id,
+        })),
+        clusters: data.clusters.map((cluster) => ({
+          cluster_id: cluster.cluster_id,
+          region_id: cluster.region_id,
+          zone_id: cluster.zone_id,
+          name_en: cluster.name_en || cluster.name_az || cluster.cluster_id,
+        })),
+      }
+    } catch {
+      return hierarchyFallback
     }
   })
 }
