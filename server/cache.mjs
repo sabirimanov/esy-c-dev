@@ -5,15 +5,14 @@ const store = new Map()
 const inflight = new Map()
 const clearListeners = new Set()
 let saveTimer = null
+export const FRESH_MS = 5 * 60 * 1000
 
 try {
   const raw = JSON.parse(fs.readFileSync(cachePath, "utf8"))
   if (raw && typeof raw === "object") {
     const now = Date.now()
     for (const [key, entry] of Object.entries(raw)) {
-      if (entry && typeof entry === "object" && (!entry.until || entry.until > now)) {
-        store.set(key, entry)
-      }
+      if (entry && typeof entry === "object" && entry.until > now) store.set(key, entry)
     }
   }
 } catch {
@@ -41,20 +40,20 @@ function scheduleSave() {
 export function getCached(key) {
   const hit = store.get(key)
   if (!hit) return undefined
-  if (hit.until && hit.until <= Date.now()) {
+  if (!hit.until || hit.until <= Date.now()) {
     store.delete(key)
     return undefined
   }
   return hit.value
 }
 
-export function setCached(key, value, ttlMs = 0) {
+export function setCached(key, value, ttlMs = FRESH_MS) {
   store.set(key, { value, until: ttlMs > 0 ? Date.now() + ttlMs : 0 })
   scheduleSave()
   return value
 }
 
-export async function cached(key, loader, ttlMs = 0) {
+export async function cached(key, loader, ttlMs = FRESH_MS) {
   const hit = getCached(key)
   if (hit !== undefined) return hit
   const pending = inflight.get(key)

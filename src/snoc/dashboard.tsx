@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { noteWallClock } from "../data/alertScroll"
+import { cachedJson, FRESH_MS } from "../data/cachedFetch"
 import { readPanel, type Alert, type Panel, type Reading, type Sample } from "./format"
 
 const DASHBOARD_URL = String(import.meta.env.VITE_SOC_DASHBOARD_URL || "/socnoc/monitoring/screen1/api/dashboard").replace(/^https?:\/\/127\.0\.0\.1:8443\/api\/dashboard$/, "/soc-live")
-const POLL_MS = 10_000
 const STORAGE = "snoc-dashboard-query"
 const BAKU = 4 * 3600
 
@@ -112,7 +112,7 @@ function readQuery(): DashQuery {
   }
 }
 
-export function SnocProvider({ children }: { children: ReactNode }) {
+export function SnocProvider({ screenId, children }: { screenId: number; children: ReactNode }) {
   const [data, setData] = useState<Payload | null>(null)
   const [commSuccess, setCommSuccess] = useState<string | null>(null)
   const [offlineDevices, setOfflineDevices] = useState<string | null>(null)
@@ -149,54 +149,60 @@ export function SnocProvider({ children }: { children: ReactNode }) {
     return () => source.close()
   }, [])
 
+  const showComm = screenId % 4 === 0
+
   useEffect(() => {
+    if (!showComm) return
     const { from, to } = commWindow(selectedDay)
+    const url = `/quality?from=${from}&to=${to}`
     let stop = false
-    fetch(`/quality?from=${from}&to=${to}`, { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error(String(res.status))
-        return res.json() as Promise<{ days: number; total: number; received: { overall: number } }>
-      })
-      .then((body) => {
-        const expected = body.total * body.days
-        const text = expected > 0 ? `${((body.received.overall / expected) * 100).toFixed(1)}%` : "—"
-        const offline = String(Math.round(body.total * 0.0005))
-        if (!stop) {
-          setCommSuccess(text)
-          setOfflineDevices(offline)
-        }
-      })
-      .catch(() => {
-        if (!stop) {
-          setCommSuccess((current) => current ?? "—")
-          setOfflineDevices((current) => current ?? "—")
-        }
-      })
+    function load(force: boolean) {
+      cachedJson<{ days: number; total: number; received: { overall: number } }>(url, 0, force)
+        .then((body) => {
+          const expected = body.total * body.days
+          const text = expected > 0 ? `${((body.received.overall / expected) * 100).toFixed(1)}%` : "—"
+          const offline = String(Math.round(body.total * 0.0005))
+          if (!stop) {
+            setCommSuccess(text)
+            setOfflineDevices(offline)
+          }
+        })
+        .catch(() => {
+          if (!stop) {
+            setCommSuccess((current) => current ?? "—")
+            setOfflineDevices((current) => current ?? "—")
+          }
+        })
+    }
+    load(false)
+    const id = window.setInterval(() => load(true), FRESH_MS + 1000)
     return () => {
       stop = true
+      window.clearInterval(id)
     }
-  }, [selectedDay])
+  }, [selectedDay, showComm])
+
+  const pinnedEnd = query.quick === "now" || query.end == null ? null : query.end
 
   useEffect(() => {
     let stop = false
-    async function load() {
-      const end = query.end ?? bakuNow()
-      try {
-        const res = await fetch(`${DASHBOARD_URL}?range=${query.range}&end=${end}`, { cache: "no-store" })
-        if (!res.ok) throw new Error(String(res.status))
-        const body = (await res.json()) as Payload
-        if (!stop) setData(body)
-      } catch {
-        /* keep the last good payload */
-      }
+    function load(force: boolean) {
+      const end = pinnedEnd ?? Math.floor(Date.now() / 1000 / 300) * 300
+      cachedJson<Payload>(`${DASHBOARD_URL}?range=${query.range}&end=${end}`, 0, force)
+        .then((body) => {
+          if (!stop) setData(body)
+        })
+        .catch(() => {
+          /* keep the last good payload */
+        })
     }
-    load()
-    const id = setInterval(load, POLL_MS)
+    load(false)
+    const id = window.setInterval(() => load(true), FRESH_MS + 1000)
     return () => {
       stop = true
-      clearInterval(id)
+      window.clearInterval(id)
     }
-  }, [query.range, query.end])
+  }, [query.range, pinnedEnd])
 
   const value = useMemo<Dash>(() => {
     const panels = data?.panels ?? {}

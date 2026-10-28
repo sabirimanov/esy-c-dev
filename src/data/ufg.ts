@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react"
+import { useCachedResource } from "./cachedFetch"
 import { previousSpan } from "../wall/dates"
 import { apiRegionId, zoneIdForCity } from "../wall/places"
+import { useWall } from "../wall/useWall"
 import type { WallState } from "../wall/state"
 
 export type UfgZone = {
@@ -53,126 +54,40 @@ function scopeQuery(state: WallState, extra: Record<string, string>) {
 }
 
 export function useUfgHierarchy() {
-  const [zones, setZones] = useState<UfgZone[]>([])
-  const [clusters, setClusters] = useState<UfgCluster[]>([])
-  useEffect(() => {
-    let live = true
-    fetch("/ufg/hierarchy", { cache: "no-store" })
-      .then((res) => res.json())
-      .then((body: { zones?: UfgZone[]; clusters?: UfgCluster[] }) => {
-        if (!live) return
-        if (Array.isArray(body.zones)) setZones(body.zones)
-        if (Array.isArray(body.clusters)) setClusters(body.clusters)
-      })
-      .catch(() => {})
-    return () => {
-      live = false
-    }
-  }, [])
-  return { zones, clusters }
+  const { state } = useWall()
+  const body = useCachedResource<{ zones?: UfgZone[]; clusters?: UfgCluster[] }>("/ufg/hierarchy", state.seed, false)
+  return {
+    zones: Array.isArray(body?.zones) ? body.zones : [],
+    clusters: Array.isArray(body?.clusters) ? body.clusters : [],
+  }
 }
 
 export function useCapacity(state: WallState) {
-  const [capacity, setCapacity] = useState<number | null>(null)
-  useEffect(() => {
-    const query = scopeQuery(state, {})
-    let live = true
-    setCapacity(null)
-    fetch(`/ufg/capacity?${query}`, { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error(String(res.status))
-        return res.json() as Promise<{ capacity: number | null }>
-      })
-      .then((body) => {
-        if (live) setCapacity(typeof body.capacity === "number" ? body.capacity : null)
-      })
-      .catch(() => {
-        if (live) setCapacity(null)
-      })
-    return () => {
-      live = false
-    }
-  }, [state.regionId, state.cityId, state.clusterId, state.seed])
-  return capacity
+  const body = useCachedResource<{ capacity: number | null }>(`/ufg/capacity?${scopeQuery(state, {})}`, state.seed)
+  if (!body || typeof body.capacity !== "number") return null
+  return body.capacity
 }
 
 export type MeterSplit = { smart: number; retrofit: number }
 
 export function useMeterSplit(state: WallState) {
-  const [split, setSplit] = useState<MeterSplit | null>(null)
-  useEffect(() => {
-    const query = scopeQuery(state, {})
-    let live = true
-    setSplit(null)
-    fetch(`/ufg/meters?${query}`, { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error(String(res.status))
-        return res.json() as Promise<MeterSplit>
-      })
-      .then((body) => {
-        if (live) setSplit(body)
-      })
-      .catch(() => {
-        if (live) setSplit(null)
-      })
-    return () => {
-      live = false
-    }
-  }, [state.regionId, state.cityId, state.clusterId, state.seed])
-  return split
+  return useCachedResource<MeterSplit>(`/ufg/meters?${scopeQuery(state, {})}`, state.seed)
 }
 
 export function useUfgSummary(state: WallState) {
-  const [summary, setSummary] = useState<UfgSummary>(emptySummary)
-  useEffect(() => {
-    const query = scopeQuery(state, { from: state.date, to: state.dateTo })
-    let live = true
-    fetch(`/ufg/summary?${query}`, { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error(String(res.status))
-        return res.json() as Promise<UfgSummary>
-      })
-      .then((body) => {
-        if (live) setSummary(body)
-      })
-      .catch(() => {
-        if (live) setSummary(emptySummary)
-      })
-    return () => {
-      live = false
-    }
-  }, [state.date, state.dateTo, state.regionId, state.cityId, state.clusterId, state.seed])
-  return summary
+  const body = useCachedResource<UfgSummary>(`/ufg/summary?${scopeQuery(state, { from: state.date, to: state.dateTo })}`, state.seed, false)
+  return body ?? emptySummary
 }
 
 export function useUfgTrend(state: WallState) {
-  const [trend, setTrend] = useState<UfgTrend | null>(null)
-  useEffect(() => {
-    const previous = previousSpan(state.date, state.dateTo, state.period)
-    const query = scopeQuery(state, {
-      from: state.date,
-      to: state.dateTo,
-      prevFrom: previous.date,
-      prevTo: previous.dateTo,
-    })
-    let live = true
-    setTrend(null)
-    fetch(`/ufg/trend?${query}`, { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error(String(res.status))
-        return res.json() as Promise<UfgTrend>
-      })
-      .then((body) => {
-        if (live) setTrend(body)
-      })
-      .catch(() => {
-        if (live) setTrend({ current: [], previous: [], hourly: state.date === state.dateTo, hours: [] })
-      })
-    return () => {
-      live = false
-    }
-  }, [state.date, state.dateTo, state.period, state.regionId, state.cityId, state.clusterId, state.seed])
-  return trend
+  const previous = previousSpan(state.date, state.dateTo, state.period)
+  const query = scopeQuery(state, {
+    from: state.date,
+    to: state.dateTo,
+    prevFrom: previous.date,
+    prevTo: previous.dateTo,
+  })
+  return useCachedResource<UfgTrend>(`/ufg/trend?${query}`, state.seed)
 }
 
 export type UfgCounts = {
@@ -189,28 +104,9 @@ export type UfgReadiness = {
 }
 
 export function useUfgReadiness(state: WallState) {
-  const [readiness, setReadiness] = useState<UfgReadiness | null>(null)
-  useEffect(() => {
-    let live = true
-    setReadiness(null)
-    const query = scopeQuery(state, { from: state.date, to: state.dateTo })
-    query.delete("cluster")
-    fetch(`/ufg/readiness?${query}`, { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error(String(res.status))
-        return res.json() as Promise<UfgReadiness>
-      })
-      .then((body) => {
-        if (live) setReadiness(body)
-      })
-      .catch(() => {
-        if (live) setReadiness(null)
-      })
-    return () => {
-      live = false
-    }
-  }, [state.date, state.dateTo, state.regionId, state.cityId, state.seed])
-  return readiness
+  const query = scopeQuery(state, { from: state.date, to: state.dateTo })
+  query.delete("cluster")
+  return useCachedResource<UfgReadiness>(`/ufg/readiness?${query}`, state.seed)
 }
 
 export type UfgAlarm = {
@@ -224,23 +120,8 @@ export type UfgAlarm = {
 }
 
 export function useUfgAlarms() {
-  const [alarms, setAlarms] = useState<UfgAlarm[] | null>(null)
-  useEffect(() => {
-    let live = true
-    fetch("/ufg/alarms", { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error(String(res.status))
-        return res.json() as Promise<{ alarms?: UfgAlarm[] }>
-      })
-      .then((body) => {
-        if (live) setAlarms(Array.isArray(body.alarms) ? body.alarms : [])
-      })
-      .catch(() => {
-        if (live) setAlarms([])
-      })
-    return () => {
-      live = false
-    }
-  }, [])
-  return alarms
+  const { state } = useWall()
+  const body = useCachedResource<{ alarms?: UfgAlarm[] }>("/ufg/alarms", state.seed, false)
+  if (!body) return null
+  return Array.isArray(body.alarms) ? body.alarms : []
 }

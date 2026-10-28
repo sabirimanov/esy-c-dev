@@ -1,5 +1,5 @@
 import fs from "node:fs"
-import { cached, getCached, setCached } from "./cache.mjs"
+import { cached, getCached } from "./cache.mjs"
 import { duckdbUrl } from "./duckdb-origin.mjs"
 
 const hierarchyFallback = JSON.parse(fs.readFileSync(new URL("./ufg-hierarchy.json", import.meta.url), "utf8"))
@@ -85,11 +85,17 @@ async function loadClusterView(clusterId, gasDay) {
   if (!/^[A-Za-z0-9_]{1,80}$/.test(clusterId)) return null
   const saved = sheetOf(getCached(`ufg:view:${clusterId}|${gasDay}`)) || sheetOf(getCached(`ufg:sheet:${clusterId}|${gasDay}`))
   if (saved) return saved
-  const data = await fetchCcc(`/api/v1/cluster_view/${clusterId}`, { gasDay, version: "1" })
-  const supply = Number(data.sheet?.supply_kwh)
-  const demand = Number(data.sheet?.demand_kwh)
-  if (!Number.isFinite(supply) || !Number.isFinite(demand)) return null
-  return setCached(`ufg:sheet:${clusterId}|${gasDay}`, { supply, demand })
+  try {
+    return await cached(`ufg:view:${clusterId}|${gasDay}`, async () => {
+      const data = await fetchCcc(`/api/v1/cluster_view/${clusterId}`, { gasDay, version: "1" })
+      const supply = Number(data.sheet?.supply_kwh)
+      const demand = Number(data.sheet?.demand_kwh)
+      if (!Number.isFinite(supply) || !Number.isFinite(demand)) throw new Error("empty sheet")
+      return { supply, demand }
+    })
+  } catch {
+    return null
+  }
 }
 
 function scopedClusters(clusters, filter) {

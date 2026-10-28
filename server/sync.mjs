@@ -102,15 +102,6 @@ function broadcast() {
 }
 
 setInterval(() => {
-  if (state.snocQuick !== "now") return
-  const end = Math.floor(Date.now() / 1000)
-  if (state.snocEnd === end) return
-  state = { ...state, snocEnd: end, rev: state.rev + 1 }
-  persist()
-  broadcast()
-}, 10000).unref()
-
-setInterval(() => {
   for (const res of clients) res.write(":\n\n")
 }, 20000).unref()
 

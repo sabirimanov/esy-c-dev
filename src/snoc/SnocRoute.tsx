@@ -38,7 +38,7 @@ export function SnocRoute() {
 
   if (!ok) return <div className="screen" />
   return (
-    <SnocProvider>
+    <SnocProvider screenId={id}>
       <div className="screen" data-snoc={id}>
         <SnocScreen id={id} />
       </div>

@@ -15,6 +15,7 @@ import { handleReconnect } from "./server/reconnect.mjs"
 import { handleTamper } from "./server/tamper.mjs"
 import { handleWeather } from "./server/weather.mjs"
 import { handleDisplay } from "./server/display.mjs"
+import { handleSoc } from "./server/soc.mjs"
 import { app as duckdbApp } from "./duckdb/server.js"
 import { isDuckdbRequest, setDuckdbOrigin } from "./server/duckdb-origin.mjs"
 import { applyCors } from "./server/cors.mjs"
@@ -44,6 +45,7 @@ const server = http.createServer((req, res) => {
     duckdbApp(req, res)
     return
   }
+  if (handleSoc(req, res)) return
   if (handleUfg(req, res)) return
   if (handlePressure(req, res)) return
   if (handleQuality(req, res)) return

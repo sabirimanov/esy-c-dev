@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react"
+import { useCachedResource } from "../data/cachedFetch"
 import weatherBaku from "../assets/weather-baku.png"
 import { UfgScreen2, UfgScreen8, UfgScreen9 } from "./UfgDetail"
 import { At, Frame, PlaceText } from "../ui/widgets"
@@ -2100,27 +2101,7 @@ function Screen18() {
   const scale = counts ? Math.max(...counts) : 0
   const total = counts ? counts.reduce((sum, count) => sum + count, 0).toLocaleString("en-US") : "—"
   const cityId = state.cityId || "baku"
-  const [weather, setWeather] = useState<{ city: string; temp: string; summary: string } | null>(null)
-  useEffect(() => {
-    let stop = false
-    async function load() {
-      try {
-        const res = await fetch(`/weather?city=${encodeURIComponent(cityId)}`, { cache: "no-store" })
-        if (!res.ok) throw new Error(String(res.status))
-        const body = (await res.json()) as { city: string; temp: string; summary: string }
-        if (!stop) setWeather(body)
-      } catch {
-        // keep the last reading
-      }
-    }
-    setWeather(null)
-    load()
-    const id = setInterval(load, 10 * 60 * 1000)
-    return () => {
-      stop = true
-      clearInterval(id)
-    }
-  }, [cityId])
+  const weather = useCachedResource<{ city: string; temp: string; summary: string }>(`/weather?city=${encodeURIComponent(cityId)}`, state.seed, false)
   const rows = [
     { y: 860 }, { y: 897 }, { y: 935 }, { y: 973 },
   ].map((item, index) => {

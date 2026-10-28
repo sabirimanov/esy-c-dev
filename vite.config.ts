@@ -14,6 +14,7 @@ import { handleReconnect } from "./server/reconnect.mjs"
 import { handleTamper } from "./server/tamper.mjs"
 import { handleWeather } from "./server/weather.mjs"
 import { handleDisplay } from "./server/display.mjs"
+import { handleSoc } from "./server/soc.mjs"
 import { app as duckdbApp } from "./duckdb/server.js"
 import { isDuckdbRequest, setDuckdbOrigin } from "./server/duckdb-origin.mjs"
 import { applyCors } from "./server/cors.mjs"
@@ -30,7 +31,7 @@ function wallSync(): Plugin {
           duckdbApp(req, res)
           return
         }
-        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleBilling(req, res) && !handleAnomalies(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res) && !handleDisplay(req, res)) next()
+        if (!handleSoc(req, res) && !handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleBilling(req, res) && !handleAnomalies(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res) && !handleDisplay(req, res)) next()
       })
     },
     configurePreviewServer(server) {
@@ -40,7 +41,7 @@ function wallSync(): Plugin {
           duckdbApp(req, res)
           return
         }
-        if (!handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleBilling(req, res) && !handleAnomalies(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res) && !handleDisplay(req, res)) next()
+        if (!handleSoc(req, res) && !handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleBilling(req, res) && !handleAnomalies(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res) && !handleDisplay(req, res)) next()
       })
     },
   }
@@ -54,7 +55,6 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/socnoc": { target: "https://cccdev.esyasoft.app", changeOrigin: true, secure: true },
-      "/soc-live": { target: "http://127.0.0.1:8443", changeOrigin: true, rewrite: (path) => path.replace(/^\/soc-live/, "/api/dashboard") },
     },
   },
 })

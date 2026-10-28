@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react"
+import { FRESH_MS } from "./cachedFetch"
 
 export type AlertScroll = "step" | "smooth"
 
@@ -32,7 +33,7 @@ export function AlertScrollProvider({ children }: { children: ReactNode }) {
       }
     }
     load()
-    const id = window.setInterval(load, 2000)
+    const id = window.setInterval(load, FRESH_MS)
     return () => {
       stop = true
       window.clearInterval(id)

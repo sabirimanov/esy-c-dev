@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCachedResource } from "./cachedFetch"
 import { apiRegionId, zoneIdForCity } from "../wall/places"
 import type { WallState } from "../wall/state"
 
@@ -80,30 +80,11 @@ export function billingForRange(data: BillingData | null, date: string, dateTo: 
 }
 
 export function useBilling(state: WallState) {
-  const [data, setData] = useState<BillingData | null>(null)
-  useEffect(() => {
-    const query = new URLSearchParams()
-    const region = apiRegionId(state.regionId)
-    const zone = zoneIdForCity(state.cityId)
-    if (region) query.set("region", region)
-    if (zone) query.set("zone", zone)
-    if (state.clusterId) query.set("cluster", state.clusterId)
-    let live = true
-    setData(null)
-    fetch(`/billing?${query}`, { cache: "no-store" })
-      .then((res) => {
-        if (!res.ok) throw new Error(String(res.status))
-        return res.json() as Promise<BillingData>
-      })
-      .then((body) => {
-        if (live) setData(body)
-      })
-      .catch(() => {
-        if (live) setData(null)
-      })
-    return () => {
-      live = false
-    }
-  }, [state.regionId, state.cityId, state.clusterId, state.seed])
-  return data
+  const query = new URLSearchParams()
+  const region = apiRegionId(state.regionId)
+  const zone = zoneIdForCity(state.cityId)
+  if (region) query.set("region", region)
+  if (zone) query.set("zone", zone)
+  if (state.clusterId) query.set("cluster", state.clusterId)
+  return useCachedResource<BillingData>(`/billing?${query}`, state.seed)
 }
