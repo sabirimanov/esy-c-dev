@@ -53,12 +53,15 @@ function scopeQuery(state: WallState, extra: Record<string, string>) {
   return query
 }
 
+const emptyZones: UfgZone[] = []
+const emptyClusters: UfgCluster[] = []
+
 export function useUfgHierarchy() {
   const { state } = useWall()
   const body = useCachedResource<{ zones?: UfgZone[]; clusters?: UfgCluster[] }>("/ufg/hierarchy", state.seed, false)
   return {
-    zones: Array.isArray(body?.zones) ? body.zones : [],
-    clusters: Array.isArray(body?.clusters) ? body.clusters : [],
+    zones: Array.isArray(body?.zones) ? body.zones : emptyZones,
+    clusters: Array.isArray(body?.clusters) ? body.clusters : emptyClusters,
   }
 }
 

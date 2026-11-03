@@ -34,6 +34,20 @@ function normalize(raw: Partial<WallState> | null): WallState {
   }
 }
 
+function sameWall(a: WallState, b: WallState) {
+  return (
+    a.date === b.date &&
+    a.dateTo === b.dateTo &&
+    a.regionId === b.regionId &&
+    a.cityId === b.cityId &&
+    a.clusterId === b.clusterId &&
+    a.regionSet === b.regionSet &&
+    a.seed === b.seed &&
+    a.period === b.period &&
+    a.ufgOpen === b.ufgOpen
+  )
+}
+
 function readStored(): WallState {
   try {
     return normalize(JSON.parse(localStorage.getItem(storageKey) || ""))
@@ -60,7 +74,7 @@ export function WallProvider({ children }: { children: ReactNode }) {
       reloadId = nextReload
       const next = normalize(raw)
       localStorage.setItem(storageKey, JSON.stringify(next))
-      setState(next)
+      setState((current) => (sameWall(current, next) ? current : next))
     }
     function onKey(event: KeyboardEvent) {
       const target = event.target

@@ -178,13 +178,21 @@ export function handleSync(req, res) {
       if (Number.isInteger(patch.seed) && patch.seed >= 0 && patch.seed < 1e10) next.seed = patch.seed
       if (typeof patch.period === "string" && (patch.period === "" || periods.has(patch.period))) next.period = patch.period
       if ("ufgOpen" in patch) next.ufgOpen = Boolean(patch.ufgOpen)
+      const snocTouched =
+        "snocRange" in patch ||
+        "snocEnd" in patch ||
+        "snocTab" in patch ||
+        "snocQuick" in patch ||
+        "snocViewY" in patch ||
+        "snocViewM" in patch
       if (patch.snocRange === "24h" || patch.snocRange === "7d") next.snocRange = patch.snocRange
       if (patch.snocTab === "day" || patch.snocTab === "month" || patch.snocTab === "year" || patch.snocTab === "range") next.snocTab = patch.snocTab
       if (patch.snocQuick === "now" || patch.snocQuick === "yesterday" || patch.snocQuick === "custom") next.snocQuick = patch.snocQuick
       if (Number.isInteger(patch.snocViewY) && patch.snocViewY > 2000 && patch.snocViewY < 3000) next.snocViewY = patch.snocViewY
       if (Number.isInteger(patch.snocViewM) && patch.snocViewM >= 0 && patch.snocViewM <= 11) next.snocViewM = patch.snocViewM
       if (patch.snocEnd === null || (Number.isInteger(patch.snocEnd) && patch.snocEnd > 0)) next.snocEnd = patch.snocEnd
-      if (next.snocQuick === "now") next.snocEnd = Math.floor(Date.now() / 1000)
+      // Keep snoc "now" clock fresh only on snoc edits — wall city/cluster patches must not churn it.
+      if (snocTouched && next.snocQuick === "now") next.snocEnd = Math.floor(Date.now() / 1000)
       if (patch.clearCache === true) {
         clearCache()
         next.seed = (Number(state.seed) || 0) + 1

@@ -1,8 +1,14 @@
+import { readFileSync } from "node:fs"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { cached } from "./cache.mjs"
 import { loadClusterDemand, loadUfgHierarchy } from "./ufg.mjs"
 import { duckdbUrl } from "./duckdb-origin.mjs"
 
 const empty = { total: 0, supply: 0, points: [], peak: null, forecast: null }
+
+const snapshotPath = join(dirname(fileURLToPath(import.meta.url)), "../src/data/cccSnapshot.json")
+const weatherDemandForecast = JSON.parse(readFileSync(snapshotPath, "utf8")).weatherDemandForecast || []
 
 function send(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" })
@@ -20,8 +26,14 @@ function forecastId(clusters, filter) {
   if (!filter.cluster) return ""
   const cluster = clusters.find((item) => item.cluster_id === filter.cluster)
   const number = cluster ? clusterNumber(cluster) : ""
-  if (number === "41" || number === "42") return `c_${number}`
-  return /^c_(41|42)$/.test(filter.cluster) ? filter.cluster : ""
+  if (number === "41" || number === "42" || number === "160") return `c_${number}`
+  return /^c_(41|42|160)$/.test(filter.cluster) ? filter.cluster : ""
+}
+
+function weatherPredicted(forecast) {
+  const key = forecast === "c_41" ? "c41" : forecast === "c_42" ? "c42" : forecast === "c_160" ? "c160" : ""
+  if (!key) return null
+  return weatherDemandForecast.map((row) => ({ date: row.date, value: row[key] }))
 }
 
 function clusterIds(clusters, filter) {
@@ -76,15 +88,31 @@ function shiftDay(value, days) {
 
 async function loadForecast(forecast, from, to) {
   if (!forecast) return null
+  const weather = weatherPredicted(forecast)
+  // Weather-induced sheet (Nov 2026) overlays / replaces predicted for c_41 / c_42 / c_160
+  if (forecast === "c_160") {
+    return weather ? { simulated: [], predicted: weather } : null
+  }
   const url = duckdbUrl("/api/demand")
   url.searchParams.set("from", from)
   url.searchParams.set("to", shiftDay(to, 120))
   url.searchParams.set("balance", "none")
   url.searchParams.set("forecast", forecast)
-  const remote = await fetch(url)
-  if (!remote.ok) throw new Error(String(remote.status))
-  const body = await remote.json()
-  return body.forecast ?? null
+  try {
+    const remote = await fetch(url)
+    if (!remote.ok) throw new Error(String(remote.status))
+    const body = await remote.json()
+    const base = body.forecast ?? null
+    if (!base) return weather ? { simulated: [], predicted: weather } : null
+    if (!weather) return base
+    const byDate = new Map(base.predicted.map((point) => [point.date, point.value]))
+    for (const point of weather) byDate.set(point.date, point.value)
+    const predicted = [...byDate.keys()].sort().map((date) => ({ date, value: byDate.get(date) }))
+    return { simulated: base.simulated ?? [], predicted }
+  } catch (error) {
+    if (weather) return { simulated: [], predicted: weather }
+    throw error
+  }
 }
 
 async function loadDemand(scope, from, to) {

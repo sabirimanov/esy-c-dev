@@ -1,0 +1,544 @@
+{
+  "source": "CCC data 02-Nov-2026.xlsx",
+  "qmax": 1,
+  "zeroConsumption": 738,
+  "zeroConsumptionSep": 1378,
+  "minConsumption": 1575,
+  "zeroClusters": [
+    {
+      "cluster": "Hacı Seyfəlli xətti (Nardaran QPS)",
+      "consumers": 7813,
+      "sep": 670,
+      "oct": 623
+    },
+    {
+      "cluster": "152",
+      "consumers": 1384,
+      "sep": 87,
+      "oct": 4
+    },
+    {
+      "cluster": "160",
+      "consumers": 987,
+      "sep": 59,
+      "oct": 1
+    },
+    {
+      "cluster": "21",
+      "consumers": 408,
+      "sep": 21,
+      "oct": 1
+    },
+    {
+      "cluster": "12",
+      "consumers": 1975,
+      "sep": 98,
+      "oct": 3
+    },
+    {
+      "cluster": "115",
+      "consumers": 1113,
+      "sep": 55,
+      "oct": 1
+    },
+    {
+      "cluster": "26",
+      "consumers": 242,
+      "sep": 11,
+      "oct": 22
+    },
+    {
+      "cluster": "16",
+      "consumers": 954,
+      "sep": 42,
+      "oct": 15
+    },
+    {
+      "cluster": "143",
+      "consumers": 2210,
+      "sep": 96,
+      "oct": 8
+    },
+    {
+      "cluster": "173",
+      "consumers": 843,
+      "sep": 35,
+      "oct": 7
+    },
+    {
+      "cluster": "43",
+      "consumers": 523,
+      "sep": 18,
+      "oct": 1
+    },
+    {
+      "cluster": "45",
+      "consumers": 1140,
+      "sep": 39,
+      "oct": 15
+    },
+    {
+      "cluster": "38",
+      "consumers": 513,
+      "sep": 17,
+      "oct": 0
+    },
+    {
+      "cluster": "62",
+      "consumers": 311,
+      "sep": 10,
+      "oct": 1
+    },
+    {
+      "cluster": "170",
+      "consumers": 1391,
+      "sep": 44,
+      "oct": 3
+    },
+    {
+      "cluster": "44",
+      "consumers": 672,
+      "sep": 19,
+      "oct": 1
+    },
+    {
+      "cluster": "66",
+      "consumers": 362,
+      "sep": 10,
+      "oct": 1
+    },
+    {
+      "cluster": "42",
+      "consumers": 953,
+      "sep": 26,
+      "oct": 6
+    },
+    {
+      "cluster": "41",
+      "consumers": 826,
+      "sep": 21,
+      "oct": 25
+    }
+  ],
+  "topPressureClusters": [
+    {
+      "rank": "01",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "violations": "2,952",
+      "readings": 2952
+    },
+    {
+      "rank": "02",
+      "name": "115",
+      "sub": null,
+      "violations": "543",
+      "readings": 543
+    },
+    {
+      "rank": "03",
+      "name": "12",
+      "sub": null,
+      "violations": "302",
+      "readings": 302
+    },
+    {
+      "rank": "04",
+      "name": "152",
+      "sub": null,
+      "violations": "187",
+      "readings": 187
+    },
+    {
+      "rank": "05",
+      "name": "143",
+      "sub": null,
+      "violations": "177",
+      "readings": 177
+    }
+  ],
+  "pressureSpans": [
+    {
+      "rank": "001",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "67720584F1120016",
+      "position": "Tail End",
+      "start": "30 Sep 18:15",
+      "end": "22 Oct 01:38",
+      "span": "21.3 d",
+      "fill": 704,
+      "hours": 511.38
+    },
+    {
+      "rank": "002",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "6772058034070013",
+      "position": "Tail End",
+      "start": "30 Sep 16:36",
+      "end": "20 Oct 11:52",
+      "span": "19.8 d",
+      "fill": 654,
+      "hours": 475.25
+    },
+    {
+      "rank": "003",
+      "name": "115",
+      "sub": null,
+      "sensor": "67720589C5830017",
+      "position": "Regulator Box",
+      "start": "29 Sep 13:10",
+      "end": "19 Oct 04:31",
+      "span": "19.6 d",
+      "fill": 649,
+      "hours": 471.35
+    },
+    {
+      "rank": "004",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "677205893E630017",
+      "position": "Tail End",
+      "start": "03 Aug 22:29",
+      "end": "08 Aug 07:29",
+      "span": "4.4 d",
+      "fill": 145,
+      "hours": 105
+    },
+    {
+      "rank": "005",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "6772058034070013",
+      "position": "Tail End",
+      "start": "23 Oct 15:52",
+      "end": "27 Oct 17:51",
+      "span": "4.1 d",
+      "fill": 135,
+      "hours": 98
+    },
+    {
+      "rank": "006",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "6772058034070013",
+      "position": "Tail End",
+      "start": "17 Sep 12:37",
+      "end": "21 Sep 12:36",
+      "span": "4.0 d",
+      "fill": 132,
+      "hours": 96
+    },
+    {
+      "rank": "007",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "67720584F1120016",
+      "position": "Tail End",
+      "start": "24 Oct 15:38",
+      "end": "27 Oct 17:38",
+      "span": "3.1 d",
+      "fill": 102,
+      "hours": 74
+    },
+    {
+      "rank": "008",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "6772058034070013",
+      "position": "Tail End",
+      "start": "21 Sep 15:36",
+      "end": "24 Sep 08:36",
+      "span": "2.7 d",
+      "fill": 89,
+      "hours": 65
+    },
+    {
+      "rank": "009",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "6772058D83060016",
+      "position": "Tail End",
+      "start": "03 Oct 10:43",
+      "end": "05 Oct 09:43",
+      "span": "2.0 d",
+      "fill": 65,
+      "hours": 47
+    },
+    {
+      "rank": "010",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "67720584F1120016",
+      "position": "Tail End",
+      "start": "19 Sep 15:15",
+      "end": "21 Sep 13:15",
+      "span": "1.9 d",
+      "fill": 63,
+      "hours": 46
+    },
+    {
+      "rank": "011",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "6772058D83060016",
+      "position": "Tail End",
+      "start": "29 Aug 07:22",
+      "end": "31 Aug 02:22",
+      "span": "1.8 d",
+      "fill": 59,
+      "hours": 43
+    },
+    {
+      "rank": "012",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "6772058034070013",
+      "position": "Tail End",
+      "start": "15 Sep 15:47",
+      "end": "17 Sep 08:47",
+      "span": "1.7 d",
+      "fill": 56,
+      "hours": 41
+    },
+    {
+      "rank": "013",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "677205893E630017",
+      "position": "Tail End",
+      "start": "15 Aug 10:57",
+      "end": "16 Aug 17:57",
+      "span": "1.3 d",
+      "fill": 43,
+      "hours": 31
+    },
+    {
+      "rank": "014",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "6772058D83060016",
+      "position": "Tail End",
+      "start": "25 Oct 08:26",
+      "end": "26 Oct 12:26",
+      "span": "1.2 d",
+      "fill": 39,
+      "hours": 28
+    },
+    {
+      "rank": "015",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "6772058034070013",
+      "position": "Tail End",
+      "start": "27 Sep 06:36",
+      "end": "28 Sep 10:36",
+      "span": "1.2 d",
+      "fill": 39,
+      "hours": 28
+    },
+    {
+      "rank": "016",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "677205893E630017",
+      "position": "Tail End",
+      "start": "04 Oct 10:54",
+      "end": "05 Oct 13:54",
+      "span": "1.1 d",
+      "fill": 37,
+      "hours": 27
+    },
+    {
+      "rank": "017",
+      "name": "12",
+      "sub": null,
+      "sensor": "6772058E67C20016",
+      "position": "Tail End",
+      "start": "11 Aug 15:06",
+      "end": "12 Aug 14:06",
+      "span": "23 h",
+      "fill": 32,
+      "hours": 23
+    },
+    {
+      "rank": "018",
+      "name": "12",
+      "sub": null,
+      "sensor": "67720586F6A60016",
+      "position": "Tail End",
+      "start": "11 Aug 15:26",
+      "end": "12 Aug 13:26",
+      "span": "22 h",
+      "fill": 30,
+      "hours": 22
+    },
+    {
+      "rank": "019",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "6772058D83060016",
+      "position": "Tail End",
+      "start": "28 Aug 03:22",
+      "end": "29 Aug 00:22",
+      "span": "21 h",
+      "fill": 29,
+      "hours": 21
+    },
+    {
+      "rank": "020",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "67720584F1120016",
+      "position": "Tail End",
+      "start": "22 Sep 17:15",
+      "end": "23 Sep 14:15",
+      "span": "21 h",
+      "fill": 29,
+      "hours": 21
+    },
+    {
+      "rank": "021",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "67720584F1120016",
+      "position": "Tail End",
+      "start": "23 Oct 15:38",
+      "end": "24 Oct 12:38",
+      "span": "21 h",
+      "fill": 29,
+      "hours": 21
+    },
+    {
+      "rank": "022",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "6772058D83060016",
+      "position": "Tail End",
+      "start": "31 Aug 05:22",
+      "end": "01 Sep 01:22",
+      "span": "20 h",
+      "fill": 28,
+      "hours": 20
+    },
+    {
+      "rank": "023",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "6772058034070013",
+      "position": "Tail End",
+      "start": "21 Oct 05:52",
+      "end": "22 Oct 00:52",
+      "span": "19 h",
+      "fill": 26,
+      "hours": 19
+    },
+    {
+      "rank": "024",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "67720584F1120016",
+      "position": "Tail End",
+      "start": "17 Sep 18:15",
+      "end": "18 Sep 13:15",
+      "span": "19 h",
+      "fill": 26,
+      "hours": 19
+    },
+    {
+      "rank": "025",
+      "name": "Hacı Seyfəlli xətti",
+      "sub": "(Nardaran QPS)",
+      "sensor": "67720584F1120016",
+      "position": "Tail End",
+      "start": "18 Sep 17:15",
+      "end": "19 Sep 12:15",
+      "span": "19 h",
+      "fill": 26,
+      "hours": 19
+    }
+  ],
+  "weatherDemandForecast": [
+    {
+      "date": "2026-11-03",
+      "c41": 1275,
+      "c42": 1277,
+      "c160": 3243,
+      "temp": 21,
+      "day": "Tuesday"
+    },
+    {
+      "date": "2026-11-04",
+      "c41": 1248,
+      "c42": 1246,
+      "c160": 2972,
+      "temp": 22,
+      "day": "Wednesday"
+    },
+    {
+      "date": "2026-11-05",
+      "c41": 1290,
+      "c42": 1274,
+      "c160": 3222,
+      "temp": 22,
+      "day": "Thursday"
+    },
+    {
+      "date": "2026-11-06",
+      "c41": 1550,
+      "c42": 1540,
+      "c160": 5400,
+      "temp": 13,
+      "day": "Friday"
+    },
+    {
+      "date": "2026-11-07",
+      "c41": 1518,
+      "c42": 1509,
+      "c160": 5140,
+      "temp": 14,
+      "day": "Saturday"
+    },
+    {
+      "date": "2026-11-08",
+      "c41": 1502,
+      "c42": 1493,
+      "c160": 5010,
+      "temp": 14.5,
+      "day": "Sunday"
+    },
+    {
+      "date": "2026-11-09",
+      "c41": 1566,
+      "c42": 1556,
+      "c160": 5530,
+      "temp": 12.5,
+      "day": "Monday"
+    },
+    {
+      "date": "2026-11-10",
+      "c41": 1544,
+      "c42": 1534,
+      "c160": 5348,
+      "temp": 13.2,
+      "day": "Tuesday"
+    },
+    {
+      "date": "2026-11-11",
+      "c41": 1541,
+      "c42": 1531,
+      "c160": 5322,
+      "temp": 13.3,
+      "day": "Wednesday"
+    },
+    {
+      "date": "2026-11-12",
+      "c41": 1466,
+      "c42": 1458,
+      "c160": 4724,
+      "temp": 15.6,
+      "day": "Thursday"
+    }
+  ]
+}

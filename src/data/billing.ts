@@ -23,7 +23,7 @@ export type BillingData = {
   months: BillingMonth[]
 }
 
-const billingMonths = ["2026-07", "2026-08", "2026-09"]
+const billingMonths = ["2026-07", "2026-08", "2026-09", "2026-10"]
 
 function monthEnd(ym: string) {
   const year = Number(ym.slice(0, 4))

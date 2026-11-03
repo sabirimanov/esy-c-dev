@@ -19,6 +19,7 @@ const SCHEMAS = {
   'gis.duckdb': 'gis',
   'leak.duckdb': 'leak',
   'meters-signal.duckdb': 'meters_signal',
+  'om_jobs.duckdb': 'om_jobs',
   'mfs.duckdb': 'mfs',
   'revenue_billing.duckdb': 'revenue_billing',
   'sensor_data.duckdb': 'sensor_data',

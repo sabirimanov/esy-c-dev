@@ -1,0 +1,16 @@
+---
+description: CCC analytics data only via API Hub EsyDuckDB raw SQL (/newapi)
+alwaysApply: true
+---
+
+# EsyDuckDB / API Hub
+
+CCC analytics PostgreSQL is available **only** through the hub — never direct DB connections.
+
+- Query endpoint: `POST /newapi/hub/esyduckdb/db/query` (deploy + local; Vite proxies `/newapi`)
+- Absolute hub URL: `https://cccdev.esyasoft.app/newapi/hub/esyduckdb/db/query`
+- Body: `{ "sql": "<one SELECT or WITH…SELECT>", "limit": 100 }` — read-only, one statement, no `;`
+- Do **not** invent per-report REST APIs; always raw SQL through this endpoint
+- Migrate wall screens **one source/KPI at a time** as the user specifies; do not invent field mappings
+
+When exploring data or wiring screens, follow `.cursor/skills/esyduckdb-api-hub/SKILL.md`.

@@ -46,7 +46,7 @@
       { "label": "CURRENT DEMAND", "value": "74.8 MCM", "down": true, "amount": "10%" },
       { "label": "UFG", "value": "6.4%", "down": true, "amount": "10%" },
       { "label": "CUSTOMERS AVAILABLE", "value": "12,450", "down": true, "amount": "10%" },
-      { "label": "REVENUE COLLECTION", "value": "N/A", "down": true, "amount": "10%" }
+      { "label": "NET REVENUE COLLECTION", "value": "N/A", "down": true, "amount": "10%" }
     ]
   },
   "screen5": {
@@ -256,8 +256,8 @@
         "note": "last read",
         "rows": [
           { "label": "Line Pack Variation", "value": "+0.4%" },
-          { "label": "Pressure Balance", "value": "Stable" },
-          { "label": "Low Pressure Corridors", "value": "0" }
+          { "label": "Cluster entry pressure", "value": "Stable" },
+          { "label": "Minimum pressure read", "value": "0" }
         ]
       },
       {

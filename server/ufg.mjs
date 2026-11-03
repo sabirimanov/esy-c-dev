@@ -170,6 +170,9 @@ async function collectSheets(clusters, days) {
       if (!filled.has(`${cluster.cluster_id}|${day}`)) jobs.push([cluster.cluster_id, viewClusterId(cluster), day])
     }
   }
+  // Per-day cluster_view fallback explodes for wide ranges × many clusters and freezes the wall.
+  // Hourly series above already covers the aggregate; skip the storm beyond a small gap fill.
+  if (jobs.length > 48) return { byDay, byCluster, failed }
   const queue = jobs.slice()
   async function worker() {
     while (queue.length) {
