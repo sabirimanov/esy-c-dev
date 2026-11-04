@@ -10,6 +10,7 @@ import { handleGis } from "./server/gis.mjs"
 import { handleImpact } from "./server/impact.mjs"
 import { handleField } from "./server/field.mjs"
 import { handleBilling } from "./server/billing.mjs"
+import { handleConnectivity } from "./server/connectivity.mjs"
 import { handleCalibration } from "./server/calibration.mjs"
 import { handleOmJobs } from "./server/omJobs.mjs"
 import { handleBrainCallCenter } from "./server/brainCallCenter.mjs"
@@ -49,6 +50,7 @@ const server = http.createServer((req, res) => {
     return
   }
   if (handleSoc(req, res)) return
+  if (handleConnectivity(req, res)) return
   if (handleUfg(req, res)) return
   if (handlePressure(req, res)) return
   if (handleQuality(req, res)) return
