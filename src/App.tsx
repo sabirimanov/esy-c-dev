@@ -4,6 +4,12 @@ import { AlertScrollProvider } from "./data/alertScroll"
 import { WallProvider } from "./wall/useWall"
 import { ScreenView } from "./screens/ScreenView"
 import { SnocRoute } from "./snoc/SnocRoute"
+import { SocnocRoute } from "./socnoc/SocnocRoute"
+
+function SnocLegacyRedirect() {
+  const { screenId } = useParams()
+  return <Navigate to={`/socnoc2/${screenId ?? "1"}`} replace />
+}
 
 const COLS = 7
 const TILE = { w: 1920, h: 1080 }
@@ -82,8 +88,12 @@ export function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<div className="screen" />} />
-          <Route path="/snoc" element={<Navigate to="/snoc/1" replace />} />
-          <Route path="/snoc/:screenId" element={<SnocRoute />} />
+          <Route path="/snoc" element={<Navigate to="/socnoc2/1" replace />} />
+          <Route path="/snoc/:screenId" element={<SnocLegacyRedirect />} />
+          <Route path="/socnoc2" element={<Navigate to="/socnoc2/1" replace />} />
+          <Route path="/socnoc2/:screenId" element={<SnocRoute />} />
+          <Route path="/socnoc" element={<Navigate to="/socnoc/1" replace />} />
+          <Route path="/socnoc/:screenId" element={<SocnocRoute />} />
           <Route path="/:screenId" element={<RouteScreen />} />
         </Routes>
       </BrowserRouter>

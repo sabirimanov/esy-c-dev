@@ -18,6 +18,7 @@ import { handleSoc } from "./server/soc.mjs"
 import { handleConnectivity } from "./server/connectivity.mjs"
 import { handleCalibration } from "./server/calibration.mjs"
 import { handleOmJobs } from "./server/omJobs.mjs"
+import { handleBrainCallCenter } from "./server/brainCallCenter.mjs"
 import { app as duckdbApp } from "./duckdb/server.js"
 import { isDuckdbRequest, setDuckdbOrigin } from "./server/duckdb-origin.mjs"
 import { applyCors } from "./server/cors.mjs"
@@ -34,7 +35,7 @@ function wallSync(): Plugin {
           duckdbApp(req, res)
           return
         }
-        if (!handleSoc(req, res) && !handleConnectivity(req, res) && !handleCalibration(req, res) && !handleOmJobs(req, res) && !handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleBilling(req, res) && !handleAnomalies(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res) && !handleDisplay(req, res)) next()
+        if (!handleSoc(req, res) && !handleConnectivity(req, res) && !handleCalibration(req, res) && !handleOmJobs(req, res) && !handleBrainCallCenter(req, res) && !handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleBilling(req, res) && !handleAnomalies(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res) && !handleDisplay(req, res)) next()
       })
     },
     configurePreviewServer(server) {
@@ -44,7 +45,7 @@ function wallSync(): Plugin {
           duckdbApp(req, res)
           return
         }
-        if (!handleSoc(req, res) && !handleConnectivity(req, res) && !handleCalibration(req, res) && !handleOmJobs(req, res) && !handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleBilling(req, res) && !handleAnomalies(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res) && !handleDisplay(req, res)) next()
+        if (!handleSoc(req, res) && !handleConnectivity(req, res) && !handleCalibration(req, res) && !handleOmJobs(req, res) && !handleBrainCallCenter(req, res) && !handleUfg(req, res) && !handlePressure(req, res) && !handleQuality(req, res) && !handleLeaks(req, res) && !handleDemand(req, res) && !handleGis(req, res) && !handleImpact(req, res) && !handleField(req, res) && !handleBilling(req, res) && !handleAnomalies(req, res) && !handleReconnect(req, res) && !handleTamper(req, res) && !handleWeather(req, res) && !handleSync(req, res) && !handleDisplay(req, res)) next()
       })
     },
   }
@@ -58,7 +59,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/newapi": { target: "https://cccdev.esyasoft.app", changeOrigin: true, secure: true },
-      "/socnoc": { target: "https://cccdev.esyasoft.app", changeOrigin: true, secure: true },
+      "/socnoc/monitoring": { target: "https://cccdev.esyasoft.app", changeOrigin: true, secure: true },
     },
   },
 })

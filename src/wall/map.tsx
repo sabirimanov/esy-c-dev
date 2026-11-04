@@ -73,11 +73,18 @@ export function MapTile({
   }, [screen])
 
   useEffect(() => {
-    terrain.current?.setRegion(selected)
+    // Defer heavy mesh morph so region/cluster dropdowns stay responsive
+    const frame = window.requestAnimationFrame(() => {
+      terrain.current?.setRegion(selected)
+    })
+    return () => window.cancelAnimationFrame(frame)
   }, [selected])
 
   useEffect(() => {
-    terrain.current?.setPlace(placeRef.current)
+    const frame = window.requestAnimationFrame(() => {
+      terrain.current?.setPlace(placeRef.current)
+    })
+    return () => window.cancelAnimationFrame(frame)
   }, [placeKey])
 
   if (!tile) return null

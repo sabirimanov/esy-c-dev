@@ -20,7 +20,7 @@ export function SnocRoute() {
 
   useEffect(() => {
     fitPage()
-    document.title = ok ? `snoc ${id}` : "snoc"
+    document.title = ok ? `socnoc2 ${id}` : "socnoc2"
   }, [id, ok])
 
   useEffect(() => {
@@ -30,7 +30,7 @@ export function SnocRoute() {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
       event.preventDefault()
       const next = event.key === "ArrowRight" ? Math.min(12, id + 1) : Math.max(1, id - 1)
-      if (next !== id) navigate(`/snoc/${next}`)
+      if (next !== id) navigate(`/socnoc2/${next}`)
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)

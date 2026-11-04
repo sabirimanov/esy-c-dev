@@ -256,8 +256,7 @@
         "note": "last read",
         "rows": [
           { "label": "Line Pack Variation", "value": "+0.4%" },
-          { "label": "Cluster entry pressure", "value": "Stable" },
-          { "label": "Minimum pressure read", "value": "0" }
+          { "label": "Cluster entry pressure", "value": "Stable" }
         ]
       },
       {
@@ -276,10 +275,8 @@
         "value": "28.5K",
         "rows": [
           { "label": "Active Smart Metered", "value": "2.12 M" },
-          { "label": "Active Retrofited", "value": "12,450" },
-          { "label": "High Impact Regions", "value": "N/A" }
-        ],
-        "bar": { "label": "Service Coverage", "value": "92.4%", "fill": 217, "track": 235 }
+          { "label": "Active Retrofited", "value": "12,450" }
+        ]
       }
     ]
   },

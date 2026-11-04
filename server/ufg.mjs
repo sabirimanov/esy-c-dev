@@ -227,7 +227,8 @@ function extremesFrom(clusters, sheets) {
     if (value == null) continue
     const item = { id: cluster.cluster_id, name: cluster.name_en, value }
     if (value <= 40 && (!high || value > high.value)) high = item
-    if (!low || value < low.value) low = item
+    // Lowest UFG must stay non-negative — skip clusters below 0
+    if (value >= 0 && (!low || value < low.value)) low = item
   }
   return low ? { high, low } : null
 }

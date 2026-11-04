@@ -96,6 +96,20 @@ export function WallProvider({ children }: { children: ReactNode }) {
   }, [])
 
   function patch(partial: WallPatch) {
+    // Optimistic local apply so region/cluster dropdowns stay responsive
+    if (!partial.clearCache && !partial.reload) {
+      setState((current) => {
+        const merged = normalize({
+          ...current,
+          ...partial,
+          regionSet: partial.regionSet !== undefined ? partial.regionSet : current.regionSet,
+          seed: partial.seed !== undefined ? partial.seed : current.seed,
+        })
+        if (sameWall(current, merged)) return current
+        localStorage.setItem(storageKey, JSON.stringify(merged))
+        return merged
+      })
+    }
     void fetch("/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

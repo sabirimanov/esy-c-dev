@@ -7,8 +7,11 @@ export type ConnectivityTypeRow = {
   key: ConnectivityTypeKey
   total: number
   communicated: number
+  /** SIMs of this operator that communicated on the ref day */
   azercell: number
+  azercellTotal: number
   bakcell: number
+  bakcellTotal: number
   nc7: number
   rsrp: number | null
   snr: number | null

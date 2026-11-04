@@ -33,7 +33,9 @@ function forecastId(clusters, filter) {
 function weatherPredicted(forecast) {
   const key = forecast === "c_41" ? "c41" : forecast === "c_42" ? "c42" : forecast === "c_160" ? "c160" : ""
   if (!key) return null
-  return weatherDemandForecast.map((row) => ({ date: row.date, value: row[key] }))
+  return weatherDemandForecast
+    .filter((row) => typeof row[key] === "number" && Number.isFinite(row[key]))
+    .map((row) => ({ date: row.date, value: row[key] }))
 }
 
 function clusterIds(clusters, filter) {

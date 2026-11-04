@@ -7,6 +7,12 @@ type Entry = { at: number; generation: number; body: unknown }
 const store = new Map<string, Entry>()
 const inflight = new Map<string, Promise<unknown>>()
 
+function readHit<T>(url: string, generation: number): T | null {
+  const hit = store.get(url)
+  if (hit && hit.generation === generation && Date.now() - hit.at < FRESH_MS) return hit.body as T
+  return null
+}
+
 export function cachedJson<T>(url: string, generation = 0, force = false): Promise<T> {
   if (!force) {
     const hit = store.get(url)
@@ -31,26 +37,26 @@ export function cachedJson<T>(url: string, generation = 0, force = false): Promi
   return promise
 }
 
-export function useCachedResource<T>(url: string, generation = 0, reset = true): T | null {
-  const [data, setData] = useState<T | null>(null)
+export function useCachedResource<T>(url: string, generation = 0, _reset = true): T | null {
+  const [data, setData] = useState<T | null>(() => readHit(url, generation))
   useEffect(() => {
     let live = true
-    function pull(first: boolean) {
-      if (first && reset) setData(null)
-      cachedJson<T>(url, generation, !first)
+    const cached = readHit<T>(url, generation)
+    if (cached != null) setData(cached)
+    // Do not clear to null on filter change — keeps wall interactive while the next fetch runs
+    function pull(force: boolean) {
+      cachedJson<T>(url, generation, force)
         .then((body) => {
           if (live) setData(body)
         })
-        .catch(() => {
-          if (live && first && reset) setData(null)
-        })
+        .catch(() => {})
     }
-    pull(true)
-    const id = window.setInterval(() => pull(false), FRESH_MS + 1000)
+    pull(false)
+    const id = window.setInterval(() => pull(true), FRESH_MS + 1000)
     return () => {
       live = false
       window.clearInterval(id)
     }
-  }, [url, generation, reset])
+  }, [url, generation])
   return data
 }

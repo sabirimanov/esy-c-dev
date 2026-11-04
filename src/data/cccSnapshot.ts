@@ -5,8 +5,8 @@ export type WeatherDemandDay = {
   c41: number
   c42: number
   c160: number
-  temp: number
-  day: string
+  temp: number | null
+  day: string | null
 }
 
 export type PressureSpan = {

@@ -126,7 +126,9 @@ function mapTypeRow(row, hasRadio) {
     total: num(row.total),
     communicated: num(row.communicated),
     azercell: num(row.azercell),
+    azercellTotal: num(row.azercell_total),
     bakcell: num(row.bakcell),
+    bakcellTotal: num(row.bakcell_total),
     nc7: num(row.nc7),
     rsrp: hasRadio ? num(row.rsrp) : null,
     snr: hasRadio ? num(row.snr) : null,
@@ -171,8 +173,10 @@ async function loadMeters(from, to, regionId, cityId, clusterId) {
   SELECT m.key,
          COUNT(*)::int AS total,
          COUNT(*) FILTER (WHERE o.rid IS NOT NULL)::int AS communicated,
-         COUNT(*) FILTER (WHERE m.operator = 'Azercell')::int AS azercell,
-         COUNT(*) FILTER (WHERE m.operator = 'Bakcell')::int AS bakcell,
+         COUNT(*) FILTER (WHERE m.operator = 'Azercell')::int AS azercell_total,
+         COUNT(*) FILTER (WHERE m.operator = 'Azercell' AND o.rid IS NOT NULL)::int AS azercell,
+         COUNT(*) FILTER (WHERE m.operator = 'Bakcell')::int AS bakcell_total,
+         COUNT(*) FILTER (WHERE m.operator = 'Bakcell' AND o.rid IS NOT NULL)::int AS bakcell,
          COUNT(*) FILTER (
            WHERE recent.rid IS NULL AND EXISTS (
              SELECT 1 FROM meters_signal.comms c
@@ -261,13 +265,14 @@ async function loadSensorsEvcs(from, to, regionId, cityId, clusterId) {
         JOIN sensor_master m ON m.rid = r.device_id)
     ) AS d
   ),
+  -- Commercial EVCs have no rows in evc_pressure_raw; use communication_daily for both EVC types
   evc_ref AS (
     SELECT COALESCE(
-      (SELECT MAX(p."RTC"::date) FROM evc.evc_pressure_raw p
-        JOIN evc_master m ON m.rid = p."Device ID"
-        WHERE p."RTC"::date BETWEEN $1::date AND $2::date),
-      (SELECT MAX(p."RTC"::date) FROM evc.evc_pressure_raw p
-        JOIN evc_master m ON m.rid = p."Device ID")
+      (SELECT MAX(c.communication_date) FROM evc.evc_communication_daily c
+        JOIN evc_master m ON m.rid = c.device_id
+        WHERE c.communication_date BETWEEN $1::date AND $2::date),
+      (SELECT MAX(c.communication_date) FROM evc.evc_communication_daily c
+        JOIN evc_master m ON m.rid = c.device_id)
     ) AS d
   ),
   sensor_on_ref AS (
@@ -283,23 +288,25 @@ async function loadSensorsEvcs(from, to, regionId, cityId, clusterId) {
     WHERE r.reading_time::date >= (SELECT d FROM sensor_ref) - 7
   ),
   evc_on_ref AS (
-    SELECT DISTINCT p."Device ID" AS rid
-    FROM evc.evc_pressure_raw p
-    JOIN evc_master m ON m.rid = p."Device ID"
-    WHERE p."RTC"::date = (SELECT d FROM evc_ref)
+    SELECT DISTINCT c.device_id AS rid
+    FROM evc.evc_communication_daily c
+    JOIN evc_master m ON m.rid = c.device_id
+    WHERE c.communication_date = (SELECT d FROM evc_ref)
   ),
   evc_recent AS (
-    SELECT DISTINCT p."Device ID" AS rid
-    FROM evc.evc_pressure_raw p
-    JOIN evc_master m ON m.rid = p."Device ID"
-    WHERE p."RTC"::date >= (SELECT d FROM evc_ref) - 7
+    SELECT DISTINCT c.device_id AS rid
+    FROM evc.evc_communication_daily c
+    JOIN evc_master m ON m.rid = c.device_id
+    WHERE c.communication_date >= (SELECT d FROM evc_ref) - 7
   ),
   sensor_stats AS (
     SELECT m.key,
            COUNT(*)::int AS total,
            COUNT(*) FILTER (WHERE o.rid IS NOT NULL)::int AS communicated,
-           COUNT(*) FILTER (WHERE m.operator = 'Azercell')::int AS azercell,
-           COUNT(*) FILTER (WHERE m.operator = 'Bakcell')::int AS bakcell,
+           COUNT(*) FILTER (WHERE m.operator = 'Azercell')::int AS azercell_total,
+           COUNT(*) FILTER (WHERE m.operator = 'Azercell' AND o.rid IS NOT NULL)::int AS azercell,
+           COUNT(*) FILTER (WHERE m.operator = 'Bakcell')::int AS bakcell_total,
+           COUNT(*) FILTER (WHERE m.operator = 'Bakcell' AND o.rid IS NOT NULL)::int AS bakcell,
            COUNT(*) FILTER (
              WHERE recent.rid IS NULL AND EXISTS (
                SELECT 1 FROM sensor_data.sensor_readings r
@@ -316,12 +323,14 @@ async function loadSensorsEvcs(from, to, regionId, cityId, clusterId) {
     SELECT m.key,
            COUNT(*)::int AS total,
            COUNT(*) FILTER (WHERE o.rid IS NOT NULL)::int AS communicated,
-           COUNT(*) FILTER (WHERE m.operator = 'Azercell')::int AS azercell,
-           COUNT(*) FILTER (WHERE m.operator = 'Bakcell')::int AS bakcell,
+           COUNT(*) FILTER (WHERE m.operator = 'Azercell')::int AS azercell_total,
+           COUNT(*) FILTER (WHERE m.operator = 'Azercell' AND o.rid IS NOT NULL)::int AS azercell,
+           COUNT(*) FILTER (WHERE m.operator = 'Bakcell')::int AS bakcell_total,
+           COUNT(*) FILTER (WHERE m.operator = 'Bakcell' AND o.rid IS NOT NULL)::int AS bakcell,
            COUNT(*) FILTER (
              WHERE recent.rid IS NULL AND EXISTS (
-               SELECT 1 FROM evc.evc_pressure_raw p
-               WHERE p."Device ID" = m.rid AND p."RTC"::date < (SELECT d FROM evc_ref) - 7
+               SELECT 1 FROM evc.evc_communication_daily c
+               WHERE c.device_id = m.rid AND c.communication_date < (SELECT d FROM evc_ref) - 7
              )
            )::int AS nc7,
            (SELECT d FROM evc_ref) AS ref_day
@@ -378,7 +387,7 @@ async function loadChart(from, to, regionId, cityId, clusterId) {
 }
 
 async function loadConnectivity(from, to, regionId, cityId, clusterId) {
-  const key = `connectivity:v3:${from}|${to}|${regionId || ""}|${cityId || ""}|${clusterId || ""}`
+  const key = `connectivity:v4:${from}|${to}|${regionId || ""}|${cityId || ""}|${clusterId || ""}`
   return cached(key, async () => {
     const [meters, radio, other, chart] = await Promise.all([
       loadMeters(from, to, regionId, cityId, clusterId),
@@ -400,7 +409,9 @@ async function loadConnectivity(from, to, regionId, cityId, clusterId) {
       total: 0,
       communicated: 0,
       azercell: 0,
+      azercellTotal: 0,
       bakcell: 0,
+      bakcellTotal: 0,
       nc7: 0,
       rsrp: keyName === "smart" || keyName === "retrofit" ? 0 : null,
       snr: keyName === "smart" || keyName === "retrofit" ? 0 : null,

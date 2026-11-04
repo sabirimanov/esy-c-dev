@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { startTransition, useEffect, useState, type ReactNode } from "react"
 import { useCachedResource } from "../data/cachedFetch"
 import weatherBaku from "../assets/weather-baku.png"
 import { UfgScreen2, UfgScreen8, UfgScreen9 } from "./UfgDetail"
+import { Screen13CallCenter } from "./Screen13CallCenter"
 import { At, Frame, PlaceText } from "../ui/widgets"
 import { useContent } from "../data/live"
 import { useSocPanel } from "../data/socDashboard"
@@ -17,14 +18,12 @@ import { useCalibration } from "../data/calibration"
 import { useTamper } from "../data/tamper"
 import { useFieldOps } from "../data/field"
 import { formatCount, formatPct, typeByKey, useConnectivity, type ConnectivityTypeKey } from "../data/connectivity"
-import { METER_READING_SAVING_AZN, VALVE_OPEN_CLOSE_OPS, VALVE_OPS_SAVING_AZN } from "../data/valveOps"
+import { METER_READING_SAVING_AZN, VALVE_CONNECT_BY_MONTH, VALVE_DISCONNECT_BY_MONTH, VALVE_OPEN_CLOSE_OPS, VALVE_OPS_SAVING_AZN } from "../data/valveOps"
 import { useOmJobs } from "../data/omJobs"
+import { useAnomalies } from "../data/anomalies"
 import {
-  cccMinConsumption,
   cccPressureSpans,
-  cccQmax,
   cccTopPressureClusters,
-  cccZeroConsumption,
 } from "../data/cccSnapshot"
 import { useCapacity, useMeterSplit, useUfgHierarchy, useUfgSummary, useUfgTrend, type UfgCluster } from "../data/ufg"
 import { addDays, formatRange, iso, monthGrid, monthTitle, parseIso, periodRange, previousSpan, shiftView, todayIso, trendCaption } from "../wall/dates"
@@ -423,10 +422,10 @@ function Screen2({ state }: { state: WallState }) {
   const calib = useCalibration(state)
   const fmt = (value: number | null | undefined) => (value == null ? "—" : value.toLocaleString("en-US"))
   const kpis = [
-    { x: 43, labelX: 65, valueX: 65, noteX: 262, label: "Calibration compliance", value: "100%", note: "Meters, EVC and sensors" },
-    { x: 504.54, labelX: 530, valueX: 530, noteX: 727, label: "Overdue assets", value: "0", note: "Selected scope · as of date" },
-    { x: 966.07, labelX: 995, valueX: 995, noteX: 1192, label: "Long pending assets", value: "0", note: "Selected scope · as of date" },
-    { x: 1427.61, labelX: 1460, valueX: 1456, noteX: 1657, label: "Total assets", value: fmt(calib?.total), note: "Selected asset population" },
+    { x: 43, labelX: 65, valueX: 65, label: "Calibration compliance", value: "100%" },
+    { x: 504.54, labelX: 530, valueX: 530, label: "Overdue assets", value: "0" },
+    { x: 966.07, labelX: 995, valueX: 995, label: "Long pending assets", value: "0" },
+    { x: 1427.61, labelX: 1460, valueX: 1456, label: "Total assets", value: fmt(calib?.total) },
   ]
   const rows = [
     { label: "Residential meters", y: 434, valueY: 431, lineY: 475, count: calib?.residential, avg: "4.6" },
@@ -449,7 +448,7 @@ function Screen2({ state }: { state: WallState }) {
     return row.count == null ? "—" : "0"
   }
   const dueRows = [
-    { label: "Calibration DUE", y: 836.03, barY: 844.02, bold: true, value: null as number | null, source: "due-header" },
+    { label: "Calibration DUE", y: 836.03, barY: 844.02, bold: true, value: 0, source: "due-header" },
     { label: "up to 3 months", y: 887.98, barY: 894.99, bold: false, value: 0, source: "due-3m" },
     { label: "up to 6 months", y: 921.02, barY: 929.02, bold: false, value: 0, source: "due-6m" },
     { label: "up to 6+ months", y: 953.96, barY: 961.96, bold: false, value: 0, source: "due-6p" },
@@ -470,7 +469,6 @@ function Screen2({ state }: { state: WallState }) {
           <At x={card.x} y={97} w={427.394} h={150}><div className="kpi" /></At>
           <Pin x={card.labelX} y={108} size={24} weight={500} color="#34efde" lh={40}>{card.label}</Pin>
           <Pin x={card.valueX} y={169} size={60} weight={700} color="#ffffff" lh={40}>{card.value}</Pin>
-          <Pin x={card.noteX} y={187} size={16} color="#a0aaa8" lh={19}>{card.note}</Pin>
         </span>
       ))}
 
@@ -500,10 +498,10 @@ function Screen2({ state }: { state: WallState }) {
       <At x={43} y={725} w={885} h={314}><div className="panel shell dim" /></At>
       <At x={939} y={725} w={944} h={314}><div className="panel shell dim" /></At>
 
-      {dueRows.map((row) => (
+          {dueRows.map((row) => (
         <span key={row.source}>
           <Pin x={89.09} y={row.y} size={24} weight={row.bold ? 700 : 400} color="#ffffff" lh={28}>{row.label}</Pin>
-          {row.value != null ? <Pin x={820} y={row.y} w={60} size={22} weight={700} color="#f0f5f5" lh={26} align="right">{row.value}</Pin> : null}
+          <Pin x={820} y={row.y} w={60} size={22} weight={700} color="#f0f5f5" lh={26} align="right">{row.value}</Pin>
           <FigAsset src={screen2Asset("bar-track")} x={361.92} y={row.barY} w={430} h={13} />
         </span>
       ))}
@@ -649,11 +647,16 @@ function ClusterChoice({ selected, onPick, children }: { selected: boolean; onPi
   )
 }
 
+function clusterNameSort(a: UfgCluster, b: UfgCluster) {
+  return a.name_en.localeCompare(b.name_en, undefined, { numeric: true, sensitivity: "base" })
+}
+
 function Screen5() {
   const { state, patch, clearCache } = useWall()
   const [cacheCleared, setCacheCleared] = useState(false)
   const content = useContent()
-  const connectivity = useConnectivity(state)
+  // Top KPI strip is republic-wide — ignore region / city / cluster filters
+  const connectivity = useConnectivity({ ...state, regionId: null, cityId: null, clusterId: null })
   const smartMeters = typeByKey(connectivity, "smart")?.total
   const retrofitMeters = typeByKey(connectivity, "retrofit")?.total
   const installedMeters = smartMeters == null || retrofitMeters == null ? null : smartMeters + retrofitMeters
@@ -681,7 +684,10 @@ function Screen5() {
   const zoneId = zoneIdForCity(state.cityId)
   // Region → cities; region (+ city/zone) → clusters. No region ⇒ no city/cluster choices.
   const visible = regionApi
-    ? clusters.filter((cluster) => cluster.zone_id !== "Z_goycay" && cluster.region_id === regionApi && (!zoneId || cluster.zone_id === zoneId))
+    ? clusters
+      .filter((cluster) => cluster.zone_id !== "Z_goycay" && cluster.region_id === regionApi && (!zoneId || cluster.zone_id === zoneId))
+      .slice()
+      .sort(clusterNameSort)
     : []
   const selectedCluster = visible.find((cluster) => cluster.cluster_id === state.clusterId)
   const zoneName = new Map(zones.map((zone) => [zone.zone_id, zone.name_en]))
@@ -691,6 +697,7 @@ function Screen5() {
     list.push(cluster)
     grouped.set(cluster.zone_id, list)
   }
+  for (const list of grouped.values()) list.sort(clusterNameSort)
   const clusterLabel = selectedCluster ? (selectedCluster.name_en.length > 26 ? `${selectedCluster.name_en.slice(0, 25)}…` : selectedCluster.name_en) : "All clusters"
   const filters = [
     ["Region", regionLabel(state.regionId)],
@@ -799,7 +806,10 @@ function Screen5() {
           <select
             className="region-select"
             value={state.regionId ?? ""}
-            onChange={(event) => window.setRegion(event.target.value || null)}
+            onChange={(event) => {
+              const value = event.target.value || null
+              startTransition(() => window.setRegion(value))
+            }}
           >
             <option value="">All regions</option>
             {EXC_REGIONS.map((item) => (
@@ -816,7 +826,10 @@ function Screen5() {
             className="region-select"
             value={state.cityId ?? ""}
             disabled={!cities.length}
-            onChange={(event) => patch({ cityId: event.target.value || null, clusterId: null })}
+            onChange={(event) => {
+              const cityId = event.target.value || null
+              startTransition(() => patch({ cityId, clusterId: null }))
+            }}
           >
             <option value="">{cities.length ? "All cities" : "Select a region first"}</option>
             {cities.map((city) => (
@@ -836,18 +849,20 @@ function Screen5() {
             <>
               <div style={{ position: "fixed", inset: 0, zIndex: 3 }} onClick={() => setClusterOpen(false)} />
               <div style={{ position: "absolute", left: 12, top: 70, zIndex: 4, width: 396, maxHeight: 260, overflowY: "auto", borderRadius: 18, background: "#0e2426", boxShadow: "0 16px 40px rgba(0,0,0,0.5)", padding: "6px 0" }}>
-                <ClusterChoice selected={!selectedCluster} onPick={() => { patch({ clusterId: null }); setClusterOpen(false) }}>All clusters</ClusterChoice>
+                <ClusterChoice selected={!selectedCluster} onPick={() => { setClusterOpen(false); startTransition(() => patch({ clusterId: null })) }}>All clusters</ClusterChoice>
                 {grouped.size > 1
-                  ? [...grouped.entries()].map(([id, list]) => (
+                  ? [...grouped.entries()]
+                    .sort((a, b) => (zoneName.get(a[0]) ?? a[0]).localeCompare(zoneName.get(b[0]) ?? b[0], undefined, { numeric: true, sensitivity: "base" }))
+                    .map(([id, list]) => (
                     <div key={id}>
                       <div style={{ padding: "8px 16px 2px", color: "#7a8a8b", fontSize: 13, letterSpacing: 0.6 }}>{zoneName.get(id) ?? id}</div>
                       {list.map((cluster) => (
-                        <ClusterChoice key={cluster.cluster_id} selected={cluster.cluster_id === state.clusterId} onPick={() => { patch({ clusterId: cluster.cluster_id }); setClusterOpen(false) }}>{cluster.name_en}</ClusterChoice>
+                        <ClusterChoice key={cluster.cluster_id} selected={cluster.cluster_id === state.clusterId} onPick={() => { setClusterOpen(false); startTransition(() => patch({ clusterId: cluster.cluster_id })) }}>{cluster.name_en}</ClusterChoice>
                       ))}
                     </div>
                   ))
                   : visible.map((cluster) => (
-                    <ClusterChoice key={cluster.cluster_id} selected={cluster.cluster_id === state.clusterId} onPick={() => { patch({ clusterId: cluster.cluster_id }); setClusterOpen(false) }}>{cluster.name_en}</ClusterChoice>
+                    <ClusterChoice key={cluster.cluster_id} selected={cluster.cluster_id === state.clusterId} onPick={() => { setClusterOpen(false); startTransition(() => patch({ clusterId: cluster.cluster_id })) }}>{cluster.name_en}</ClusterChoice>
                   ))}
               </div>
             </>
@@ -1267,43 +1282,48 @@ function DemandChart({ values, forecast, max }: { values: (number | null)[]; for
   )
 }
 
+/** Trailing actual days that drop >20% vs last trusted day → replace with trusted − 10%. */
+function adjustIncompleteActual(series: (number | null)[]) {
+  const out = series.slice()
+  const pts: number[] = []
+  for (let index = 0; index < out.length; index += 1) {
+    if (out[index] != null) pts.push(index)
+  }
+  if (pts.length < 2) return out
+  let good = 0
+  for (let step = 1; step < pts.length; step += 1) {
+    const baseline = out[pts[good]] as number
+    const value = out[pts[step]] as number
+    if (baseline > 0 && value >= baseline * 0.8) good = step
+  }
+  const last = pts.length - 1
+  if (last > good) {
+    const trusted = (out[pts[good]] as number) * 0.9
+    for (let step = good + 1; step <= last; step += 1) out[pts[step]] = trusted
+  }
+  return out
+}
+
 function Screen8({ state }: { state: WallState }) {
   const demand = useDemand(state)
   const forecastEnd = demand?.forecast?.predicted.reduce((last, point) => (point.date > last ? point.date : last), state.dateTo) ?? state.dateTo
   const days = demand ? spanDays(state.date, forecastEnd) : []
   const today = todayIso()
   const byDate = new Map(demand?.points.map((point) => [point.date, point.value]) ?? [])
-  const series = days.map((date) => (date >= today ? null : byDate.get(date) ?? 0))
-  for (let index = series.length - 1; index >= 0; index -= 1) {
-    const value = series[index]
-    if (value != null && value > 0) break
-    series[index] = null
-  }
-  let lastIndex = -1
-  for (let index = series.length - 1; index >= 0; index -= 1) {
-    if (series[index] != null) {
-      lastIndex = index
-      break
-    }
-  }
-  let previousIndex = -1
-  for (let index = lastIndex - 1; index >= 0; index -= 1) {
-    if (series[index] != null) {
-      previousIndex = index
-      break
-    }
-  }
-  const lastValue = lastIndex >= 0 ? series[lastIndex] : null
-  const previousValue = previousIndex >= 0 ? series[previousIndex] : null
-  if (lastValue != null && previousValue != null && previousValue > 0 && lastValue < previousValue / 2) series[lastIndex] = null
+  // Hide today and future; patch incomplete trailing actual days
+  const series = adjustIncompleteActual(
+    days.map((date) => (date >= today ? null : byDate.has(date) ? (byDate.get(date) as number) : null)),
+  )
   const simulated = new Map(demand?.forecast?.simulated.map((point) => [point.date, point.value]) ?? [])
   const predicted = new Map(demand?.forecast?.predicted.map((point) => [point.date, point.value]) ?? [])
   const forecastSeries = demand?.forecast
     ? days.map((date) => {
-        const simulatedValue = simulated.get(date)
         const predictedValue = predicted.get(date)
-        if (date < today && simulatedValue != null) return simulatedValue
-        return predictedValue ?? null
+        // Excel / weather overlay wins whenever present so forecast has no gaps
+        if (predictedValue != null) return predictedValue
+        const simulatedValue = simulated.get(date)
+        if (date <= today && simulatedValue != null) return simulatedValue
+        return null
       })
     : null
   const actualNumbers = series.filter((value): value is number => value != null)
@@ -1320,15 +1340,15 @@ function Screen8({ state }: { state: WallState }) {
       <Pin x={63.94} y={100.98} size={24} weight={500} color="#34efde" lh={40}>Gas demand · Actual</Pin>
       <div className="at" style={{ left: 63.94, top: 158.98, display: "flex", alignItems: "baseline", gap: 12, height: 40 }}>
         <span style={{ fontSize: 60, fontWeight: 400, lineHeight: "40px", color: "#ffffff" }}>{actual}</span>
-        <span style={{ fontSize: 24, lineHeight: "28px", color: "#a0aaa8" }}>MCM</span>
+        <span style={{ fontSize: 24, lineHeight: "28px", color: "#a0aaa8" }}>m³</span>
       </div>
       <Pin x={63.94} y={220} size={18} color="#ffffff" lh={21}>Total for selected period</Pin>
       <Pin x={993.98} y={100.98} size={24} weight={500} color="#34efde" lh={40}>Demand forecast</Pin>
       <div className="at" style={{ left: 993.98, top: 158.98, display: "flex", alignItems: "baseline", gap: 12, height: 40 }}>
         <span style={{ fontSize: 60, fontWeight: 400, lineHeight: "40px", color: "#ffffff" }}>{forecastText}</span>
-        {demand?.forecast && <span style={{ fontSize: 24, lineHeight: "28px", color: "#a0aaa8" }}>MCM</span>}
+        {demand?.forecast && <span style={{ fontSize: 24, lineHeight: "28px", color: "#a0aaa8" }}>m³</span>}
       </div>
-      <Pin x={993.98} y={220} size={18} color="#ffffff" lh={21}>Forecast for the same selected period</Pin>
+      <Pin x={993.98} y={220} size={18} color="#ffffff" lh={21}>Forecast for the next week</Pin>
 
       <At x={42} y={323} w={1272} h={692}><div className="panel shell dim" /></At>
       <At x={1338} y={323} w={556} h={692}><div className="panel shell dim" /></At>
@@ -1384,10 +1404,8 @@ function Screen8({ state }: { state: WallState }) {
 
       <Pin x={1366.08} y={339.01} size={32} weight={700} color="#ffffff" lh={40}>Demand drivers</Pin>
       <Pin x={1366.08} y={466.02} size={24} color="#f3f5f4" lh={28}>Weather impact</Pin>
-      <Pin x={1366.08} y={506.95} size={18} color="#76817f" lh={21}>Weather Underground → heating degree-days</Pin>
       <FigAsset src={screen8Asset("driver-rule")} x={1366.08} y={548.96} w={480} h={1} />
       <Pin x={1366.08} y={571.97} size={24} color="#f3f5f4" lh={28}>Consumer growth impact</Pin>
-      <Pin x={1366.08} y={613.98} size={18} color="#76817f" lh={21}>More customers × last year’s gas per customer</Pin>
       <At x={1360} y={721} w={512} h={265}>
         <div style={{ height: "100%", borderRadius: 20, background: "#232323", border: "1px solid #282b2a" }} />
       </At>
@@ -1404,8 +1422,9 @@ function connectivityCell(row: ReturnType<typeof typeByKey>, key: string) {
   if (!row) return "—"
   if (key === "total") return formatCount(row.total)
   if (key === "comm") return formatPct(row.total ? (row.communicated / row.total) * 100 : null)
-  if (key === "azercell") return formatPct(row.total ? (row.azercell / row.total) * 100 : null)
-  if (key === "bakcell") return formatPct(row.total ? (row.bakcell / row.total) * 100 : null)
+  // Operator % = communicated SIMs of that operator / all SIMs of that operator in scope
+  if (key === "azercell") return formatPct(row.azercellTotal ? (row.azercell / row.azercellTotal) * 100 : null)
+  if (key === "bakcell") return formatPct(row.bakcellTotal ? (row.bakcell / row.bakcellTotal) * 100 : null)
   if (key === "nc") return formatCount(row.nc7)
   if (key === "rsrp") return row.hasRadio ? formatCount(row.rsrp) : "—"
   if (key === "snr") return row.hasRadio ? formatCount(row.snr) : "—"
@@ -1420,8 +1439,8 @@ function chartAxisLabel(value: number) {
 function Screen9({ state }: { state: WallState }) {
   const stats = useConnectivity(state)
   const kpis = [
-    { x: 43, label: "TOTAL DEVICES", lx: 71.04, value: formatCount(stats?.kpis.total), vx: 71.04, vw: 160, note: "Registered devices", nx: 240, source: "total-devices" },
-    { x: 504.54, label: "COMMUNICATED", lx: 532.99, value: formatCount(stats?.kpis.communicated), vx: 532.99, vw: 160, note: "Latest day in range", nx: 700, source: "communicated" },
+    { x: 43, label: "TOTAL DEVICES", lx: 71.04, value: formatCount(stats?.kpis.total), vx: 71.04, vw: 160, note: "Registered devices", nx: 290, source: "total-devices" },
+    { x: 504.54, label: "COMMUNICATED", lx: 532.99, value: formatCount(stats?.kpis.communicated), vx: 532.99, vw: 160, note: "Latest day in range", nx: 750, source: "communicated" },
     { x: 966.07, label: "COMMUNICATION RATE", lx: 994.94, value: formatPct(stats?.kpis.rate), vx: 994.94, vw: 166.08, note: "Successful communication", nx: 1174.08, source: "comm-rate" },
     { x: 1427.61, label: "NC > 7 DAYS", lx: 1455.94, value: formatCount(stats?.kpis.nc7), vx: 1455.94, vw: 120, note: "Requires attention", nx: 1600, source: "nc-7" },
   ]
@@ -1647,7 +1666,8 @@ function ComplaintColumns({ share }: { share: { label: string; count: number }[]
   )
 }
 
-function Screen13({ state }: { state: WallState }) {
+/** Previous Customer Impact screen — kept as Screen22, not mapped in wall bodies. */
+export function Screen22({ state }: { state: WallState }) {
   const impact = useImpact(state)
   const countText = (value: number | null | undefined) => (value == null ? "—" : value.toLocaleString("en-US"))
   const percentText = (value: number | null | undefined) => (value == null ? "—" : `${value.toFixed(1)}%`)
@@ -1977,10 +1997,10 @@ const billDays23Fill = "linear-gradient(to right, #274C6E, #4C92D4)"
 const billDays410Fill = "linear-gradient(to right, #5C5782, #A49BE8)"
 
 const connectOpsHardcoded = [
-  { month: "July", disconnect: 420, connect: 310 },
-  { month: "August", disconnect: 510, connect: 360 },
-  { month: "September", disconnect: 340, connect: 460 },
-  { month: "October", disconnect: null, connect: null },
+  { month: "July", disconnect: VALVE_DISCONNECT_BY_MONTH.July, connect: VALVE_CONNECT_BY_MONTH.July },
+  { month: "August", disconnect: VALVE_DISCONNECT_BY_MONTH.August, connect: VALVE_CONNECT_BY_MONTH.August },
+  { month: "September", disconnect: VALVE_DISCONNECT_BY_MONTH.September, connect: VALVE_CONNECT_BY_MONTH.September },
+  { month: "October", disconnect: VALVE_DISCONNECT_BY_MONTH.October, connect: VALVE_CONNECT_BY_MONTH.October },
 ] as const
 
 function Screen15() {
@@ -2031,6 +2051,9 @@ function Screen15() {
       ey: barY + 28,
       pct: `${row.day1Pct.toFixed(2)}%`,
       pctY: barY - 2,
+      day1Abs: row.day1.toLocaleString("en-US"),
+      day1CenterX: billBarX + w1 / 2,
+      day1Label: w1 >= 72,
       total: byDay10.toLocaleString("en-US"),
       totalY: barY + 2,
       barY,
@@ -2051,26 +2074,25 @@ function Screen15() {
   const connectRows = connectOpsHardcoded.map((row, index) => {
     const discY = opsFirstY + index * opsRowPitch
     const connY = discY + 22
-    const disconnectW = row.disconnect == null ? 0 : Math.max(24, Math.round((row.disconnect / opsMaxDisconnect) * opsDisconnectTrack))
-    const connectW = row.connect == null ? 0 : Math.max(24, Math.round((row.connect / opsMaxConnect) * opsConnectTrack))
+    const disconnectW = !row.disconnect ? 0 : Math.max(24, Math.round((row.disconnect / opsMaxDisconnect) * opsDisconnectTrack))
+    const connectW = !row.connect ? 0 : Math.max(24, Math.round((row.connect / opsMaxConnect) * opsConnectTrack))
     return {
       month: row.month,
       my: discY + 1,
-      disconnect: row.disconnect == null ? "—" : String(row.disconnect),
+      disconnect: String(row.disconnect),
       disconnectX: opsBarX + disconnectW + 12,
       disconnectY: discY - 1,
       disconnectW,
-      connect: row.connect == null ? "—" : String(row.connect),
+      connect: String(row.connect),
       connectX: opsBarX + connectW + 12,
       connectY: connY - 1,
       connectW,
-      wired: row.disconnect != null && row.connect != null,
+      wired: true,
       source: `${row.month.toLowerCase()}-ops`,
     }
   })
-  const opsDisconnectTotal = connectOpsHardcoded.reduce((sum, row) => sum + (row.disconnect ?? 0), 0)
-  const opsConnectTotal = connectOpsHardcoded.reduce((sum, row) => sum + (row.connect ?? 0), 0)
-  const opsHaveOctober = connectOpsHardcoded.every((row) => row.disconnect != null && row.connect != null)
+  const opsDisconnectTotal = connectOpsHardcoded.reduce((sum, row) => sum + row.disconnect, 0)
+  const opsConnectTotal = connectOpsHardcoded.reduce((sum, row) => sum + row.connect, 0)
 
   return (
     <Frame mirror>
@@ -2106,6 +2128,9 @@ function Screen15() {
               <div style={{ height: "100%", borderRadius: 999, background: layer.fill }} />
             </At>
           ))}
+          {row.day1Label ? (
+            <Pin x={row.day1CenterX - 40} y={row.barY + 8} w={80} size={18} weight={700} color="#07302c" lh={24} align="center">{row.day1Abs}</Pin>
+          ) : null}
           <Pin x={1531} y={row.pctY} size={24} weight={700} color="#42e6d6" lh={28}>{row.pct}</Pin>
           <Pin x={1531} y={row.pctY + 28} size={13} color="#8ca7a5" lh={16}>generated on day 1</Pin>
           <Pin x={1720} y={row.totalY} w={84} size={20} weight={700} color="#f4fbfa" lh={24} align="right">{row.total}</Pin>
@@ -2142,7 +2167,7 @@ function Screen15() {
       ))}
 
       <Pin x={1161} y={opsPanelY + 18} size={24} weight={700} color="#f4fbfa" lh={28}>Operations summary</Pin>
-      <Pin x={1161} y={opsPanelY + 58} size={15} color="#8ca7a5" lh={18}>{opsHaveOctober ? "July–October · completed within 24h" : "July–September · October pending"}</Pin>
+      <Pin x={1161} y={opsPanelY + 58} size={15} color="#8ca7a5" lh={18}>Valve open/close · July–Sep = 0 · October live</Pin>
       <Pin x={1162} y={opsPanelY + 108} size={17} color="#9ab1af" lh={20}>Disconnect</Pin>
       <Pin x={1650} y={opsPanelY + 100} w={115} size={26} weight={700} color="#f1816c" lh={30} align="right">{opsDisconnectTotal.toLocaleString("en-US")}</Pin>
       <FigAsset src={screen15Asset("row-line")} x={1161.98} y={opsPanelY + 140} w={676.99} h={1} />
@@ -2310,9 +2335,7 @@ function Screen17({ state }: { state: WallState }) {
   const spots = [34, 499, 964, 1429]
   const demand = useDemand(state)
   const meters = useMeterSplit(state)
-  const quality = useQuality(state)
   const capacity = useCapacity(state)
-  const coverageShare = quality && quality.total > 0 && quality.days > 0 ? quality.received.overall / (quality.total * quality.days) : null
   const dayCount = spanDays(state.date, state.dateTo).length
   const dailyVolume = demand && dayCount > 0 ? demand.total / dayCount : null
   const utilization = dailyVolume != null && capacity != null && capacity > 0 ? (dailyVolume / capacity) * 100 : null
@@ -2346,19 +2369,13 @@ function Screen17({ state }: { state: WallState }) {
           : card.note,
     bar: !card.bar
       ? card.bar
-      : card.title === "COVERAGE"
+      : index === 0
         ? {
             ...card.bar,
-            value: coverageShare == null ? "—" : `${(coverageShare * 100).toFixed(1)}%`,
-            fill: coverageShare == null ? 0 : Math.max(0, Math.min(card.bar.track, Math.round(coverageShare * card.bar.track))),
+            value: utilization == null ? "—" : percentText(utilization),
+            fill: utilization == null ? 0 : Math.max(0, Math.min(card.bar.track, Math.round((utilization / 100) * card.bar.track))),
           }
-        : index === 0
-          ? {
-              ...card.bar,
-              value: utilization == null ? "—" : percentText(utilization),
-              fill: utilization == null ? 0 : Math.max(0, Math.min(card.bar.track, Math.round((utilization / 100) * card.bar.track))),
-            }
-          : card.bar,
+        : card.bar,
     rows: index === 0
       ? [
           { label: "Peak Flow", value: peak },
@@ -2396,14 +2413,6 @@ function Screen17({ state }: { state: WallState }) {
               <Pin x={row.label === "Utilization" ? card.x + 291 : card.x + 39} y={valueY[index]} size={30} color="#339b9a" lh={40}>{row.value}</Pin>
             </span>
           ))}
-          {card.bar && card.title !== "GAS SALE VOLUME" && (
-            <span>
-              <Pin x={card.x + 39} y={790} size={24} color="#ffffff" lh={40}>{card.bar.label}</Pin>
-              <Pin x={card.x + 291} y={837} size={30} color="#339b9a" lh={40}>{card.bar.value}</Pin>
-              <At x={card.x + 39} y={847} w={235} h={21}><div style={{ height: "100%", borderRadius: 63, background: "#34575b" }} /></At>
-              <At x={card.x + 39} y={847} w={card.bar.fill} h={21}><div style={{ height: "100%", borderRadius: 38, background: "linear-gradient(to right, #1e897f, #34efde)" }} /></At>
-            </span>
-          )}
           {card.bar && card.title === "GAS SALE VOLUME" && (
             <span>
               <At x={card.x + 39} y={737} w={235} h={21}><div style={{ height: "100%", borderRadius: 63, background: "#34575b" }} /></At>
@@ -2417,14 +2426,19 @@ function Screen17({ state }: { state: WallState }) {
 }
 
 function Screen18() {
-  // Counts from CCC data 02-Nov-2026.xlsx (Zero / Min sheets; Qmax fixed to 1)
+  const { state } = useWall()
+  const anomalies = useAnomalies(state)
   const track = 446.14
-  const maxCount = Math.max(cccQmax, cccZeroConsumption, cccMinConsumption, 1)
-  const fillOf = (count: number) => Math.max(count > 0 ? 8 : 0, Math.round((count / maxCount) * track))
+  const qmax = anomalies?.overflow ?? null
+  const zero = anomalies?.zero ?? null
+  const minimum = anomalies?.low ?? null
+  const maxCount = Math.max(qmax ?? 0, zero ?? 0, minimum ?? 0, 1)
+  const fillOf = (count: number | null) => (count == null ? 0 : Math.max(count > 0 ? 8 : 0, Math.round((count / maxCount) * track)))
+  const textOf = (count: number | null) => (count == null ? "—" : count.toLocaleString("en-US"))
   const rows = [
-    { label: "Qmax Validation", y: 855, barY: 854, valueY: 854, value: cccQmax.toLocaleString("en-US"), fill: fillOf(cccQmax), source: "qmax" },
-    { label: "Continuous Active\nZero Consumption", y: 911, barY: 924, valueY: 924, value: cccZeroConsumption.toLocaleString("en-US"), fill: fillOf(cccZeroConsumption), source: "zero" },
-    { label: "Continuous Active\nMinimum Consumption", y: 995, barY: 1008, valueY: 1008, value: cccMinConsumption.toLocaleString("en-US"), fill: fillOf(cccMinConsumption), source: "minimum" },
+    { label: "Qmax Validation", y: 855, barY: 854, valueY: 854, value: textOf(qmax), fill: fillOf(qmax), source: "qmax" },
+    { label: "Continuous Active\nZero Consumption", y: 911, barY: 924, valueY: 924, value: textOf(zero), fill: fillOf(zero), source: "zero" },
+    { label: "Continuous Active\nMinimum Consumption", y: 995, barY: 1008, valueY: 1008, value: textOf(minimum), fill: fillOf(minimum), source: "minimum" },
   ]
   const report = [
     { value: "3", x: 1324, daysX: 1360.5, source: "report-qmax" },
@@ -2634,30 +2648,21 @@ function Screen20({ state }: { state: WallState }) {
       <Rule x={898} y={543} w={937} />
       <Rule x={899} y={616} w={936} />
 
-      <At x={27} y={720} w={1308} h={307}><div className="panel shell dim" /></At>
+      <At x={27} y={720} w={1840} h={307}><div className="panel shell dim" /></At>
       <Pin x={51} y={736} size={24} color="#ffffff" lh={28}>Estimated reads</Pin>
       <Pin x={53} y={771} size={18} color="#76817f" lh={21}>Estimated readings · share</Pin>
-      <Pin x={638} y={787} size={18} color="#76817f" lh={21}>Daily</Pin>
-      <Pin x={905} y={787} size={18} color="#76817f" lh={21}>For the period</Pin>
-      <Pin x={1206} y={787} size={18} color="#76817f" lh={21}>Hourly</Pin>
+      <Pin x={900} y={787} size={18} color="#76817f" lh={21}>Daily</Pin>
+      <Pin x={1280} y={787} size={18} color="#76817f" lh={21}>For the period</Pin>
+      <Pin x={1660} y={787} size={18} color="#76817f" lh={21}>Hourly</Pin>
       {reads.map((row) => (
         <span key={row.label}>
-          <Rule x={51} y={row.rule} w={1260} />
+          <Rule x={51} y={row.rule} w={1780} />
           <Pin x={49} y={row.y} size={24} color="#ffffff" lh={28}>{row.label}</Pin>
-          <Pin x={560} y={row.vy} w={150} size={24} color="#ffffff" lh={28} align="right">{row.daily}</Pin>
-          <Pin x={820} y={row.vy} w={170} size={24} color="#ffffff" lh={28} align="right">{row.period}</Pin>
-          <Pin x={1120} y={row.vy} w={150} size={24} color="#ffffff" lh={28} align="right">{row.hourly}</Pin>
+          <Pin x={820} y={row.vy} w={170} size={24} color="#ffffff" lh={28} align="right">{row.daily}</Pin>
+          <Pin x={1200} y={row.vy} w={170} size={24} color="#ffffff" lh={28} align="right">{row.period}</Pin>
+          <Pin x={1580} y={row.vy} w={170} size={24} color="#ffffff" lh={28} align="right">{row.hourly}</Pin>
         </span>
       ))}
-
-      <At x={1346} y={720} w={521} h={312}><div className="panel shell dim" /></At>
-      <Pin x={1371} y={736} size={24} color="#ffffff" lh={28}>Data processing</Pin>
-      <Pin x={1371} y={780} size={18} color="#76817f" lh={21}>Separate measures</Pin>
-      <Pin x={1371} y={862} size={24} color="#ffffff" lh={28}>Validation failure</Pin>
-      <Pin x={1762} y={856} size={23} color="#f3f5f4" lh={45}>N/A</Pin>
-      <Rule x={1371} y={922} w={472} />
-      <Pin x={1371} y={944} size={24} color="#ffffff" lh={28}>Edited</Pin>
-      <Pin x={1762} y={935} size={23} color="#f3f5f4" lh={45}>N/A</Pin>
     </Frame>
   )
 }
@@ -2748,6 +2753,32 @@ function Screen21({ state }: { state: WallState }) {
     { x: 1267, lx: 1294 },
   ].map((item, index) => ({ ...item, ...d.cards[index], value: [countText(totalSensors), countText(lowSensors), countText(mediumSensors)][index] }))
   const surveyedLeaks = leaks ? countText(leaks.suspected) : "—"
+  // Grade A/B/C from leak.duckdb map to ppm bands 500–1000 / 1000–1500 / >1500
+  const ppmCounts = [
+    leaks?.grades["Grade A"] ?? null,
+    leaks?.grades["Grade B"] ?? null,
+    leaks?.grades["Grade C"] ?? null,
+  ]
+  const ppmMax = Math.max(10, ...ppmCounts.filter((value): value is number => value != null), 1)
+  const ppmTrackTop = 852
+  const ppmTrackBottom = 998
+  const ppmTrackH = ppmTrackBottom - ppmTrackTop
+  const ppmBars = [
+    { x: 1107, lx: 1122, label: "500-1000", count: ppmCounts[0], trackSvg: false },
+    { x: 1365, lx: 1381, label: "1000-1500", count: ppmCounts[1], trackSvg: false },
+    { x: 1623, lx: 1638, label: ">1500", count: ppmCounts[2], trackSvg: true },
+  ].map((bar) => {
+    const fillH = bar.count == null || bar.count <= 0 ? 0 : Math.max(8, Math.round((bar.count / ppmMax) * ppmTrackH))
+    return {
+      ...bar,
+      trackY: ppmTrackTop,
+      trackH: ppmTrackH,
+      fillY: ppmTrackBottom - fillH,
+      fillH,
+      labelText: bar.count == null ? "—" : String(bar.count),
+      labelY: fillH > 28 ? ppmTrackBottom - fillH + 8 : ppmTrackTop + 8,
+    }
+  })
   const clusterLayout = [
     { rankY: 388, nameY: 378, subY: 398, valY: 378, lineY: 420, line: "cluster-row-line-01" },
     { rankY: 448, nameY: 440, valY: 437, lineY: 478, line: "cluster-row-line-02" },
@@ -2756,11 +2787,6 @@ function Screen21({ state }: { state: WallState }) {
     { rankY: 628, nameY: 620, valY: 617, lineY: 658, line: "cluster-row-line-05" },
   ]
   const clusterRows = cccTopPressureClusters.map((cluster, index) => ({ ...cluster, ...clusterLayout[index] }))
-  const ppmBars = [
-    { x: 1107, lx: 1122, label: "500-1000", trackY: 852, trackH: 139, fillY: 880, fillH: 111 },
-    { x: 1365, lx: 1381, label: "1000-1500", trackY: 852, trackH: 139, fillY: 921, fillH: 70 },
-    { x: 1623, lx: 1638, label: ">1500", trackY: 852, trackH: 146, fillY: 965, fillH: 27, trackSvg: true },
-  ]
   return (
     <Frame>
       <Pin x={32} y={28} size={32} weight={900} color="#34efde" lh={40}>PRESSURE & LEAK DETECTION</Pin>
@@ -2814,44 +2840,44 @@ function Screen21({ state }: { state: WallState }) {
       <Pin x={56} y={874} size={40} color="#f3f5f4" lh={47}>{surveyedLeaks}</Pin>
       <Pin x={399} y={887} size={18} color="#76817f" lh={21}>MDMS</Pin>
       <Pin x={486} y={835} size={18} color="#76817f" lh={21}>Repaired leaks</Pin>
-      <Pin x={486} y={874} size={40} color="#f3f5f4" lh={47} unwired="repaired-leaks">{d.confirmed}</Pin>
+      <Pin x={486} y={874} size={40} color="#f3f5f4" lh={47}>N/A</Pin>
       <Pin x={869} y={887} size={18} color="#76817f" lh={21}>LD</Pin>
       <FigAsset src={screen21Asset("leak-rule-v")} x={471} y={848} w={1} h={183} />
       <FigAsset src={screen21Asset("leak-rule-h")} x={56} y={946.5} w={850} h={1} />
       <Pin x={56} y={957} size={18} color="#76817f" lh={21}>Avg. leak response time</Pin>
-      <Pin x={56} y={994} size={40} color="#f3f5f4" lh={47} unwired="avg-response">{d.response}</Pin>
+      <Pin x={56} y={994} size={40} color="#f3f5f4" lh={47}>N/A</Pin>
       <Pin x={338} y={1007} size={18} color="#76817f" lh={21}>MFS · minutes</Pin>
       <Pin x={486} y={957} size={18} color="#76817f" lh={21}>Avg. leak repair time</Pin>
-      <Pin x={486} y={984} size={40} color="#f3f5f4" lh={47} unwired="avg-repair">{d.repair}</Pin>
+      <Pin x={486} y={984} size={40} color="#f3f5f4" lh={47}>N/A</Pin>
       <Pin x={776} y={1007} size={18} color="#76817f" lh={21}>MFS · minutes</Pin>
 
       <Pin x={976} y={738} size={24} color="#ffffff" lh={40}>Leak distribution by ppm</Pin>
-      <Pin x={1414} y={745} size={18} color="#76817f" lh={21}>Demo categories and counts · population to confirm</Pin>
+      <Pin x={1414} y={745} size={18} color="#76817f" lh={21}>Grade A / B / C · selected period</Pin>
       <Pin x={976} y={778} size={18} color="#76817f" lh={21}>Leaks · count</Pin>
-      <Pin x={995} y={836} w={40} size={14} color="#7f8b87" lh={17} align="right">10</Pin>
-      <Pin x={1003} y={905} w={32} size={18} color="#76817f" lh={21} align="right">5</Pin>
+      <Pin x={995} y={836} w={40} size={14} color="#7f8b87" lh={17} align="right">{String(ppmMax)}</Pin>
+      <Pin x={1003} y={905} w={32} size={18} color="#76817f" lh={21} align="right">{String(Math.round(ppmMax / 2))}</Pin>
       <Pin x={1003} y={974} w={32} size={18} color="#76817f" lh={21} align="right">0</Pin>
       <FigAsset src={screen21Asset("chart-grid-line")} x={1027} y={851.5} w={802} h={1} />
       <FigAsset src={screen21Asset("chart-grid-line")} x={1027} y={921.5} w={802} h={1} />
       <FigAsset src={screen21Asset("chart-grid-line")} x={1027} y={991.5} w={802} h={1} />
       {ppmBars.map((bar) => (
         <span key={bar.label}>
-          {"trackSvg" in bar && bar.trackSvg ? (
+          {bar.trackSvg ? (
             <FigAsset src={screen21Asset("bar-track-top")} x={bar.x} y={bar.trackY} w={92} h={137} />
           ) : (
             <At x={bar.x} y={bar.trackY} w={92} h={bar.trackH}>
               <div style={{ height: "100%", borderRadius: 67, background: "rgba(52,87,91,0.51)" }} />
             </At>
           )}
-          <At x={bar.x} y={bar.fillY} w={92} h={bar.fillH}>
-            <div style={{ height: "100%", borderRadius: 67, background: "linear-gradient(to bottom, #34efde, #1e897f)" }} />
-          </At>
+          {bar.fillH > 0 ? (
+            <At x={bar.x} y={bar.fillY} w={92} h={bar.fillH}>
+              <div style={{ height: "100%", borderRadius: 67, background: "linear-gradient(to bottom, #34efde, #1e897f)" }} />
+            </At>
+          ) : null}
+          <Pin x={bar.x - 14} y={bar.labelY} w={120} size={18} color="#76817f" lh={21} align="center">{bar.labelText}</Pin>
           <Pin x={bar.lx} y={1007} size={18} color="#76817f" lh={21}>{bar.label}</Pin>
         </span>
       ))}
-      <Pin x={1093} y={863} size={18} color="#76817f" lh={21} unwired="ppm-500-1000">8</Pin>
-      <Pin x={1349} y={863} size={18} color="#76817f" lh={21} unwired="ppm-1000-1500">5</Pin>
-      <Pin x={1607} y={944} size={18} color="#76817f" lh={21} unwired="ppm-over-1500">2</Pin>
     </Frame>
   )
 }
@@ -2866,7 +2892,8 @@ const bodies: Record<number, (state: WallState) => ReactNode> = {
   7: (state) => <Screen7 state={state} />,
   8: (state) => (state.ufgOpen ? <UfgScreen8 /> : <Screen8 state={state} />),
   9: (state) => (state.ufgOpen ? <UfgScreen9 state={state} /> : <Screen9 state={state} />),
-  13: (state) => <Screen13 state={state} />,
+  13: (state) => <Screen13CallCenter state={state} />,
+  // 22: (state) => <Screen22 state={state} />,
   14: (state) => <Screen14 state={state} />,
   15: () => <Screen15 />,
   16: (state) => <Screen16 state={state} />,
