@@ -74,9 +74,12 @@ export function combineBilling(months: BillingMonth[]): BillingMonth | null {
 }
 
 export function billingForRange(data: BillingData | null, date: string, dateTo: string) {
-  if (!data) return null
+  if (!data?.months?.length) return null
   const wanted = new Set(billingMonthsFor(date, dateTo))
-  return combineBilling(data.months.filter((month) => wanted.has(month.ym)))
+  const matched = data.months.filter((month) => wanted.has(month.ym))
+  // Selected month may be ahead of loaded billing (e.g. Oct filter, data through Sep).
+  if (matched.length) return combineBilling(matched)
+  return combineBilling([data.months[data.months.length - 1]])
 }
 
 export function useBilling(state: WallState) {

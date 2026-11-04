@@ -31,7 +31,11 @@ const QUEUES = [
 ]
 
 const QUEUE_MAX = 185
-const QUEUE_TRACK = 622
+const QUEUE_BAR_X = 1226
+const QUEUE_TRACK = 520
+const QUEUE_VALUE_X = 1788
+const QUEUE_VALUE_W = 72
+const QUEUE_RIGHT = QUEUE_VALUE_X + QUEUE_VALUE_W
 
 const CHART_X = [
   { label: "19:51", x: 123 },
@@ -69,7 +73,6 @@ export function Screen9() {
 
       <div className="at" style={{ left: 62, top: 292, width: 1081, height: 35, borderRadius: 95, background: "#232323", border: "1px solid #282b2a" }} />
       <Pin x={84} y={251} size={25} weight={700} color="#f2f5f5">Service flows</Pin>
-      <Pin x={1022} y={262} size={13} weight={400} color="#809694" w={200} align="right">CURRENT STATUS</Pin>
       {(["INTEGRATION", "CALLS / SEC", "SUCCESS", "P95 LATENCY", "STATE"] as const).map((h, i) => (
         <Pin key={h} x={[92, 530, 707, 873, 1054][i]} y={304} size={13} weight={700} color="#8da9a5">{h}</Pin>
       ))}
@@ -88,13 +91,13 @@ export function Screen9() {
       ))}
 
       <Pin x={1224} y={251} size={25} weight={700} color="#f2f5f5">Queue backlog</Pin>
-      <Pin x={1729} y={263} size={13} weight={400} color="#809694" w={120} align="right">READY MESSAGES</Pin>
+      <Pin x={QUEUE_RIGHT - 120} y={263} size={13} weight={400} color="#809694" w={120} align="right">READY MESSAGES</Pin>
       {QUEUES.map((q) => (
         <div key={q.name}>
-          <Pin x={1226} y={q.y} size={19} weight={400} color="#ddeae8">{q.name}</Pin>
-          <Pin x={1807} y={q.y - 2} size={23} weight={700} color="#edf5f3" w={80} align="right">{String(q.value)}</Pin>
+          <Pin x={QUEUE_BAR_X} y={q.y} size={19} weight={400} color="#ddeae8">{q.name}</Pin>
+          <Pin x={QUEUE_VALUE_X} y={q.y - 2} size={23} weight={700} color="#edf5f3" w={QUEUE_VALUE_W} align="right">{String(q.value)}</Pin>
           <ProgBar
-            x={1226}
+            x={QUEUE_BAR_X}
             y={q.y + 28}
             trackW={QUEUE_TRACK}
             fillW={(q.value / QUEUE_MAX) * QUEUE_TRACK}
@@ -102,9 +105,9 @@ export function Screen9() {
           />
         </div>
       ))}
-      <div className="at" style={{ left: 1226, top: 655, width: 622, height: 1, background: "#2a3535" }} />
-      <Pin x={1226} y={669} size={15} weight={400} color="#8da6a2">Unacknowledged</Pin>
-      <Pin x={1802} y={663} size={25} weight={700} color="#e8f2f0" w={80} align="right">207</Pin>
+      <div className="at" style={{ left: QUEUE_BAR_X, top: 655, width: QUEUE_TRACK, height: 1, background: "#2a3535" }} />
+      <Pin x={QUEUE_BAR_X} y={669} size={15} weight={400} color="#8da6a2">Unacknowledged</Pin>
+      <Pin x={QUEUE_VALUE_X} y={663} size={25} weight={700} color="#e8f2f0" w={QUEUE_VALUE_W} align="right">207</Pin>
 
       <Pin x={96} y={797} size={25} weight={700} color="#f2f5f5">Messages waiting · last 24 hours</Pin>
       <Pin x={1072} y={797} size={15} weight={400} color="#8aa29f" w={100} align="right">RabbitMQ</Pin>

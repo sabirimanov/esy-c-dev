@@ -2008,13 +2008,14 @@ function Screen15() {
   const billing = useBilling(state)
   const current = billingForRange(billing, state.date, state.dateTo)
   const loading = billing == null
+  const kpiPad = 22
   const kpis = [
-    { x: 34, w: 295.014, lx: 56, vx: 156, vw: 200, label: "Revenue Realization Gross", value: loading ? "—" : fieldPercent(current?.revenueRealizationGross ?? null) },
-    { x: 340.92, w: 295.675, lx: 360.76, vx: 444, vw: 170, label: "Revenue Realization Net", value: loading ? "—" : fieldPercent(current?.revenueRealizationNet ?? null) },
-    { x: 649.16, w: 294.352, lx: 666.36, vx: 749, vw: 160, label: "Bill Payment Rate", value: loading ? "—" : fieldPercent(current?.billPaymentRate ?? null) },
-    { x: 952.78, w: 295.014, lx: 969.31, vx: 1098.5, vw: 260, label: "Outstanding Credit", value: loading ? "—" : current ? `${billingAmount(current.outstandingCredit)} AZN` : "—" },
-    { x: 1260.37, w: 294.352, lx: 1277.57, vx: 1397, vw: 220, label: "Outstanding Balance", value: loading ? "—" : current ? `${billingAmount(current.outstandingBalance)} AZN` : "—" },
-    { x: 1563.99, w: 295.014, lx: 1580.52, vx: 1664, vw: 180, label: "Positive Balance %", value: loading ? "—" : fieldPercent(current?.positiveBalanceShare ?? null) },
+    { x: 34, w: 295.014, label: "Revenue Realization Gross", value: loading ? "—" : fieldPercent(current?.revenueRealizationGross ?? null) },
+    { x: 340.92, w: 295.675, label: "Revenue Realization Net", value: loading ? "—" : fieldPercent(current?.revenueRealizationNet ?? null) },
+    { x: 649.16, w: 294.352, label: "Bill Payment Rate", value: loading ? "—" : fieldPercent(current?.billPaymentRate ?? null) },
+    { x: 952.78, w: 295.014, label: "Outstanding Credit", value: loading ? "—" : current ? `${billingAmount(current.outstandingCredit)} AZN` : "—" },
+    { x: 1260.37, w: 294.352, label: "Outstanding Balance", value: loading ? "—" : current ? `${billingAmount(current.outstandingBalance)} AZN` : "—" },
+    { x: 1563.99, w: 295.014, label: "Positive Balance %", value: loading ? "—" : fieldPercent(current?.positiveBalanceShare ?? null) },
   ]
 
   const billPanelY = 250
@@ -2101,8 +2102,8 @@ function Screen15() {
       {kpis.map((card) => (
         <span key={card.label}>
           <At x={card.x} y={90} w={card.w} h={142}><div className="kpi" /></At>
-          <Pin x={card.lx} y={92} size={22} weight={500} color="#34efde" lh={24}>{card.label}</Pin>
-          <Pin x={card.vx - card.vw / 2} y={142} w={card.vw} size={52} weight={700} color="#ffffff" lh={40} align="center">{card.value}</Pin>
+          <Pin x={card.x + kpiPad} y={92} w={card.w - kpiPad * 2} size={22} weight={500} color="#34efde" lh={24}>{card.label}</Pin>
+          <Pin x={card.x + kpiPad} y={142} w={card.w - kpiPad * 2} size={44} weight={700} color="#ffffff" lh={48} align="left">{card.value}</Pin>
         </span>
       ))}
 
@@ -2428,7 +2429,8 @@ function Screen17({ state }: { state: WallState }) {
 function Screen18() {
   const { state } = useWall()
   const anomalies = useAnomalies(state)
-  const track = 446.14
+  // Shorter track so 6-digit values (e.g. 24,915) fit inside the left panel.
+  const track = 310
   const qmax = anomalies?.overflow ?? null
   const zero = anomalies?.zero ?? null
   const minimum = anomalies?.low ?? null
@@ -2458,14 +2460,14 @@ function Screen18() {
       <Pin x={49.11} y={789} w={580.79} size={32} weight={700} color="#ffffff" lh={40} align="center">Customer Consumption Abnormalities</Pin>
       {rows.map((row) => (
         <span key={row.source}>
-          <Pin x={56} y={row.y} w={300} size={24} color="#f3f5f4" lh={28} wrap>{row.label}</Pin>
-          <At x={380.7} y={row.barY} w={track} h={30}>
+          <Pin x={48} y={row.y} w={290} size={22} color="#f3f5f4" lh={26} wrap>{row.label}</Pin>
+          <At x={350} y={row.barY} w={track} h={30}>
             <div style={{ height: "100%", borderRadius: 27, background: "#33413f" }} />
           </At>
-          <At x={380.7} y={row.barY} w={row.fill} h={30}>
+          <At x={350} y={row.barY} w={row.fill} h={30}>
             <div style={{ height: "100%", borderRadius: 38, background: "linear-gradient(to right, #1e897f, #34efde)" }} />
           </At>
-          <Pin x={841.91} y={row.valueY} size={24} weight={700} color="#f3f5f4" lh={28}>{row.value}</Pin>
+          <Pin x={672} y={row.valueY} w={170} size={24} weight={700} color="#f3f5f4" lh={28} align="right">{row.value}</Pin>
         </span>
       ))}
 
