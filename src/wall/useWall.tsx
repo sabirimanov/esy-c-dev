@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { normalizeCity, normalizeCluster, normalizeRegion } from "./places"
 import { defaultWall, type WallState } from "./state"
 
-type WallPatch = Partial<Pick<WallState, "date" | "dateTo" | "regionId" | "cityId" | "clusterId" | "regionSet" | "seed" | "period" | "ufgOpen">> & {
+type WallPatch = Partial<Pick<WallState, "date" | "dateTo" | "regionId" | "cityId" | "clusterId" | "regionSet" | "seed" | "period" | "ufgOpen" | "mapMode" | "carouselEpoch" | "mapPreviewSlide">> & {
   clearCache?: boolean
   reload?: boolean
 }
@@ -31,6 +31,9 @@ function normalize(raw: Partial<WallState> | null): WallState {
     seed: Number.isInteger(raw.seed) && (raw.seed as number) >= 0 ? (raw.seed as number) : 0,
     period: raw.period === "" || (typeof raw.period === "string" && raw.period) ? raw.period : defaultWall.period,
     ufgOpen: Boolean(raw.ufgOpen),
+    mapMode: raw.mapMode === "carousel" ? "carousel" : "default",
+    carouselEpoch: Number.isFinite(Number(raw.carouselEpoch)) ? Number(raw.carouselEpoch) : 0,
+    mapPreviewSlide: typeof raw.mapPreviewSlide === "string" && raw.mapPreviewSlide ? raw.mapPreviewSlide : null,
   }
 }
 
@@ -44,7 +47,10 @@ function sameWall(a: WallState, b: WallState) {
     a.regionSet === b.regionSet &&
     a.seed === b.seed &&
     a.period === b.period &&
-    a.ufgOpen === b.ufgOpen
+    a.ufgOpen === b.ufgOpen &&
+    a.mapMode === b.mapMode &&
+    a.carouselEpoch === b.carouselEpoch &&
+    a.mapPreviewSlide === b.mapPreviewSlide
   )
 }
 

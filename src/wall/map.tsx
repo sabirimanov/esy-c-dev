@@ -8,7 +8,8 @@ import glow12 from "../assets/map-glow-12.jpg"
 import glow17 from "../assets/map-glow-17.jpg"
 import glow18 from "../assets/map-glow-18.jpg"
 import glow19 from "../assets/map-glow-19.jpg"
-import { initTerrain, type Terrain } from "./terrain"
+import type { MapOverlaySpec } from "./mapOverlay"
+import { initTerrain, type CallMapHandlers, type CallMapUi, type Terrain } from "./terrain"
 
 // Master map is 3×3 tiles, 5760×3240. Each screen renders its own 1920×1080
 // window of one shared camera, so the land meets at the bezels.
@@ -34,23 +35,52 @@ export function tileOf(screen: number) {
   return { x: (index % 3) * 1920, y: Math.floor(index / 3) * 1080 }
 }
 
+function overlayKey(spec: MapOverlaySpec) {
+  if (!spec) return ""
+  const opacity = spec.opacity == null ? 1 : spec.opacity
+  if (spec.kind === "points") {
+    const pts = (spec.points ?? []).map((p) => `${p.id}:${p.count}:${p.color}:${p.x.toFixed(3)}:${p.z.toFixed(3)}:${p.approx ? 1 : 0}`).join("|")
+    return `points:${opacity.toFixed(2)}:${pts}`
+  }
+  if (spec.kind === "heatmap") {
+    const heat = (spec.heat ?? []).map((p) => `${p.id}:${p.weight}:${p.color}:${p.x.toFixed(3)}:${p.z.toFixed(3)}`).join("|")
+    return `heat:${opacity.toFixed(2)}:${heat}`
+  }
+  const regions = (spec.regions ?? []).map((r) => `${r.regionId}:${r.color}:${r.intensity ?? 0}`).join("|")
+  return `region:${opacity.toFixed(2)}:${regions}`
+}
+
 export function MapTile({
   screen,
   selected,
   place,
+  overlay,
+  callUi,
+  callHandlers,
 }: {
   screen: number
   selected: string | null
   place: { label: string; x: number; z: number } | null
+  overlay: MapOverlaySpec
+  callUi?: CallMapUi
+  callHandlers?: CallMapHandlers
 }) {
   const tile = tileOf(screen)
   const host = useRef<HTMLDivElement>(null)
   const terrain = useRef<Terrain | null>(null)
   const selectedRef = useRef(selected)
   const placeRef = useRef(place)
+  const overlayRef = useRef(overlay)
+  const callUiRef = useRef(callUi)
+  const callHandlersRef = useRef(callHandlers)
   selectedRef.current = selected
   placeRef.current = place
+  overlayRef.current = overlay
+  callUiRef.current = callUi
+  callHandlersRef.current = callHandlers
   const placeKey = place ? `${place.label}:${place.x}:${place.z}` : ""
+  const overlaySig = overlayKey(overlay)
+  const callUiKey = `${callUi?.selectedNo ?? ""}|${callUi?.expandedClusterId ?? ""}`
 
   useEffect(() => {
     const node = host.current
@@ -64,6 +94,9 @@ export function MapTile({
       terrain.current = api
       api.setRegion(selectedRef.current)
       api.setPlace(placeRef.current)
+      if (callHandlersRef.current) api.setCallHandlers(callHandlersRef.current)
+      if (callUiRef.current) api.setCallUi(callUiRef.current)
+      api.setOverlay(overlayRef.current)
     })
     return () => {
       active = false
@@ -86,6 +119,26 @@ export function MapTile({
     })
     return () => window.cancelAnimationFrame(frame)
   }, [placeKey])
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      terrain.current?.setOverlay(overlayRef.current)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [overlaySig])
+
+  useEffect(() => {
+    if (!callHandlers) return
+    terrain.current?.setCallHandlers(callHandlers)
+  }, [callHandlers])
+
+  useEffect(() => {
+    if (!callUi) return
+    const frame = window.requestAnimationFrame(() => {
+      terrain.current?.setCallUi(callUi)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [callUiKey])
 
   if (!tile) return null
   return (

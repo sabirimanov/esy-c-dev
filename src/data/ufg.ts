@@ -4,6 +4,11 @@ import { apiRegionId, zoneIdForCity } from "../wall/places"
 import { useWall } from "../wall/useWall"
 import type { WallState } from "../wall/state"
 
+export type UfgRegion = {
+  region_id: string
+  name_en: string
+}
+
 export type UfgZone = {
   zone_id: string
   region_id: string
@@ -53,13 +58,15 @@ function scopeQuery(state: WallState, extra: Record<string, string>) {
   return query
 }
 
+const emptyRegions: UfgRegion[] = []
 const emptyZones: UfgZone[] = []
 const emptyClusters: UfgCluster[] = []
 
 export function useUfgHierarchy() {
   const { state } = useWall()
-  const body = useCachedResource<{ zones?: UfgZone[]; clusters?: UfgCluster[] }>("/ufg/hierarchy", state.seed, false)
+  const body = useCachedResource<{ regions?: UfgRegion[]; zones?: UfgZone[]; clusters?: UfgCluster[] }>("/ufg/hierarchy", state.seed, false)
   return {
+    regions: Array.isArray(body?.regions) ? body.regions : emptyRegions,
     zones: Array.isArray(body?.zones) ? body.zones : emptyZones,
     clusters: Array.isArray(body?.clusters) ? body.clusters : emptyClusters,
   }

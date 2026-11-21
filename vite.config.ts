@@ -23,7 +23,8 @@ import { app as duckdbApp } from "./duckdb/server.js"
 import { isDuckdbRequest, setDuckdbOrigin } from "./server/duckdb-origin.mjs"
 import { applyCors } from "./server/cors.mjs"
 
-setDuckdbOrigin("http://127.0.0.1:4317")
+const devPort = Number(process.env.VITE_PORT || 4320)
+setDuckdbOrigin(`http://127.0.0.1:${devPort}`)
 
 function wallSync(): Plugin {
   return {
@@ -55,7 +56,7 @@ export default defineConfig({
   plugins: [react(), wallSync()],
   server: {
     host: "127.0.0.1",
-    port: 4317,
+    port: devPort,
     strictPort: true,
     proxy: {
       "/newapi": { target: "https://cccdev.esyasoft.app", changeOrigin: true, secure: true },

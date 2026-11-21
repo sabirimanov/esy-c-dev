@@ -14,7 +14,6 @@ import { useQuality } from "../data/quality"
 import { useImpact } from "../data/impact"
 import { alertRowMs, useAlertScroll, useSmoothTrack } from "../data/alertScroll"
 import { billingForRange, useBilling } from "../data/billing"
-import { useCalibration } from "../data/calibration"
 import { useTamper } from "../data/tamper"
 import { useFieldOps } from "../data/field"
 import { formatCount, formatPct, typeByKey, useConnectivity, type ConnectivityTypeKey } from "../data/connectivity"
@@ -27,8 +26,11 @@ import {
 } from "../data/cccSnapshot"
 import { useCapacity, useMeterSplit, useUfgHierarchy, useUfgSummary, useUfgTrend, type UfgCluster } from "../data/ufg"
 import { addDays, formatRange, iso, monthGrid, monthTitle, parseIso, periodRange, previousSpan, shiftView, todayIso, trendCaption } from "../wall/dates"
+import { MAP_SLIDES, slideById } from "../wall/mapSlides"
 import { apiRegionId, citiesOf, cityById, EXC_REGIONS, regionEnabled, regionLabel, zoneIdForCity } from "../wall/places"
 import { periodLabel, type WallState } from "../wall/state"
+import { useEmergencyCalls } from "../data/emergencyCalls"
+import { useMapCarousel } from "../wall/useMapCarousel"
 import { useWall } from "../wall/useWall"
 
 const screen15Svg = import.meta.glob("../assets/screen15/*.svg", { eager: true, import: "default" }) as Record<string, string>
@@ -418,21 +420,28 @@ function Screen1({ state }: { state: WallState }) {
   )
 }
 
-function Screen2({ state }: { state: WallState }) {
-  const calib = useCalibration(state)
-  const fmt = (value: number | null | undefined) => (value == null ? "—" : value.toLocaleString("en-US"))
+function Screen2(_props: { state: WallState }) {
+  const fmt = (value: number) => value.toLocaleString("en-US")
+  const assetCounts = {
+    residential: 28500,
+    nonResidential: 55,
+    balance: 13,
+    pressure: 141,
+    temperature: 16,
+    total: 28725,
+  }
   const kpis = [
     { x: 43, labelX: 65, valueX: 65, label: "Calibration compliance", value: "100%" },
     { x: 504.54, labelX: 530, valueX: 530, label: "Overdue assets", value: "0" },
     { x: 966.07, labelX: 995, valueX: 995, label: "Long pending assets", value: "0" },
-    { x: 1427.61, labelX: 1460, valueX: 1456, label: "Total assets", value: fmt(calib?.total) },
+    { x: 1427.61, labelX: 1460, valueX: 1456, label: "Total assets", value: fmt(assetCounts.total) },
   ]
   const rows = [
-    { label: "Residential meters", y: 434, valueY: 431, lineY: 475, count: calib?.residential, avg: "4.6" },
-    { label: "Non-residential meters", y: 487, valueY: 484, lineY: 528, count: calib?.nonResidential, avg: "4.6" },
-    { label: "Balance meters / EVC", y: 540, valueY: 537, lineY: 581, count: calib?.balance, avg: "3" },
-    { label: "Pressure sensors", y: 593, valueY: 590, lineY: 634, count: calib?.pressure, avg: "4.7" },
-    { label: "Temperature sensors", y: 646, valueY: 643, lineY: 687, count: calib?.temperature, avg: "4.7" },
+    { label: "Residential meters", y: 434, valueY: 431, lineY: 475, count: assetCounts.residential, avg: "4.6" },
+    { label: "Non-residential meters", y: 487, valueY: 484, lineY: 528, count: assetCounts.nonResidential, avg: "4.6" },
+    { label: "Balance meters / EVC", y: 540, valueY: 537, lineY: 581, count: assetCounts.balance, avg: "3" },
+    { label: "Pressure sensors", y: 593, valueY: 590, lineY: 634, count: assetCounts.pressure, avg: "4.7" },
+    { label: "Temperature sensors", y: 646, valueY: 643, lineY: 687, count: assetCounts.temperature, avg: "4.7" },
   ]
   const columns = [
     { x: 435, key: "count", w: 90, align: "left" as const },
@@ -444,8 +453,8 @@ function Screen2({ state }: { state: WallState }) {
   ]
   const cell = (row: (typeof rows)[number], key: string) => {
     if (key === "count") return fmt(row.count)
-    if (key === "avg-validity") return row.count == null ? "—" : row.avg
-    return row.count == null ? "—" : "0"
+    if (key === "avg-validity") return row.avg
+    return "0"
   }
   const dueRows = [
     { label: "Calibration DUE", y: 836.03, barY: 844.02, bold: true, value: 0, source: "due-header" },
@@ -870,6 +879,71 @@ function Screen5() {
           <div style={{ position: "absolute", right: 28, top: 26, color: "#9aabb0", fontSize: 16, pointerEvents: "none" }}>⌄</div>
         </div>
       </At>
+      <Pin x={ox + 78} y={oy + 386} size={13} color="#798586" lh={16}>MAP MODE</Pin>
+      <At x={ox + 78} y={oy + 410} w={420} h={56}>
+        <div style={{ height: "100%", borderRadius: 28, background: "#0c1b1c", display: "flex", padding: 6, gap: 6, pointerEvents: "auto" }}>
+          {([
+            ["default", "Single"],
+            ["carousel", "Carousel"],
+          ] as const).map(([mode, label]) => {
+            const on = state.mapMode === mode
+            return (
+              <button
+                key={mode}
+                type="button"
+                onClick={() =>
+                  startTransition(() =>
+                    patch(
+                      mode === "carousel"
+                        ? { mapMode: mode, carouselEpoch: Date.now(), mapPreviewSlide: null }
+                        : {
+                            mapMode: mode,
+                            mapPreviewSlide: state.mapPreviewSlide || "emergency-calls",
+                          },
+                    ),
+                  )
+                }
+                style={{
+                  flex: 1,
+                  border: 0,
+                  borderRadius: 22,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  fontSize: 18,
+                  fontWeight: 600,
+                  background: on ? "#1a4f4a" : "transparent",
+                  color: on ? "#34efde" : "#8ca7a7",
+                  pointerEvents: "auto",
+                }}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      </At>
+      {state.mapMode === "default" ? (
+        <At x={ox + 78} y={oy + 480} w={420} h={72}>
+          <div style={{ height: "100%", borderRadius: 36, background: "#0c1b1c", position: "relative", pointerEvents: "auto" }}>
+            <div style={{ position: "absolute", left: 28, top: 12, fontSize: 13, letterSpacing: 1.4, color: "#798586" }}>MAP OVERLAY</div>
+            <select
+              className="region-select"
+              value={state.mapPreviewSlide || "emergency-calls"}
+              onChange={(event) => {
+                startTransition(() => patch({ mapMode: "default", mapPreviewSlide: event.target.value }))
+              }}
+              style={{ pointerEvents: "auto" }}
+            >
+              {MAP_SLIDES.map((slide) => (
+                <option key={slide.id} value={slide.id}>
+                  {slide.title}{slide.source ? "" : " · mock"}
+                </option>
+              ))}
+            </select>
+            <div style={{ position: "absolute", right: 28, top: 26, color: "#9aabb0", fontSize: 16, pointerEvents: "none" }}>⌄</div>
+          </div>
+        </At>
+      ) : null}
 
       <Pin x={ox + 576} y={oy + 28} size={20} weight={700} color="#2de0d2" lh={24}>DATE SELECTION</Pin>
       <Pin x={ox + 576} y={oy + 60} size={16} color="#7a8a8b" lh={20}>Choose a date, month, year or range</Pin>
@@ -2428,6 +2502,8 @@ function Screen17({ state }: { state: WallState }) {
 
 function Screen18() {
   const { state } = useWall()
+  const carousel = useMapCarousel()
+  const emergency = useEmergencyCalls()
   const anomalies = useAnomalies(state)
   // Shorter track so 6-digit values (e.g. 24,915) fit inside the left panel.
   const track = 310
@@ -2452,8 +2528,166 @@ function Screen18() {
     { value: "6", x: 1530.5, daysX: 1567, source: "resolve-zero" },
     { value: "9", x: 1765.5, daysX: 1802, source: "resolve-min" },
   ]
+  const mapOverlayOn = state.mapMode === "default" || state.mapMode === "carousel"
+  const legendTitle =
+    state.mapMode === "default"
+      ? slideById(state.mapPreviewSlide || "emergency-calls").title
+      : carousel.slide.title
+  const legendBlock = mapOverlayOn ? (
+    <At x={48} y={560} w={1824} h={190}>
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          borderRadius: 28,
+          background: "rgba(6, 18, 22, 0.78)",
+          padding: "20px 40px 24px",
+          boxSizing: "border-box",
+          display: "flex",
+          flexDirection: "column",
+          opacity: state.mapMode === "carousel" ? Math.max(0.4, carousel.opacity) : 1,
+        }}
+      >
+        <div style={{ color: "#2de0d2", fontSize: 28, fontWeight: 700, letterSpacing: 1.1, lineHeight: "34px" }}>{legendTitle}</div>
+        <div style={{ color: "#8ca7a7", fontSize: 20, marginTop: 4, lineHeight: "24px" }}>{carousel.subtitle}</div>
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 24,
+            marginTop: 10,
+            minHeight: 0,
+          }}
+        >
+          {carousel.legend.map((row) => (
+            <div
+              key={row.id || row.label}
+              style={{
+                flex: "1 1 0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 14,
+                minWidth: 0,
+              }}
+            >
+              <span style={{ width: 28, height: 28, borderRadius: 14, background: row.color, flex: "0 0 auto" }} />
+              <span style={{ color: "#e7f0ed", fontSize: 24, fontWeight: 500, lineHeight: "28px", whiteSpace: "nowrap" }}>{row.label}</span>
+              {row.count != null ? <span style={{ color: "#8ca7a7", fontSize: 22, lineHeight: "28px" }}>{row.count}</span> : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </At>
+  ) : null
+
+  const selectedCall = emergency.selectedNo
+    ? emergency.calls.find((c) => c.no === emergency.selectedNo) ?? null
+    : null
+  const listCalls = emergency.listNos
+    ? emergency.listNos
+        .map((no) => emergency.calls.find((c) => c.no === no))
+        .filter((c): c is NonNullable<typeof c> => Boolean(c))
+    : null
+  const callPanel = mapOverlayOn && (selectedCall || (listCalls && listCalls.length)) ? (
+    <At x={48} y={120} w={720} h={listCalls && listCalls.length > 1 ? 400 : 220}>
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          borderRadius: 24,
+          background: "rgba(6, 18, 22, 0.92)",
+          border: "1px solid #1e897f66",
+          padding: "22px 28px",
+          boxSizing: "border-box",
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+          pointerEvents: "auto",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ color: "#2de0d2", fontSize: 22, fontWeight: 700 }}>
+            {listCalls && listCalls.length > 1 ? `Calls at this location · ${listCalls.length}` : "Emergency call"}
+          </div>
+          <button
+            type="button"
+            onClick={() => emergency.clearMapSelection()}
+            style={{ background: "transparent", border: "none", color: "#8ca7a7", fontSize: 20, cursor: "pointer" }}
+          >
+            Close
+          </button>
+        </div>
+        {selectedCall ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ width: 18, height: 18, borderRadius: 9, background: selectedCall.color }} />
+              <span style={{ color: "#e7f0ed", fontSize: 24, fontWeight: 600 }}>{selectedCall.statusTitle}</span>
+            </div>
+            <div style={{ color: "#e7f0ed", fontSize: 28, fontWeight: 700 }}>#{selectedCall.no}</div>
+            <div style={{ color: "#8ca7a7", fontSize: 20 }}>{selectedCall.placeLabel}</div>
+            {selectedCall.rqii ? <div style={{ color: "#7a8a8b", fontSize: 18 }}>RQİİ · {selectedCall.rqii}</div> : null}
+          </div>
+        ) : null}
+        {listCalls && listCalls.length > 1 ? (
+          <div style={{ overflow: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+            {listCalls.map((call) => (
+              <button
+                key={call.no}
+                type="button"
+                onClick={() => emergency.selectCall(call.no)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: "1px solid #1a2c2e",
+                  background: "#0c1c20",
+                  color: "#e7f0ed",
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <span style={{ width: 14, height: 14, borderRadius: 7, background: call.color, flex: "0 0 auto" }} />
+                <span style={{ fontSize: 20, fontWeight: 600 }}>#{call.no}</span>
+                <span style={{ fontSize: 18, color: "#8ca7a7" }}>{call.statusTitle}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </At>
+  ) : null
+
+  if (state.mapMode === "carousel" && !state.mapPreviewSlide) {
+    const pct = Math.round(carousel.progress * 100)
+    return (
+      <Frame border={false}>
+        {legendBlock}
+        {callPanel}
+        <At x={48} y={770} w={1824} h={270}>
+          <div style={{ width: "100%", height: "100%", borderRadius: 28, background: "rgba(6, 18, 22, 0.78)", padding: "28px 40px", boxSizing: "border-box" }}>
+            <div style={{ color: "#7a8a8b", fontSize: 18, marginBottom: 8 }}>
+              MAP {carousel.index + 1} / {MAP_SLIDES.length}
+            </div>
+            <div style={{ color: "#34efde", fontSize: 42, fontWeight: 700, lineHeight: "48px", marginBottom: 8 }}>{carousel.slide.title}</div>
+            <div style={{ color: "#8ca7a7", fontSize: 20, marginBottom: 22 }}>{carousel.subtitle}</div>
+            <div style={{ height: 14, borderRadius: 8, background: "#1a2c2e", overflow: "hidden" }}>
+              <div style={{ width: `${pct}%`, height: "100%", borderRadius: 8, background: "linear-gradient(90deg, #1e897f, #34efde)", transition: "width 100ms linear" }} />
+            </div>
+            <div style={{ marginTop: 10, color: "#64748B", fontSize: 16 }}>10s per slide · fade transition</div>
+          </div>
+        </At>
+      </Frame>
+    )
+  }
   return (
     <Frame border={false}>
+      {legendBlock}
+      {callPanel}
       <At x={26} y={772} w={866.155} h={290}><div className="panel shell dim" /></At>
       <At x={897.18} y={772} w={1004.821} h={290}><div className="panel shell dim" /></At>
 

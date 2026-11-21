@@ -1,6 +1,8 @@
 import { useEffect } from "react"
 import { BrowserRouter, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom"
 import { AlertScrollProvider } from "./data/alertScroll"
+import { ConsumptionExceedanceProvider } from "./data/consumptionExceedance"
+import { EmergencyCallsProvider } from "./data/emergencyCalls"
 import { WallProvider } from "./wall/useWall"
 import { ScreenView } from "./screens/ScreenView"
 import { SnocRoute } from "./snoc/SnocRoute"
@@ -85,6 +87,8 @@ export function App() {
   return (
     <AlertScrollProvider>
     <WallProvider>
+      <EmergencyCallsProvider>
+      <ConsumptionExceedanceProvider>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<div className="screen" />} />
@@ -97,6 +101,8 @@ export function App() {
           <Route path="/:screenId" element={<RouteScreen />} />
         </Routes>
       </BrowserRouter>
+      </ConsumptionExceedanceProvider>
+      </EmergencyCallsProvider>
     </WallProvider>
     </AlertScrollProvider>
   )

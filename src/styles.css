@@ -25,6 +25,16 @@ h1, h2, h3, p { margin: 0; }
 .map-glow { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; pointer-events: none; }
 .map-terrain { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .map-terrain canvas { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+.screen[data-map-mode="default"] .map-terrain,
+.screen[data-map-mode="carousel"] .map-terrain,
+.screen[data-map-mode="default"] .map-terrain canvas,
+.screen[data-map-mode="carousel"] .map-terrain canvas {
+  pointer-events: auto;
+}
+.screen[data-map-preview]:not([data-map-preview=""]) .map-terrain,
+.screen[data-map-preview]:not([data-map-preview=""]) .map-terrain canvas {
+  pointer-events: auto;
+}
 .region-select {
   position: absolute;
   left: 24px;
@@ -109,6 +119,7 @@ h1, h2, h3, p { margin: 0; }
   background: linear-gradient(to right, #34efde 7.4%, rgba(30, 137, 127, 0) 81.7%);
 }
 .at { position: absolute; z-index: 1; }
+.at.map-mode-force { z-index: 40; pointer-events: auto; }
 .at > .panel, .at > .kpi { width: 100%; height: 100%; }
 .place-text, .pin { line-height: 1.15; white-space: nowrap; }
 .panel.shell { padding: 0; }

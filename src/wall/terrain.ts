@@ -1,8 +1,23 @@
 import * as THREE from "three"
+import { clusterCalls, spiderfyPositions, type CallCluster, type ColorSegment } from "./callCluster"
+import { statusColor } from "./emergencyStatus"
 import { mapConfig } from "./mapConfig"
 import { roundedPointer } from "./marker"
+import type { MapOverlaySpec, OverlayPoint } from "./mapOverlay"
 
 type Tile = { x: number; y: number }
+
+export type CallMapUi = {
+  selectedNo: string | null
+  expandedClusterId: string | null
+}
+
+export type CallMapHandlers = {
+  onSelectCall: (no: string) => void
+  onOpenList: (nos: string[]) => void
+  onExpandCluster: (clusterId: string) => void
+  onClear: () => void
+}
 
 type GltfAccessor = { bufferView: number; byteOffset?: number; count: number; type: string }
 type Gltf = {
@@ -35,6 +50,9 @@ export type MapPlace = { label: string; x: number; z: number } | null
 export type Terrain = {
   setRegion: (id: string | null) => void
   setPlace: (place: MapPlace) => void
+  setOverlay: (spec: MapOverlaySpec) => void
+  setCallUi: (ui: CallMapUi) => void
+  setCallHandlers: (handlers: CallMapHandlers) => void
   dispose: () => void
 }
 
@@ -292,6 +310,467 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
   locateMarker()
   setRegion(null, true)
 
+  const overlayGroup = new THREE.Group()
+  overlayGroup.name = "overlay"
+  scene.add(overlayGroup)
+  const overlayPlane = new THREE.PlaneGeometry(2, 2)
+  overlayPlane.rotateX(-Math.PI / 2)
+  // Unit-height stem; scaled to MARKER_LIFT when placed.
+  const overlayStem = new THREE.CylinderGeometry(1, 1, 1, 6)
+  const overlayMats: THREE.Material[] = []
+  const overlayTextures: THREE.Texture[] = []
+  const markerTexCache = new Map<string, THREE.CanvasTexture>()
+  const pickables: THREE.Object3D[] = []
+  let overlaySpec: MapOverlaySpec = null
+  let callUi: CallMapUi = { selectedNo: null, expandedClusterId: null }
+  let callHandlers: CallMapHandlers = {
+    onSelectCall: () => {},
+    onOpenList: () => {},
+    onExpandCluster: () => {},
+    onClear: () => {},
+  }
+  // Full-wall camera for CSS-pixel clustering (bezels stay locked — no zoom).
+  const wallCam = new THREE.OrthographicCamera(-2.5, 2.5, 2, -2, 0.01, 100)
+  wallCam.left = camera.left
+  wallCam.right = camera.right
+  wallCam.top = camera.top
+  wallCam.bottom = camera.bottom
+  wallCam.near = camera.near
+  wallCam.far = camera.far
+  wallCam.position.copy(camera.position)
+  wallCam.quaternion.copy(camera.quaternion)
+  wallCam.up.copy(camera.up)
+  wallCam.updateProjectionMatrix()
+  wallCam.updateMatrixWorld(true)
+  const pxToWorld = (2 * size) / WALL.h
+  const DOT_PX = 32
+  const HIT_PX = 48
+  // Only pile markers that sit on top of each other — not neighbourhood grouping.
+  const CLUSTER_PX = 58
+  const CLUSTER_RADIUS_PX = 10
+  const RING_GAP_PX = 6
+  const MARKER_LIFT = 0.06
+
+  function clearOverlay() {
+    while (overlayGroup.children.length) {
+      const child = overlayGroup.children.pop()
+      if (!child) break
+      overlayGroup.remove(child)
+    }
+    for (const mat of overlayMats) mat.dispose()
+    overlayMats.length = 0
+    pickables.length = 0
+  }
+
+  function makeCanvasTexture(key: string, paint: (ctx: CanvasRenderingContext2D, size: number) => void, canvasSize = 128) {
+    const hit = markerTexCache.get(key)
+    if (hit) return hit
+    const canvas = document.createElement("canvas")
+    canvas.width = canvasSize
+    canvas.height = canvasSize
+    const ctx = canvas.getContext("2d")
+    if (!ctx) throw new Error("canvas")
+    ctx.clearRect(0, 0, canvasSize, canvasSize)
+    paint(ctx, canvasSize)
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.needsUpdate = true
+    markerTexCache.set(key, texture)
+    overlayTextures.push(texture)
+    return texture
+  }
+
+  function markerTexture(hex: string) {
+    return makeCanvasTexture(`${hex.toLowerCase()}:glow`, (ctx, size) => {
+      const c = new THREE.Color(hex)
+      const r = Math.round(c.r * 255)
+      const g = Math.round(c.g * 255)
+      const b = Math.round(c.b * 255)
+      const cx = size / 2
+      const cy = size / 2
+      const colorGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.42)
+      colorGlow.addColorStop(0, `rgba(${r},${g},${b},0.55)`)
+      colorGlow.addColorStop(0.4, `rgba(${r},${g},${b},0.22)`)
+      colorGlow.addColorStop(0.75, `rgba(${r},${g},${b},0.06)`)
+      colorGlow.addColorStop(1, `rgba(${r},${g},${b},0)`)
+      ctx.fillStyle = colorGlow
+      ctx.fillRect(0, 0, size, size)
+    })
+  }
+
+  /** Exact CSS hex for canvas — same path for dots and donut arcs. */
+  function statusHex(statusId: string, fallback?: string) {
+    return statusColor(statusId).toLowerCase() || (fallback ?? "#94a3b8").toLowerCase()
+  }
+
+  function flatDotTexture(hex: string) {
+    const fill = hex.toLowerCase()
+    return makeCanvasTexture(`dot:${fill}:v5`, (ctx, size) => {
+      const cx = size / 2
+      const cy = size / 2
+      const r = size * 0.4
+      ctx.beginPath()
+      ctx.arc(cx, cy, r, 0, Math.PI * 2)
+      ctx.fillStyle = fill
+      ctx.fill()
+      ctx.lineWidth = Math.max(1.5, size * 0.04)
+      ctx.strokeStyle = "rgba(8, 16, 20, 0.85)"
+      ctx.stroke()
+    })
+  }
+
+  function selectRingTexture() {
+    return makeCanvasTexture("select-ring-v2", (ctx, size) => {
+      const cx = size / 2
+      const cy = size / 2
+      const r = size * 0.4
+      ctx.beginPath()
+      ctx.arc(cx, cy, r, 0, Math.PI * 2)
+      ctx.lineWidth = size * 0.055
+      ctx.strokeStyle = "rgba(231,240,237,0.95)"
+      ctx.stroke()
+    })
+  }
+
+  function softShadowTexture() {
+    return makeCanvasTexture("shadow-v2", (ctx, size) => {
+      const cx = size / 2
+      const cy = size / 2
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.45)
+      grad.addColorStop(0, "rgba(0,0,0,0.45)")
+      grad.addColorStop(0.45, "rgba(0,0,0,0.16)")
+      grad.addColorStop(1, "rgba(0,0,0,0)")
+      ctx.fillStyle = grad
+      ctx.fillRect(0, 0, size, size)
+    })
+  }
+
+  function addContactShadow(parent: THREE.Group, worldPx: number, fade: number) {
+    const mat = new THREE.MeshBasicMaterial({
+      map: softShadowTexture(),
+      transparent: true,
+      opacity: 0.5 * fade,
+      depthWrite: false,
+      toneMapped: false,
+    })
+    overlayMats.push(mat)
+    const mesh = new THREE.Mesh(overlayPlane, mat)
+    // Slight cast offset with the wall light direction
+    mesh.position.set(0.012, 0.003, 0.014)
+    mesh.scale.setScalar((worldPx * pxToWorld) / 2)
+    mesh.renderOrder = 2
+    parent.add(mesh)
+  }
+
+  /** Thin vertical line from ground up to the floating marker. */
+  function addStem(parent: THREE.Group, hex: string, fade: number) {
+    const mat = new THREE.MeshBasicMaterial({
+      color: hex,
+      transparent: fade < 0.99,
+      opacity: 0.9 * fade,
+      depthWrite: false,
+      toneMapped: false,
+    })
+    overlayMats.push(mat)
+    const stem = new THREE.Mesh(overlayStem, mat)
+    const radius = 0.9 * pxToWorld
+    stem.position.y = MARKER_LIFT * 0.5
+    stem.scale.set(radius, MARKER_LIFT, radius)
+    stem.renderOrder = 3
+    parent.add(stem)
+  }
+
+  function clusterDonutTexture(segments: ColorSegment[], total: number) {
+    const key = `donut:v4:${total}:${segments.map((s) => `${s.color}:${s.weight}`).join("|")}`
+    return makeCanvasTexture(
+      key,
+      (ctx, size) => {
+        const cx = size / 2
+        const cy = size / 2
+        // Thicker ring so status hue matches solid dots (less blue bleed from map AA).
+        const outer = size * 0.46
+        const inner = size * 0.28
+        let angle = -Math.PI / 2
+        for (const seg of segments) {
+          const sweep = (seg.weight / total) * Math.PI * 2
+          ctx.beginPath()
+          ctx.arc(cx, cy, outer, angle, angle + sweep)
+          ctx.arc(cx, cy, inner, angle + sweep, angle, true)
+          ctx.closePath()
+          ctx.fillStyle = seg.color.toLowerCase()
+          ctx.fill()
+          angle += sweep
+        }
+        ctx.beginPath()
+        ctx.arc(cx, cy, inner - 1, 0, Math.PI * 2)
+        ctx.fillStyle = "rgba(6,18,22,0.62)"
+        ctx.fill()
+        const label = String(total)
+        const fontPx = total >= 100 ? size * 0.26 : size * 0.34
+        ctx.font = `700 ${fontPx}px ui-sans-serif, system-ui, sans-serif`
+        ctx.textAlign = "center"
+        ctx.textBaseline = "middle"
+        ctx.fillStyle = "#e7f0ed"
+        ctx.fillText(label, cx, cy + fontPx * 0.04)
+      },
+      192,
+    )
+  }
+
+  function addSprite(map: THREE.Texture, worldPx: number, fade: number, renderOrder: number) {
+    const mat = new THREE.SpriteMaterial({
+      map,
+      color: 0xffffff,
+      transparent: true,
+      opacity: fade,
+      depthWrite: false,
+      sizeAttenuation: true,
+      toneMapped: false,
+    })
+    overlayMats.push(mat)
+    const sprite = new THREE.Sprite(mat)
+    const world = worldPx * pxToWorld
+    sprite.scale.set(world, world, 1)
+    sprite.renderOrder = renderOrder
+    return sprite
+  }
+
+  /** Snap to land top; rejects water and vertical cliff/side hits. */
+  function landAt(x: number, z: number) {
+    scene.updateMatrixWorld(true)
+    ray.set(new THREE.Vector3(x, 3, z), new THREE.Vector3(0, -1, 0))
+    const hits = ray.intersectObjects(surfaces, false)
+    for (const hit of hits) {
+      if (!hit.face) continue
+      const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
+      if (normal.y < 0.55) continue
+      return { x: hit.point.x, y: hit.point.y, z: hit.point.z }
+    }
+    return null
+  }
+
+  function snapLand(x: number, z: number) {
+    const direct = landAt(x, z)
+    if (direct) return direct
+    for (let ring = 1; ring <= 14; ring += 1) {
+      const step = 0.018 * ring
+      const spokes = 8 + ring * 2
+      for (let k = 0; k < spokes; k += 1) {
+        const angle = (k / spokes) * Math.PI * 2
+        const hit = landAt(x + Math.cos(angle) * step, z + Math.sin(angle) * step)
+        if (hit) return hit
+      }
+    }
+    return null
+  }
+
+  function restoreRegionColors() {
+    for (const region of regions) {
+      for (const mat of region.mats) {
+        const base = mat.userData.base as THREE.Color
+        if (base) mat.color.copy(base)
+      }
+    }
+  }
+
+  const projectScratch = new THREE.Vector3()
+  /** Fast wall CSS projection for clustering (no land raycast). */
+  function toWallScreenFast(x: number, z: number) {
+    projectScratch.set(x, 0.04, z).project(wallCam)
+    if (Math.abs(projectScratch.z) > 1) return null
+    return {
+      sx: (projectScratch.x * 0.5 + 0.5) * WALL.w,
+      sy: (-projectScratch.y * 0.5 + 0.5) * WALL.h,
+    }
+  }
+
+  function placeCallMarker(point: OverlayPoint, x: number, z: number, fade: number, selected: boolean) {
+    const land = snapLand(x, z)
+    if (!land) return
+    const group = new THREE.Group()
+    group.position.set(land.x, land.y, land.z)
+    group.userData.pick = { kind: "call", no: point.id, nos: point.nos }
+
+    addContactShadow(group, DOT_PX * 1.35, fade)
+
+    const fill = statusHex(point.statusId, point.color)
+    addStem(group, fill, fade)
+
+    const air = new THREE.Group()
+    air.position.y = MARKER_LIFT
+    group.add(air)
+
+    const hit = addSprite(flatDotTexture(fill), HIT_PX, 0.001, 4)
+    air.add(hit)
+
+    const dot = addSprite(flatDotTexture(fill), DOT_PX, fade, 5)
+    air.add(dot)
+
+    if (selected) {
+      const ring = addSprite(selectRingTexture(), DOT_PX + RING_GAP_PX * 2, fade, 6)
+      air.add(ring)
+    }
+
+    overlayGroup.add(group)
+    pickables.push(group)
+  }
+
+  function placeClusterMarker(cluster: CallCluster, fade: number) {
+    const land = snapLand(cluster.x, cluster.z)
+    if (!land) return
+    const digits = String(cluster.total).length
+    const diameter = CLUSTER_PX + Math.max(0, digits - 2) * 8
+    const group = new THREE.Group()
+    group.position.set(land.x, land.y, land.z)
+    group.userData.pick = {
+      kind: "cluster",
+      clusterId: cluster.id,
+      nos: cluster.members.map((m) => m.id),
+      coincident: cluster.coincident,
+    }
+
+    addContactShadow(group, diameter * 1.15, fade)
+
+    const stemColor = cluster.segments[0]?.color ?? "#94a3b8"
+    addStem(group, stemColor, fade)
+
+    const air = new THREE.Group()
+    air.position.y = MARKER_LIFT
+    group.add(air)
+
+    const hit = addSprite(clusterDonutTexture(cluster.segments, cluster.total), Math.max(HIT_PX, diameter), 0.001, 4)
+    air.add(hit)
+
+    const donut = addSprite(clusterDonutTexture(cluster.segments, cluster.total), diameter, fade, 5)
+    air.add(donut)
+
+    overlayGroup.add(group)
+    pickables.push(group)
+  }
+
+  function rebuildPointsOverlay(points: OverlayPoint[], fade: number) {
+    const clusters = clusterCalls(points, toWallScreenFast, CLUSTER_RADIUS_PX)
+    const expanded = callUi.expandedClusterId
+      ? clusters.find((c) => c.id === callUi.expandedClusterId) ?? null
+      : null
+
+    for (const cluster of clusters) {
+      if (expanded && cluster.id === expanded.id && !expanded.coincident && expanded.members.length > 1) {
+        const fans = spiderfyPositions(expanded.members, expanded.x, expanded.z, 36 * pxToWorld)
+        const byId = new Map(fans.map((f) => [f.id, f]))
+        for (const point of expanded.members) {
+          const fan = byId.get(point.id)
+          placeCallMarker(point, fan?.x ?? point.x, fan?.z ?? point.z, fade, callUi.selectedNo === point.id)
+        }
+        continue
+      }
+      if (cluster.total === 1) {
+        const point = cluster.members[0]
+        placeCallMarker(point, point.x, point.z, fade, callUi.selectedNo === point.id)
+      } else {
+        placeClusterMarker(cluster, fade)
+      }
+    }
+  }
+
+  function paintOverlay() {
+    clearOverlay()
+    restoreRegionColors()
+    const spec = overlaySpec
+    if (!spec) return
+    const fade = spec.opacity == null ? 1 : Math.max(0, Math.min(1, spec.opacity))
+    overlayGroup.visible = fade > 0.02
+
+    if (spec.kind === "points" && spec.points) {
+      rebuildPointsOverlay(spec.points, fade)
+      return
+    }
+
+    if (spec.kind === "heatmap" && spec.heat) {
+      for (const spot of spec.heat) {
+        const land = snapLand(spot.x, spot.z)
+        if (!land) continue
+        const scale = 0.09 + Math.min(0.32, spot.weight * 0.18)
+        const mat = new THREE.MeshBasicMaterial({
+          map: markerTexture(spot.color),
+          transparent: true,
+          opacity: 0.65 * fade,
+          depthWrite: false,
+        })
+        overlayMats.push(mat)
+        const mesh = new THREE.Mesh(overlayPlane, mat)
+        mesh.position.set(land.x, land.y + 0.01, land.z)
+        mesh.scale.setScalar(scale)
+        mesh.renderOrder = 3
+        overlayGroup.add(mesh)
+      }
+      return
+    }
+
+    if (spec.kind === "region" && spec.regions) {
+      const tint = new Map(spec.regions.map((r) => [r.regionId, r]))
+      for (const region of regions) {
+        const hit = tint.get(region.id)
+        if (!hit) continue
+        const intensity = hit.intensity == null ? 0.55 : hit.intensity
+        const color = new THREE.Color(hit.color)
+        for (const mat of region.mats) {
+          const base = (mat.userData.base as THREE.Color).clone()
+          mat.color.copy(base.lerp(color, intensity * fade))
+        }
+      }
+    }
+  }
+
+  function setOverlay(spec: MapOverlaySpec) {
+    overlaySpec = spec
+    paintOverlay()
+  }
+
+  function setCallUi(ui: CallMapUi) {
+    callUi = ui
+    if (overlaySpec?.kind === "points") paintOverlay()
+  }
+
+  function setCallHandlers(handlers: CallMapHandlers) {
+    callHandlers = handlers
+  }
+
+  function onPointerDown(event: PointerEvent) {
+    if (!overlaySpec || overlaySpec.kind !== "points") return
+    const rect = renderer.domElement.getBoundingClientRect()
+    const ndcX = ((event.clientX - rect.left) / rect.width) * 2 - 1
+    const ndcY = -(((event.clientY - rect.top) / rect.height) * 2 - 1)
+    ray.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera)
+    const hits = ray.intersectObjects(pickables, true)
+    if (!hits.length) {
+      callHandlers.onClear()
+      return
+    }
+    let obj: THREE.Object3D | null = hits[0].object
+    while (obj && !obj.userData.pick) obj = obj.parent
+    const pick = obj?.userData.pick as
+      | { kind: "call"; no: string }
+      | { kind: "cluster"; clusterId: string; nos: string[]; coincident: boolean }
+      | undefined
+    if (!pick) {
+      callHandlers.onClear()
+      return
+    }
+    event.stopPropagation()
+    if (pick.kind === "call") {
+      callHandlers.onSelectCall(pick.no)
+      return
+    }
+    if (pick.coincident || callUi.expandedClusterId === pick.clusterId) {
+      callHandlers.onOpenList(pick.nos)
+      return
+    }
+    callHandlers.onExpandCluster(pick.clusterId)
+  }
+  renderer.domElement.style.pointerEvents = "auto"
+  renderer.domElement.addEventListener("pointerdown", onPointerDown)
+
   let dimCurrent = selected ? dim : 0
   let last = performance.now()
   let frameId = 0
@@ -349,8 +828,18 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
   return {
     setRegion: (id) => setRegion(id),
     setPlace,
+    setOverlay,
+    setCallUi,
+    setCallHandlers,
     dispose() {
       cancelAnimationFrame(frameId)
+      renderer.domElement.removeEventListener("pointerdown", onPointerDown)
+      clearOverlay()
+      overlayPlane.dispose()
+      overlayStem.dispose()
+      wallCam.clearViewOffset?.()
+      for (const texture of overlayTextures) texture.dispose()
+      markerTexCache.clear()
       renderer.dispose()
       renderer.forceContextLoss()
       baseTexture.dispose()

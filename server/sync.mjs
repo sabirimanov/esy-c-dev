@@ -67,6 +67,9 @@ function load() {
         seed: Number.isInteger(raw.seed) && raw.seed >= 0 ? raw.seed : 0,
         period: raw.period === "" || periods.has(raw.period) ? raw.period : "Last 30 Days",
         ufgOpen: Boolean(raw.ufgOpen),
+        mapMode: raw.mapMode === "carousel" ? "carousel" : "default",
+        carouselEpoch: Number.isFinite(Number(raw.carouselEpoch)) ? Number(raw.carouselEpoch) : 0,
+        mapPreviewSlide: typeof raw.mapPreviewSlide === "string" && raw.mapPreviewSlide ? raw.mapPreviewSlide : null,
         reload: Number.isInteger(raw.reload) && raw.reload >= 0 ? raw.reload : 0,
         ...snocFields(raw),
       }
@@ -85,6 +88,9 @@ function load() {
     seed: 0,
     period: "Last 30 Days",
     ufgOpen: false,
+    mapMode: "default",
+    carouselEpoch: 0,
+    mapPreviewSlide: "emergency-calls",
     reload: 0,
     ...snocFields(null),
   }
@@ -178,6 +184,14 @@ export function handleSync(req, res) {
       if (Number.isInteger(patch.seed) && patch.seed >= 0 && patch.seed < 1e10) next.seed = patch.seed
       if (typeof patch.period === "string" && (patch.period === "" || periods.has(patch.period))) next.period = patch.period
       if ("ufgOpen" in patch) next.ufgOpen = Boolean(patch.ufgOpen)
+      if (patch.mapMode === "default" || patch.mapMode === "carousel") next.mapMode = patch.mapMode
+      if (Number.isFinite(Number(patch.carouselEpoch)) && Number(patch.carouselEpoch) >= 0) {
+        next.carouselEpoch = Number(patch.carouselEpoch)
+      }
+      if ("mapPreviewSlide" in patch) {
+        next.mapPreviewSlide =
+          typeof patch.mapPreviewSlide === "string" && patch.mapPreviewSlide ? patch.mapPreviewSlide : null
+      }
       const snocTouched =
         "snocRange" in patch ||
         "snocEnd" in patch ||

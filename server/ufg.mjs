@@ -51,11 +51,17 @@ export async function loadClusterDemand(clusterId, from, to) {
 }
 
 async function hierarchy() {
-  return cached("ufg:hierarchy:v3", async () => {
+  return cached("ufg:hierarchy:v4", async () => {
     try {
       const data = await fetchCcc("/api/v1/hierarchy")
       if (!Array.isArray(data.zones) || !data.zones.length || !Array.isArray(data.clusters)) throw new Error("bad hierarchy")
       return {
+        regions: Array.isArray(data.regions)
+          ? data.regions.map((region) => ({
+              region_id: region.region_id,
+              name_en: region.name_en || region.name_az || region.region_id,
+            }))
+          : [],
         zones: data.zones.map((zone) => ({
           zone_id: zone.zone_id,
           region_id: zone.region_id,

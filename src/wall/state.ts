@@ -1,6 +1,8 @@
 // Shared wall session. regionId, cityId and clusterId are null when the filter is All.
 // date and dateTo are an inclusive range; equal values are a single day.
 // Region ids are the exc codes. 11 is Bakı, 9 is Dağlıq Şirvan, 8 is Abşeron-Xızı.
+export type MapMode = "default" | "carousel"
+
 export type WallState = {
   date: string
   dateTo: string
@@ -12,6 +14,12 @@ export type WallState = {
   seed: number
   period: string
   ufgOpen: boolean
+  /** default = Single (one pinned overlay); carousel = auto slide cycle. */
+  mapMode: MapMode
+  /** Wall-synced epoch (ms) when carousel started / restarted — drives shared slide index. */
+  carouselEpoch: number
+  /** Slide id while mapMode is Single (e.g. low-battery). null → emergency-calls. */
+  mapPreviewSlide: string | null
 }
 
 export const defaultWall: WallState = {
@@ -25,6 +33,9 @@ export const defaultWall: WallState = {
   seed: 0,
   period: "Last 30 Days",
   ufgOpen: false,
+  mapMode: "default",
+  carouselEpoch: 0,
+  mapPreviewSlide: "emergency-calls",
 }
 
 export function periodLabel(iso: string) {
