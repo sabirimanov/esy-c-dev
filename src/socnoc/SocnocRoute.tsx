@@ -25,7 +25,7 @@ export function SocnocRoute() {
   useEffect(() => {
     if (!ok) return
     function onKey(event: KeyboardEvent) {
-      if (!event.metaKey || event.altKey || event.shiftKey || event.ctrlKey) return
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
       event.preventDefault()
       const next = event.key === "ArrowRight" ? Math.min(12, id + 1) : Math.max(1, id - 1)

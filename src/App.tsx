@@ -67,7 +67,7 @@ function RouteScreen() {
     if (single === null) return
     const current = single
     function onKey(event: KeyboardEvent) {
-      if (!event.metaKey || event.altKey || event.shiftKey || event.ctrlKey) return
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
       event.preventDefault()
       const next = event.key === "ArrowRight" ? Math.min(21, current + 1) : Math.max(1, current - 1)

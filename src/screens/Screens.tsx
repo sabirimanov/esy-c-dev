@@ -17,7 +17,7 @@ import { billingForRange, useBilling } from "../data/billing"
 import { useTamper } from "../data/tamper"
 import { useFieldOps } from "../data/field"
 import { formatCount, formatPct, typeByKey, useConnectivity, type ConnectivityTypeKey } from "../data/connectivity"
-import { METER_READING_SAVING_AZN, VALVE_CONNECT_BY_MONTH, VALVE_DISCONNECT_BY_MONTH, VALVE_OPEN_CLOSE_OPS, VALVE_OPS_SAVING_AZN } from "../data/valveOps"
+import { VALVE_CONNECT_BY_MONTH, VALVE_DISCONNECT_BY_MONTH } from "../data/valveOps"
 import { useOmJobs } from "../data/omJobs"
 import { useAnomalies } from "../data/anomalies"
 import {
@@ -679,15 +679,6 @@ function Screen5() {
   const { state, patch, clearCache } = useWall()
   const [cacheCleared, setCacheCleared] = useState(false)
   const content = useContent()
-  // Top KPI strip is republic-wide — ignore region / city / cluster filters
-  const connectivity = useConnectivity({ ...state, regionId: null, cityId: null, clusterId: null })
-  const smartMeters = typeByKey(connectivity, "smart")?.total
-  const retrofitMeters = typeByKey(connectivity, "retrofit")?.total
-  const installedMeters = smartMeters == null || retrofitMeters == null ? null : smartMeters + retrofitMeters
-  const meterSaving = installedMeters == null ? null : installedMeters * METER_READING_SAVING_AZN
-  const opsSaving = VALVE_OPEN_CLOSE_OPS * VALVE_OPS_SAVING_AZN
-  const combinedSaving = meterSaving == null ? null : meterSaving + opsSaving
-  const money = (value: number | null) => (value == null ? "—" : value.toLocaleString("en-US"))
   const [clusterOpen, setClusterOpen] = useState(false)
   const opened = parseIso(state.date)
   const [view, setView] = useState({ y: opened.y, m: opened.m })
@@ -802,23 +793,10 @@ function Screen5() {
       <Pin x={425} y={40} w={224} size={24} weight={500} color="#34efde" lh={40}>Estimated saving</Pin>
       <Pin x={1006} y={40} w={231} size={24} weight={500} color="#34efde" lh={29} wrap>Connect / disconnect cost avoided</Pin>
       <Pin x={1371} y={40} w={224} size={24} weight={500} color="#34efde" lh={40}>Estimated saving</Pin>
-      <Pin x={58} y={131} w={271} size={90} color="#ffffff" lh={41} align="center">{money(installedMeters)}</Pin>
-      <div className="at" style={{ left: 425, top: 131, display: "flex", alignItems: "baseline", justifyContent: "center", width: 455, height: 41 }}>
-        <span style={{ fontSize: 60, lineHeight: "41px", color: "#ffffff" }}>AZN&nbsp;</span>
-        <span style={{ fontSize: 90, lineHeight: "41px", color: "#ffffff" }}>{money(meterSaving)}</span>
-      </div>
-      <Pin x={1006} y={131} w={152} size={90} color="#ffffff" lh={41} align="center">{VALVE_OPEN_CLOSE_OPS.toLocaleString("en-US")}</Pin>
-      <div className="at" style={{ left: 1371, top: 131, display: "flex", alignItems: "baseline", justifyContent: "center", width: 404, height: 41 }}>
-        <span style={{ fontSize: 60, lineHeight: "41px", color: "#ffffff" }}>AZN&nbsp;</span>
-        <span style={{ fontSize: 90, lineHeight: "41px", color: "#ffffff" }}>{opsSaving.toLocaleString("en-US")}</span>
-      </div>
-      <Pin x={58} y={214} size={23} color="#d5e5e4" lh={27}>AZN 6 per meter per month</Pin>
-      <Pin x={58} y={251} size={19} color="#7d9798" lh={22}>No. of meters × AZN 6 × months counted</Pin>
-      <Pin x={1006} y={214} size={23} color="#d5e5e4" lh={27}>AZN 35 per avoided field visit</Pin>
-      <Pin x={1006} y={251} size={19} color="#7d9798" lh={22}>No. of remote connect / disconnect operations × AZN 35</Pin>
-      <Pin x={60} y={329} size={23} color="#8ca7a7" lh={27}>Combined estimated savings</Pin>
-      <Pin x={1503} y={312} w={309} size={52} weight={700} color="#34eddc" lh={61} align="right">{combinedSaving == null ? "—" : `AZN ${combinedSaving.toLocaleString("en-US")}`}</Pin>
-
+      <Pin x={58} y={131} w={271} size={90} color="#ffffff" lh={41} align="center">—</Pin>
+      <Pin x={425} y={131} w={455} size={90} color="#ffffff" lh={41} align="center">—</Pin>
+      <Pin x={1006} y={131} w={152} size={90} color="#ffffff" lh={41} align="center">—</Pin>
+      <Pin x={1371} y={131} w={404} size={90} color="#ffffff" lh={41} align="center">—</Pin>
       <At x={ox} y={oy} w={1880} h={630}>
         <div style={{ width: "100%", height: "100%", borderRadius: 42, background: "linear-gradient(115deg, #12383a 0%, #0d2426 48%, #0a1819 100%)" }} />
       </At>
