@@ -76,7 +76,6 @@ function EventsFeedList() {
     let stop = false
     function load(force: boolean) {
       const end = Math.floor(Date.now() / 1000 / 300) * 300
-      // Prefer /soc-live (local :8443). Remote cccdev …/socnoc/monitoring/… currently 504s.
       cachedJson<{ alerts?: Alert[] }>(`${DASHBOARD_URL}?range=7d&end=${end}`, 0, force)
         .then((body) => {
           if (!stop) setAlerts(body.alerts ?? [])

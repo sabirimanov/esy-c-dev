@@ -1,15 +1,11 @@
-import { cached, FRESH_MS } from "./cache.mjs"
+import { buildSocDashboard, isSocRange } from "./socMock.mjs"
 
-const upstream = "http://127.0.0.1:8443/api/dashboard"
-
-/** cccdev.esyasoft.app/socnoc/monitoring/... currently 504s; serve local SOC instead. */
+/**
+ * SOC/NOC dashboard API (mock, embedded).
+ * Replaces remote cccdev …/socnoc/monitoring/… (504) and local :8443 Go binary.
+ * Same JSON shape as soc-noc-dashboard GET /api/dashboard.
+ */
 const PATHS = new Set(["/soc-live", "/socnoc/monitoring/screen1/api/dashboard"])
-
-function bucket(value) {
-  const end = Number(value)
-  if (!Number.isFinite(end) || end <= 0) return ""
-  return String(Math.floor(end / 300) * 300)
-}
 
 export function handleSoc(req, res) {
   const url = new URL(req.url || "/", "http://localhost")
@@ -19,32 +15,16 @@ export function handleSoc(req, res) {
     return true
   }
   const range = url.searchParams.get("range") || "now"
-  if (!/^[a-z0-9]{1,16}$/i.test(range)) {
-    res.writeHead(400).end()
+  if (!isSocRange(range)) {
+    res.writeHead(400, { "Content-Type": "application/json", "Cache-Control": "no-store" })
+    res.end(JSON.stringify({ error: "range must be now, 1h, 24h or 7d" }))
     return true
   }
-  const end = bucket(url.searchParams.get("end"))
-  cached(`soc:${range}:${end}`, async () => {
-    const target = new URL(upstream)
-    target.searchParams.set("range", range)
-    if (end) target.searchParams.set("end", end)
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), 8000)
-    try {
-      const remote = await fetch(target, { signal: ctrl.signal })
-      if (!remote.ok) throw new Error(String(remote.status))
-      return remote.json()
-    } finally {
-      clearTimeout(timer)
-    }
-  }, FRESH_MS)
-    .then((body) => {
-      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" })
-      res.end(JSON.stringify(body))
-    })
-    .catch(() => {
-      res.writeHead(502, { "Content-Type": "application/json", "Cache-Control": "no-store" })
-      res.end(JSON.stringify({ error: "upstream unavailable" }))
-    })
+  const body = buildSocDashboard({
+    range,
+    end: url.searchParams.get("end"),
+  })
+  res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" })
+  res.end(JSON.stringify(body))
   return true
 }
