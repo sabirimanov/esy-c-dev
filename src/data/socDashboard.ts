@@ -2,7 +2,10 @@ import { readPanel, type Panel } from "../snoc/format"
 import { useCachedResource } from "./cachedFetch"
 import { useWall } from "../wall/useWall"
 
-const BASE_URL = String(import.meta.env.VITE_SOC_DASHBOARD_URL || "/socnoc/monitoring/screen1/api/dashboard").replace(/^https?:\/\/127\.0\.0\.1:8443\/api\/dashboard$/, "/soc-live")
+const BASE_URL = String(import.meta.env.VITE_SOC_DASHBOARD_URL || "/soc-live").replace(
+  /^https?:\/\/127\.0\.0\.1:8443\/api\/dashboard$/,
+  "/soc-live",
+)
 
 export function useSocPanel() {
   const { state } = useWall()

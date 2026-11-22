@@ -2,6 +2,9 @@ import { cached, FRESH_MS } from "./cache.mjs"
 
 const upstream = "http://127.0.0.1:8443/api/dashboard"
 
+/** cccdev.esyasoft.app/socnoc/monitoring/... currently 504s; serve local SOC instead. */
+const PATHS = new Set(["/soc-live", "/socnoc/monitoring/screen1/api/dashboard"])
+
 function bucket(value) {
   const end = Number(value)
   if (!Number.isFinite(end) || end <= 0) return ""
@@ -10,7 +13,7 @@ function bucket(value) {
 
 export function handleSoc(req, res) {
   const url = new URL(req.url || "/", "http://localhost")
-  if (url.pathname !== "/soc-live") return false
+  if (!PATHS.has(url.pathname)) return false
   if (req.method !== "GET") {
     res.writeHead(405).end()
     return true
@@ -25,9 +28,15 @@ export function handleSoc(req, res) {
     const target = new URL(upstream)
     target.searchParams.set("range", range)
     if (end) target.searchParams.set("end", end)
-    const remote = await fetch(target)
-    if (!remote.ok) throw new Error(String(remote.status))
-    return remote.json()
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 8000)
+    try {
+      const remote = await fetch(target, { signal: ctrl.signal })
+      if (!remote.ok) throw new Error(String(remote.status))
+      return remote.json()
+    } finally {
+      clearTimeout(timer)
+    }
   }, FRESH_MS)
     .then((body) => {
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" })

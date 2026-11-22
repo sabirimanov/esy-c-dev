@@ -4,9 +4,10 @@ import { clock, type Alert } from "../snoc/format"
 import { ChartGrid, MultiLineChart, ProgBar, SeverityDonut } from "./charts"
 import { Frame, LiveBadge, Panel, Pin, TEAL, TEAL_GRAD } from "./ui"
 
-const DASHBOARD_URL = String(
-  import.meta.env.VITE_SOC_DASHBOARD_URL || "/socnoc/monitoring/screen1/api/dashboard",
-).replace(/^https?:\/\/127\.0\.0\.1:8443\/api\/dashboard$/, "/soc-live")
+const DASHBOARD_URL = String(import.meta.env.VITE_SOC_DASHBOARD_URL || "/soc-live").replace(
+  /^https?:\/\/127\.0\.0\.1:8443\/api\/dashboard$/,
+  "/soc-live",
+)
 
 const SEVERITY = [
   { label: "Critical", value: "0", color: "#e45b4c", y: 212 },
@@ -75,6 +76,7 @@ function EventsFeedList() {
     let stop = false
     function load(force: boolean) {
       const end = Math.floor(Date.now() / 1000 / 300) * 300
+      // Prefer /soc-live (local :8443). Remote cccdev …/socnoc/monitoring/… currently 504s.
       cachedJson<{ alerts?: Alert[] }>(`${DASHBOARD_URL}?range=7d&end=${end}`, 0, force)
         .then((body) => {
           if (!stop) setAlerts(body.alerts ?? [])

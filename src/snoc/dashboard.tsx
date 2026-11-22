@@ -3,7 +3,10 @@ import { noteWallClock } from "../data/alertScroll"
 import { cachedJson, FRESH_MS } from "../data/cachedFetch"
 import { readPanel, type Alert, type Panel, type Reading, type Sample } from "./format"
 
-const DASHBOARD_URL = String(import.meta.env.VITE_SOC_DASHBOARD_URL || "/socnoc/monitoring/screen1/api/dashboard").replace(/^https?:\/\/127\.0\.0\.1:8443\/api\/dashboard$/, "/soc-live")
+const DASHBOARD_URL = String(import.meta.env.VITE_SOC_DASHBOARD_URL || "/soc-live").replace(
+  /^https?:\/\/127\.0\.0\.1:8443\/api\/dashboard$/,
+  "/soc-live",
+)
 const STORAGE = "snoc-dashboard-query"
 const BAKU = 4 * 3600
 

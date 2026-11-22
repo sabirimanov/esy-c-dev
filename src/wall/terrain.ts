@@ -346,7 +346,7 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
   const DOT_PX = 32
   const HIT_PX = 48
   // Visual sizes drive clustering so dots/donuts never paint on top of each other.
-  const CLUSTER_PX = 58
+  const CLUSTER_PX = 116
   const CLUSTER_SEED_PX = Math.max(DOT_PX, CLUSTER_PX) * 0.55
   const RING_GAP_PX = 6
   const MARKER_LIFT = 0.06
@@ -354,7 +354,7 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
   function markerRadiusPx(total: number) {
     if (total <= 1) return DOT_PX * 0.52
     const digits = String(total).length
-    const diameter = CLUSTER_PX + Math.max(0, digits - 2) * 8
+    const diameter = CLUSTER_PX + Math.max(0, digits - 2) * 16
     return diameter * 0.52
   }
 
@@ -489,7 +489,7 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
   }
 
   function clusterDonutTexture(segments: ColorSegment[], total: number) {
-    const key = `donut:v4:${total}:${segments.map((s) => `${s.color}:${s.weight}`).join("|")}`
+    const key = `donut:v5:${total}:${segments.map((s) => `${s.color}:${s.weight}`).join("|")}`
     return makeCanvasTexture(
       key,
       (ctx, size) => {
@@ -514,14 +514,14 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
         ctx.fillStyle = "rgba(6,18,22,0.62)"
         ctx.fill()
         const label = String(total)
-        const fontPx = total >= 100 ? size * 0.26 : size * 0.34
+        const fontPx = total >= 100 ? size * 0.312 : size * 0.408
         ctx.font = `700 ${fontPx}px ui-sans-serif, system-ui, sans-serif`
         ctx.textAlign = "center"
         ctx.textBaseline = "middle"
         ctx.fillStyle = "#e7f0ed"
         ctx.fillText(label, cx, cy + fontPx * 0.04)
       },
-      192,
+      384,
     )
   }
 
@@ -632,7 +632,7 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
     const land = snapLand(cluster.x, cluster.z)
     if (!land) return
     const digits = String(cluster.total).length
-    const diameter = CLUSTER_PX + Math.max(0, digits - 2) * 8
+    const diameter = CLUSTER_PX + Math.max(0, digits - 2) * 16
     const group = new THREE.Group()
     group.position.set(land.x, land.y, land.z)
     group.userData.pick = {
