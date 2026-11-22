@@ -489,7 +489,7 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
   }
 
   function clusterDonutTexture(segments: ColorSegment[], total: number) {
-    const key = `donut:v6:${total}:${segments.map((s) => `${s.color}:${s.weight}`).join("|")}`
+    const key = `donut:v7:${total}:${segments.map((s) => `${s.color}:${s.weight}`).join("|")}`
     return makeCanvasTexture(
       key,
       (ctx, size) => {
@@ -514,7 +514,7 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
         ctx.fillStyle = "rgba(6,18,22,0.62)"
         ctx.fill()
         const label = String(total)
-        const fontPx = total >= 100 ? size * 0.281 : size * 0.367
+        const fontPx = total >= 100 ? size * 0.253 : size * 0.33
         ctx.font = `400 ${fontPx}px ui-sans-serif, system-ui, sans-serif`
         ctx.textAlign = "center"
         ctx.textBaseline = "middle"

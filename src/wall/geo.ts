@@ -4,7 +4,7 @@ export type LatLng = { lat: number; lon: number }
 
 const CONTROLS: { lat: number; lon: number; x: number; z: number }[] = [
   { lat: 40.3667, lon: 49.8352, x: 1.364, z: -0.072 }, // Baku
-  { lat: 40.5961, lon: 49.67, x: 1.255, z: -0.24 }, // Sumgayit
+  { lat: 40.5961, lon: 49.67, x: 1.28, z: -0.24 }, // Sumgayit (pin nudged in projectLatLng)
   { lat: 40.5703, lon: 48.4009, x: 0.46, z: -0.246 }, // Agsu
   { lat: 40.3383, lon: 48.1608, x: 0.313, z: -0.072 }, // Kurdamir
   { lat: 40.5183, lon: 47.6542, x: -0.006, z: -0.208 }, // Ujar
@@ -68,13 +68,20 @@ const fit = (() => {
   return { x, z }
 })()
 
+/**
+ * Shift Sumqayıt left of the centre bezel (screen x=3840) so a 3-digit
+ * cluster donut (diameter ~132px) clears the seam at wall zoom 0.95.
+ */
+const SUMGAYIT_X_NUDGE = -0.075
+
 export function projectLatLng(lat: number, lon: number): { x: number; z: number } | null {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
   if (lat < 38.2 || lat > 42.2 || lon < 44.5 || lon > 51.2) return null
-  return {
-    x: fit.x.a * lon + fit.x.b * lat + fit.x.c,
-    z: fit.z.a * lon + fit.z.b * lat + fit.z.c,
-  }
+  let x = fit.x.a * lon + fit.x.b * lat + fit.x.c
+  const z = fit.z.a * lon + fit.z.b * lat + fit.z.c
+  // Whole Sumqayıt urban bbox (GPS + cluster/region seats), not just the pin.
+  if (lat > 40.52 && lat < 40.68 && lon > 49.55 && lon < 49.78) x += SUMGAYIT_X_NUDGE
+  return { x, z }
 }
 
 /** Normalize API coordinate variants → numeric lat/lon or null. */

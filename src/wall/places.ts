@@ -41,7 +41,7 @@ export type City = {
 
 const cities: Record<string, City[]> = {
   "11": [{ id: "baku", label: "Baku", mapLabel: "BAKU", x: 1.364, z: -0.072 }],
-  "8": [{ id: "sumgayit", label: "Sumgayit", mapLabel: "SUMGAYIT", x: 1.255, z: -0.24 }],
+  "8": [{ id: "sumgayit", label: "Sumgayit", mapLabel: "SUMGAYIT", x: 1.185, z: -0.24 }],
   "9": [
     { id: "agsu", label: "Agsu", mapLabel: "AGSU", x: 0.46, z: -0.246 },
     { id: "kurdamir", label: "Kurdamir", mapLabel: "KURDAMIR", x: 0.313, z: -0.072 },
