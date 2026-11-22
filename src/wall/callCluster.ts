@@ -16,11 +16,11 @@ export type CallCluster = {
 
 const EPS = 1e-5
 
-/** Stable pie arcs: canonical statusColor(statusId), same as single dots. */
+/** Pie arcs from point.color (matches single dots / legend bands). */
 export function colorSegments(members: OverlayPoint[]): ColorSegment[] {
   const byColor = new Map<string, { weight: number; order: number }>()
   for (const m of members) {
-    const color = statusColor(m.statusId).toLowerCase()
+    const color = (m.color || statusColor(m.statusId)).toLowerCase()
     const order = bucketOrderIndex(statusBucket(m.statusId))
     const hit = byColor.get(color)
     if (hit) hit.weight += 1
@@ -31,9 +31,30 @@ export function colorSegments(members: OverlayPoint[]): ColorSegment[] {
     .map(([color, { weight }]) => ({ color, weight }))
 }
 
+function buildCluster(members: OverlayPoint[]): CallCluster {
+  const x = members.reduce((s, m) => s + m.x, 0) / members.length
+  const z = members.reduce((s, m) => s + m.z, 0) / members.length
+  let coincident = true
+  for (const m of members) {
+    if (Math.abs(m.x - members[0].x) > EPS || Math.abs(m.z - members[0].z) > EPS) {
+      coincident = false
+      break
+    }
+  }
+  return {
+    id: members.length === 1 ? members[0].id : `c:${members.map((m) => m.id).sort().join("+")}`,
+    x,
+    z,
+    members,
+    total: members.length,
+    segments: colorSegments(members),
+    coincident,
+  }
+}
+
 /**
  * Greedy screen-space clustering. `toScreen` maps mesh (x,z) → wall CSS pixels.
- * Radius is CSS pixels (32–40). Each point appears in at most one cluster.
+ * Radius is CSS pixels. Each point appears in at most one cluster.
  */
 export function clusterCalls(
   points: OverlayPoint[],
@@ -68,7 +89,7 @@ export function clusterCalls(
         group.push(other)
       }
     }
-    // Absorb any earlier leftover that sits in radius of the growing set (grid gap).
+    // Absorb any leftover that sits in radius of the growing set (grid gap).
     for (let j = 0; j < nodes.length; j += 1) {
       const other = nodes[j]
       if (other.used) continue
@@ -83,28 +104,81 @@ export function clusterCalls(
       }
     }
 
-    const members = group.map((g) => g.point)
-    const x = members.reduce((s, m) => s + m.x, 0) / members.length
-    const z = members.reduce((s, m) => s + m.z, 0) / members.length
-    let coincident = true
-    for (const m of members) {
-      if (Math.abs(m.x - members[0].x) > EPS || Math.abs(m.z - members[0].z) > EPS) {
-        coincident = false
-        break
-      }
-    }
-    clusters.push({
-      id: members.length === 1 ? members[0].id : `c:${members.map((m) => m.id).sort().join("+")}`,
-      x,
-      z,
-      members,
-      total: members.length,
-      segments: colorSegments(members),
-      coincident,
-    })
+    clusters.push(buildCluster(group.map((g) => g.point)))
   }
 
   return clusters
+}
+
+/**
+ * Merge clusters whose screen markers would overlap (centers closer than sum of radii).
+ * Runs until stable so donuts/dots never stack on point maps.
+ */
+export function mergeOverlappingClusters(
+  clusters: CallCluster[],
+  toScreen: (x: number, z: number) => { sx: number; sy: number } | null,
+  markerRadiusPx: (total: number) => number,
+): CallCluster[] {
+  let current = clusters.slice()
+  if (current.length <= 1) return current
+
+  let guard = 0
+  while (guard < 64) {
+    guard += 1
+    type Item = { cluster: CallCluster; sx: number; sy: number; r: number; index: number }
+    const items: Item[] = []
+    for (let i = 0; i < current.length; i += 1) {
+      const cluster = current[i]
+      const screen = toScreen(cluster.x, cluster.z)
+      if (!screen) continue
+      items.push({
+        cluster,
+        sx: screen.sx,
+        sy: screen.sy,
+        r: markerRadiusPx(cluster.total),
+        index: i,
+      })
+    }
+    items.sort((a, b) => a.sx - b.sx || a.sy - b.sy)
+
+    let mergeA = -1
+    let mergeB = -1
+    outer: for (let i = 0; i < items.length; i += 1) {
+      const a = items[i]
+      for (let j = i + 1; j < items.length; j += 1) {
+        const b = items[j]
+        if (b.sx - a.sx > a.r + b.r) break
+        const dx = b.sx - a.sx
+        const dy = b.sy - a.sy
+        const need = a.r + b.r
+        if (dx * dx + dy * dy < need * need) {
+          mergeA = a.index
+          mergeB = b.index
+          break outer
+        }
+      }
+    }
+
+    if (mergeA < 0 || mergeB < 0) break
+    const lo = Math.min(mergeA, mergeB)
+    const hi = Math.max(mergeA, mergeB)
+    const merged = buildCluster([...current[lo].members, ...current[hi].members])
+    current = current.filter((_, i) => i !== lo && i !== hi)
+    current.push(merged)
+  }
+
+  return current
+}
+
+/** Cluster then merge until markers would not overlap on screen. */
+export function clusterCallsNoOverlap(
+  points: OverlayPoint[],
+  toScreen: (x: number, z: number) => { sx: number; sy: number } | null,
+  seedRadiusPx: number,
+  markerRadiusPx: (total: number) => number,
+): CallCluster[] {
+  const seeded = clusterCalls(points, toScreen, seedRadiusPx)
+  return mergeOverlappingClusters(seeded, toScreen, markerRadiusPx)
 }
 
 /** Fan members around centroid for temporary expand when zoom is locked. */

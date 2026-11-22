@@ -350,8 +350,14 @@ async function loadChart(from, to, regionId, cityId, clusterId) {
   const params = [from, to]
   const meterRegion = meterRegionSql(regionId, cityId, params)
   const meterCluster = meterClusterSql(clusterId, params)
+  // Cap the x-axis at MAX(comms.RTC): wall ranges often run to "today", but
+  // meters_signal.comms currently stops earlier (e.g. 2026-11-02) — filling
+  // those trailing days as 0% looks like a communication outage.
   const sql = `
-  WITH master AS (
+  WITH asof AS (
+    SELECT MAX(c."RTC")::date AS t FROM meters_signal.comms c
+  ),
+  master AS (
     SELECT d."Retrofit id" AS rid
     FROM meters_signal.devices d
     WHERE d."New Msn" IS NOT NULL AND d."Retrofit id" IS NOT NULL
@@ -360,14 +366,19 @@ async function loadChart(from, to, regionId, cityId, clusterId) {
   installed AS (
     SELECT COUNT(*)::int AS n FROM master
   ),
+  end_day AS (
+    SELECT LEAST($2::date, (SELECT t FROM asof)) AS d
+  ),
   days AS (
-    SELECT generate_series($1::date, $2::date, INTERVAL '1 day')::date AS d
+    SELECT generate_series($1::date, (SELECT d FROM end_day), INTERVAL '1 day')::date AS d
+    WHERE (SELECT t FROM asof) IS NOT NULL
+      AND $1::date <= (SELECT d FROM end_day)
   ),
   daily AS (
     SELECT c."RTC"::date AS d, COUNT(DISTINCT c."Retrofit Id")::int AS communicated
     FROM meters_signal.comms c
     JOIN master m ON m.rid = c."Retrofit Id"
-    WHERE c."RTC"::date BETWEEN $1::date AND $2::date
+    WHERE c."RTC"::date BETWEEN $1::date AND (SELECT d FROM end_day)
     GROUP BY 1
   )
   SELECT days.d::text AS day,
@@ -387,7 +398,7 @@ async function loadChart(from, to, regionId, cityId, clusterId) {
 }
 
 async function loadConnectivity(from, to, regionId, cityId, clusterId) {
-  const key = `connectivity:v4:${from}|${to}|${regionId || ""}|${cityId || ""}|${clusterId || ""}`
+  const key = `connectivity:v5:${from}|${to}|${regionId || ""}|${cityId || ""}|${clusterId || ""}`
   return cached(key, async () => {
     const [meters, radio, other, chart] = await Promise.all([
       loadMeters(from, to, regionId, cityId, clusterId),

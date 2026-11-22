@@ -111,7 +111,7 @@ async function loadTotalCalls(from, to) {
   url.searchParams.set("date_from", from)
   url.searchParams.set("date_to", to)
   const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), 25000)
+  const timer = setTimeout(() => ctrl.abort(), 8000)
   try {
     const response = await fetch(url, { signal: ctrl.signal })
     if (!response.ok) throw new Error(`ccc total_calls ${response.status}`)
@@ -127,8 +127,14 @@ async function loadTotalCalls(from, to) {
 async function loadCallCenter(from, to) {
   const key = `brain-call-center:v2:${from}|${to}`
   return cached(key, async () => {
-    const total = await loadTotalCalls(from, to)
-    return buildFromTotal(total, from, to)
+    try {
+      const total = await loadTotalCalls(from, to)
+      return buildFromTotal(total, from, to)
+    } catch (error) {
+      // Hub often times out / 5xx — keep Screen 13 usable with snapshot shares.
+      console.warn("call center hub failed, using snapshot shares", error?.message || error)
+      return buildFromTotal(BASE_TOTAL, from, to)
+    }
   })
 }
 

@@ -13,7 +13,9 @@ export type DemandStats = {
 }
 
 export function useDemand(state: WallState) {
-  const query = new URLSearchParams({ from: state.date, to: state.dateTo })
+  const from = state.date <= state.dateTo ? state.date : state.dateTo
+  const to = state.date <= state.dateTo ? state.dateTo : state.date
+  const query = new URLSearchParams({ from, to })
   const region = apiRegionId(state.regionId)
   const zone = zoneIdForCity(state.cityId)
   if (region) query.set("region", region)

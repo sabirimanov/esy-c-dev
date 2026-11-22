@@ -37,13 +37,17 @@ export function cachedJson<T>(url: string, generation = 0, force = false): Promi
   return promise
 }
 
+/**
+ * Screen KPI fetch. `url` must already encode wall filters; `generation` is wall seed
+ * (clearCache). On filter change the URL changes → refetch. Stale UI is kept until
+ * the new response arrives so the wall stays interactive.
+ */
 export function useCachedResource<T>(url: string, generation = 0, _reset = true): T | null {
   const [data, setData] = useState<T | null>(() => readHit(url, generation))
   useEffect(() => {
     let live = true
     const cached = readHit<T>(url, generation)
     if (cached != null) setData(cached)
-    // Do not clear to null on filter change — keeps wall interactive while the next fetch runs
     function pull(force: boolean) {
       cachedJson<T>(url, generation, force)
         .then((body) => {

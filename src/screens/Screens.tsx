@@ -26,7 +26,7 @@ import {
 } from "../data/cccSnapshot"
 import { useCapacity, useMeterSplit, useUfgHierarchy, useUfgSummary, useUfgTrend, type UfgCluster } from "../data/ufg"
 import { addDays, formatRange, iso, monthGrid, monthTitle, parseIso, periodRange, previousSpan, shiftView, todayIso, trendCaption } from "../wall/dates"
-import { MAP_SLIDES, slideById } from "../wall/mapSlides"
+import { CAROUSEL_SLIDES, MAP_SLIDES, slideById } from "../wall/mapSlides"
 import { apiRegionId, citiesOf, cityById, EXC_REGIONS, regionEnabled, regionLabel, zoneIdForCity } from "../wall/places"
 import { periodLabel, type WallState } from "../wall/state"
 import { useEmergencyCalls } from "../data/emergencyCalls"
@@ -260,6 +260,18 @@ function smoothJumps(values: (number | null)[]) {
   return out
 }
 
+/**
+ * Current UFG is only reliable through today−2. Drop today, yesterday, and
+ * the day before (3 days incl. today) so fillGaps/smoothJumps do not invent them.
+ */
+function dropUfgLagTail(values: (number | null)[], from: string) {
+  const cutoff = addDays(todayIso(), -2)
+  return values.map((value, index) => {
+    const day = addDays(from, index)
+    return day >= cutoff ? null : value
+  })
+}
+
 function axisMarks(count: number) {
   if (count <= 1) return [0]
   if (count <= 8) return Array.from({ length: count }, (_, index) => index)
@@ -300,7 +312,10 @@ function Screen1({ state }: { state: WallState }) {
   const earlier = previousSpan(state.date, state.dateTo, state.period)
   const currentLabel = `${trendCaption(state.date, state.dateTo, state.period)} – Current`
   const previousLabel = `${trendCaption(earlier.date, earlier.dateTo, state.period)} – Previous`
-  const series = smoothJumps(fillGaps(smoothSeries(trend?.current ?? [])))
+  const series = dropUfgLagTail(
+    smoothJumps(fillGaps(smoothSeries(trend?.current ?? []))),
+    state.date,
+  )
   const previousSeries = smoothJumps(fillGaps(smoothSeries(trend?.previous ?? [])))
   const count = Math.max(series.length, previousSeries.length, 1)
   const scale = chartScale([...series, ...previousSeries])
@@ -848,16 +863,16 @@ function Screen5() {
           <div style={{ position: "absolute", right: 28, top: 26, color: "#9aabb0", fontSize: 16, pointerEvents: "none" }}>⌄</div>
         </div>
       </At>
-      <At x={ox + 78} y={oy + 294} w={420} h={72}>
-        <div style={{ height: "100%", borderRadius: 36, background: "#0c1b1c", position: "relative", opacity: regionApi ? 1 : 0.55 }}>
+      <At x={ox + 78} y={oy + 294} w={420} h={72} className={clusterOpen ? "map-mode-force" : undefined}>
+        <div style={{ height: "100%", borderRadius: 36, background: "#0c1b1c", position: "relative", opacity: regionApi ? 1 : 0.55, overflow: "visible" }}>
           <div style={{ position: "absolute", left: 28, top: 12, fontSize: 13, letterSpacing: 1.4, color: "#798586" }}>CLUSTER</div>
           <button type="button" className="region-select" style={{ textAlign: "left", fontFamily: "inherit" }} disabled={!regionApi} onClick={() => regionApi && setClusterOpen((open) => !open)}>
             {regionApi ? clusterLabel : "Select a region first"}
           </button>
           {clusterOpen && regionApi && (
             <>
-              <div style={{ position: "fixed", inset: 0, zIndex: 3 }} onClick={() => setClusterOpen(false)} />
-              <div style={{ position: "absolute", left: 12, top: 70, zIndex: 4, width: 396, maxHeight: 260, overflowY: "auto", borderRadius: 18, background: "#0e2426", boxShadow: "0 16px 40px rgba(0,0,0,0.5)", padding: "6px 0" }}>
+              <div style={{ position: "fixed", inset: 0, zIndex: 39 }} onClick={() => setClusterOpen(false)} />
+              <div style={{ position: "absolute", left: 12, top: 70, zIndex: 41, width: 396, maxHeight: 260, overflowY: "auto", borderRadius: 18, background: "#0e2426", boxShadow: "0 16px 40px rgba(0,0,0,0.5)", padding: "6px 0" }}>
                 <ClusterChoice selected={!selectedCluster} onPick={() => { setClusterOpen(false); startTransition(() => patch({ clusterId: null })) }}>All clusters</ClusterChoice>
                 {grouped.size > 1
                   ? [...grouped.entries()]
@@ -928,15 +943,22 @@ function Screen5() {
             <div style={{ position: "absolute", left: 28, top: 12, fontSize: 13, letterSpacing: 1.4, color: "#798586" }}>MAP OVERLAY</div>
             <select
               className="region-select"
-              value={state.mapPreviewSlide || "emergency-calls"}
+              value={
+                slideById(state.mapPreviewSlide || "emergency-calls").enabled === false
+                  ? "emergency-calls"
+                  : state.mapPreviewSlide || "emergency-calls"
+              }
               onChange={(event) => {
-                startTransition(() => patch({ mapMode: "default", mapPreviewSlide: event.target.value }))
+                const next = slideById(event.target.value)
+                if (next.enabled === false) return
+                startTransition(() => patch({ mapMode: "default", mapPreviewSlide: next.id }))
               }}
               style={{ pointerEvents: "auto" }}
             >
               {MAP_SLIDES.map((slide) => (
-                <option key={slide.id} value={slide.id}>
-                  {slide.title}{slide.source ? "" : " · mock"}
+                <option key={slide.id} value={slide.id} disabled={slide.enabled === false}>
+                  {slide.title}
+                  {slide.enabled === false ? " · unavailable" : slide.source ? "" : " · mock"}
                 </option>
               ))}
             </select>
@@ -1246,12 +1268,18 @@ function Screen7({ state }: { state: WallState }) {
           <path d={pathFor((day) => day.pending)} fill="none" stroke="#f2bd56" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )}
-      <FigAsset src={screen7Asset("swatch-assigned")} x={106.94} y={610.54} w={26} h={3} />
-      <FigAsset src={screen7Asset("swatch-resolved")} x={262.08} y={610.54} w={26} h={3} />
-      <FigAsset src={screen7Asset("swatch-pending")} x={417.02} y={610.54} w={26} h={3} />
-      <Pin x={142.08} y={602.96} size={14} color="#91aaa8" lh={16}>Assigned</Pin>
-      <Pin x={297.02} y={602.96} size={14} color="#91aaa8" lh={16}>Resolved</Pin>
-      <Pin x={451.97} y={602.96} size={14} color="#91aaa8" lh={16}>Pending</Pin>
+      {[
+        { x: 106.94, color: "#34efde", label: "Assigned", lx: 142.08 },
+        { x: 262.08, color: "#6bb8ff", label: "Resolved", lx: 297.02 },
+        { x: 417.02, color: "#f2bd56", label: "Pending", lx: 451.97 },
+      ].map((row) => (
+        <span key={row.label}>
+          <At x={row.x} y={610.54} w={26} h={3}>
+            <div style={{ width: "100%", height: "100%", borderRadius: 2, background: row.color }} />
+          </At>
+          <Pin x={row.lx} y={602.96} size={14} color="#91aaa8" lh={16}>{row.label}</Pin>
+        </span>
+      ))}
 
       <Pin x={1228.99} y={282.96} size={25} weight={700} color="#f2f5f5" lh={29}>FIELD WORK STATUS</Pin>
       {statusRows.map((row) => {
@@ -1433,7 +1461,7 @@ function Screen8({ state }: { state: WallState }) {
         <FigAsset key={y} src={screen8Asset("chart-grid")} x={140.93} y={y - 0.5} w={1128} h={1} />
       ))}
       {(() => {
-        const liveChart = actualNumbers.length > 1
+        const liveChart = actualNumbers.length >= 1
         const chartLeft = 140.93
         const chartWidth = 1128
         // Evenly spaced labels across the full series — never hardcode day-of-month as indices
@@ -1640,8 +1668,8 @@ function Screen9({ state }: { state: WallState }) {
       <Pin x={1566.91} y={683.96} size={16} color="#a9bec0" lh={22}>Communicated</Pin>
       <FigAsset src={screen9Asset("swatch-rate")} x={1747.02} y={693.48} w={33} h={3} />
       <Pin x={1790.02} y={683.96} size={16} color="#a9bec0" lh={22}>Rate %</Pin>
-      {leftTicks.map((tick) => (
-        <Pin key={`l-${tick.label}`} x={85} y={tick.y - 8} w={40} size={15} color="#81989a" lh={17} align="right">{tick.label}</Pin>
+      {leftTicks.map((tick, index) => (
+        <Pin key={`l-${index}`} x={85} y={tick.y - 8} w={40} size={15} color="#81989a" lh={17} align="right">{tick.label}</Pin>
       ))}
       {[0, 25, 50, 75, 100].map((label) => (
         <Pin key={`r-${label}`} x={1814.02} y={chartTop + chartHeight - (label / 100) * chartHeight - 8} size={14} color="#81989a" lh={16}>{label}</Pin>
@@ -2529,36 +2557,58 @@ function Screen18() {
     { value: "9", x: 1765.5, daysX: 1802, source: "resolve-min" },
   ]
   const mapOverlayOn = state.mapMode === "default" || state.mapMode === "carousel"
+  const carouselActive = state.mapMode === "carousel" && !state.mapPreviewSlide
   const legendTitle =
     state.mapMode === "default"
       ? slideById(state.mapPreviewSlide || "emergency-calls").title
       : carousel.slide.title
+  const slidePct = Math.round(carousel.progress * 100)
+  // Match bottom KPI shells: x=26 … x=897.18+1004.821, with a clear gap above y=772.
+  const legendX = 26
+  const legendW = 1876
+  const legendCount = Math.max(1, carousel.legend.length)
+  // Scale type/dot down when many statuses share one row — still equal columns across full width.
+  const legendScale = legendCount <= 4 ? 1 : legendCount <= 6 ? 0.92 : legendCount <= 8 ? 0.82 : 0.72
+  const legendDot = Math.round(26 * legendScale)
+  const legendLabelPx = Math.round(24 * legendScale)
+  const legendCountPx = Math.round(22 * legendScale)
+  const legendGap = Math.max(6, Math.round(12 * legendScale))
+  const legendH = carouselActive ? 196 : 176
+  const legendY = 772 - 28 - legendH
   const legendBlock = mapOverlayOn ? (
-    <At x={48} y={560} w={1824} h={190}>
+    <At x={legendX} y={legendY} w={legendW} h={legendH}>
       <div
         style={{
           width: "100%",
           height: "100%",
           borderRadius: 28,
           background: "rgba(6, 18, 22, 0.78)",
-          padding: "20px 40px 24px",
+          padding: carouselActive ? "16px 36px 14px" : "18px 36px 20px",
           boxSizing: "border-box",
           display: "flex",
           flexDirection: "column",
-          opacity: state.mapMode === "carousel" ? Math.max(0.4, carousel.opacity) : 1,
+          opacity: carouselActive ? Math.max(0.4, carousel.opacity) : 1,
         }}
       >
-        <div style={{ color: "#2de0d2", fontSize: 28, fontWeight: 700, letterSpacing: 1.1, lineHeight: "34px" }}>{legendTitle}</div>
-        <div style={{ color: "#8ca7a7", fontSize: 20, marginTop: 4, lineHeight: "24px" }}>{carousel.subtitle}</div>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 24 }}>
+          <div style={{ color: "#2de0d2", fontSize: 28, fontWeight: 700, letterSpacing: 1.1, lineHeight: "34px" }}>{legendTitle}</div>
+          {carouselActive ? (
+            <div style={{ color: "#7a8a8b", fontSize: 18, lineHeight: "28px", flex: "0 0 auto" }}>
+              MAP {carousel.index + 1} / {CAROUSEL_SLIDES.length}
+            </div>
+          ) : null}
+        </div>
         <div
           style={{
             flex: 1,
             display: "flex",
+            flexWrap: "nowrap",
             alignItems: "center",
             justifyContent: "space-between",
-            gap: 24,
+            gap: legendGap,
             marginTop: 10,
             minHeight: 0,
+            width: "100%",
           }}
         >
           {carousel.legend.map((row) => (
@@ -2569,16 +2619,61 @@ function Screen18() {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                gap: 14,
+                gap: legendGap,
                 minWidth: 0,
               }}
             >
-              <span style={{ width: 28, height: 28, borderRadius: 14, background: row.color, flex: "0 0 auto" }} />
-              <span style={{ color: "#e7f0ed", fontSize: 24, fontWeight: 500, lineHeight: "28px", whiteSpace: "nowrap" }}>{row.label}</span>
-              {row.count != null ? <span style={{ color: "#8ca7a7", fontSize: 22, lineHeight: "28px" }}>{row.count}</span> : null}
+              <span
+                style={{
+                  width: legendDot,
+                  height: legendDot,
+                  borderRadius: 999,
+                  background: row.color,
+                  flex: "0 0 auto",
+                }}
+              />
+              <span
+                style={{
+                  color: "#e7f0ed",
+                  fontSize: legendLabelPx,
+                  fontWeight: 500,
+                  lineHeight: `${legendLabelPx + 4}px`,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  minWidth: 0,
+                }}
+              >
+                {row.label}
+              </span>
+              {row.count != null ? (
+                <span
+                  style={{
+                    color: "#8ca7a7",
+                    fontSize: legendCountPx,
+                    lineHeight: `${legendCountPx + 4}px`,
+                    flex: "0 0 auto",
+                  }}
+                >
+                  {row.count}
+                </span>
+              ) : null}
             </div>
           ))}
         </div>
+        {carouselActive ? (
+          <div style={{ height: 10, borderRadius: 6, background: "#1a2c2e", overflow: "hidden", marginTop: 8, flex: "0 0 auto" }}>
+            <div
+              style={{
+                width: `${slidePct}%`,
+                height: "100%",
+                borderRadius: 6,
+                background: "linear-gradient(90deg, #1e897f, #34efde)",
+                transition: "width 100ms linear",
+              }}
+            />
+          </div>
+        ) : null}
       </div>
     </At>
   ) : null
@@ -2662,28 +2757,6 @@ function Screen18() {
     </At>
   ) : null
 
-  if (state.mapMode === "carousel" && !state.mapPreviewSlide) {
-    const pct = Math.round(carousel.progress * 100)
-    return (
-      <Frame border={false}>
-        {legendBlock}
-        {callPanel}
-        <At x={48} y={770} w={1824} h={270}>
-          <div style={{ width: "100%", height: "100%", borderRadius: 28, background: "rgba(6, 18, 22, 0.78)", padding: "28px 40px", boxSizing: "border-box" }}>
-            <div style={{ color: "#7a8a8b", fontSize: 18, marginBottom: 8 }}>
-              MAP {carousel.index + 1} / {MAP_SLIDES.length}
-            </div>
-            <div style={{ color: "#34efde", fontSize: 42, fontWeight: 700, lineHeight: "48px", marginBottom: 8 }}>{carousel.slide.title}</div>
-            <div style={{ color: "#8ca7a7", fontSize: 20, marginBottom: 22 }}>{carousel.subtitle}</div>
-            <div style={{ height: 14, borderRadius: 8, background: "#1a2c2e", overflow: "hidden" }}>
-              <div style={{ width: `${pct}%`, height: "100%", borderRadius: 8, background: "linear-gradient(90deg, #1e897f, #34efde)", transition: "width 100ms linear" }} />
-            </div>
-            <div style={{ marginTop: 10, color: "#64748B", fontSize: 16 }}>10s per slide · fade transition</div>
-          </div>
-        </At>
-      </Frame>
-    )
-  }
   return (
     <Frame border={false}>
       {legendBlock}

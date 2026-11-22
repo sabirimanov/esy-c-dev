@@ -1,5 +1,5 @@
 import * as THREE from "three"
-import { clusterCalls, spiderfyPositions, type CallCluster, type ColorSegment } from "./callCluster"
+import { clusterCallsNoOverlap, spiderfyPositions, type CallCluster, type ColorSegment } from "./callCluster"
 import { statusColor } from "./emergencyStatus"
 import { mapConfig } from "./mapConfig"
 import { roundedPointer } from "./marker"
@@ -345,11 +345,18 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
   const pxToWorld = (2 * size) / WALL.h
   const DOT_PX = 32
   const HIT_PX = 48
-  // Only pile markers that sit on top of each other — not neighbourhood grouping.
+  // Visual sizes drive clustering so dots/donuts never paint on top of each other.
   const CLUSTER_PX = 58
-  const CLUSTER_RADIUS_PX = 10
+  const CLUSTER_SEED_PX = Math.max(DOT_PX, CLUSTER_PX) * 0.55
   const RING_GAP_PX = 6
   const MARKER_LIFT = 0.06
+
+  function markerRadiusPx(total: number) {
+    if (total <= 1) return DOT_PX * 0.52
+    const digits = String(total).length
+    const diameter = CLUSTER_PX + Math.max(0, digits - 2) * 8
+    return diameter * 0.52
+  }
 
   function clearOverlay() {
     while (overlayGroup.children.length) {
@@ -398,9 +405,10 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
     })
   }
 
-  /** Exact CSS hex for canvas — same path for dots and donut arcs. */
+  /** Prefer point.color (band/slide palette); statusColor only for emergency ids. */
   function statusHex(statusId: string, fallback?: string) {
-    return statusColor(statusId).toLowerCase() || (fallback ?? "#94a3b8").toLowerCase()
+    if (fallback) return fallback.toLowerCase()
+    return statusColor(statusId).toLowerCase() || "#94a3b8"
   }
 
   function flatDotTexture(hex: string) {
@@ -567,8 +575,13 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
   function restoreRegionColors() {
     for (const region of regions) {
       for (const mat of region.mats) {
+        mat.userData.overlayTint = null
+        mat.userData.overlayMix = 0
+        mat.userData.overlayEmissive = 0
         const base = mat.userData.base as THREE.Color
         if (base) mat.color.copy(base)
+        mat.emissive.setRGB(0, 0, 0)
+        mat.emissiveIntensity = 0
       }
     }
   }
@@ -649,14 +662,14 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
   }
 
   function rebuildPointsOverlay(points: OverlayPoint[], fade: number) {
-    const clusters = clusterCalls(points, toWallScreenFast, CLUSTER_RADIUS_PX)
+    const clusters = clusterCallsNoOverlap(points, toWallScreenFast, CLUSTER_SEED_PX, markerRadiusPx)
     const expanded = callUi.expandedClusterId
       ? clusters.find((c) => c.id === callUi.expandedClusterId) ?? null
       : null
 
     for (const cluster of clusters) {
       if (expanded && cluster.id === expanded.id && !expanded.coincident && expanded.members.length > 1) {
-        const fans = spiderfyPositions(expanded.members, expanded.x, expanded.z, 36 * pxToWorld)
+        const fans = spiderfyPositions(expanded.members, expanded.x, expanded.z, Math.max(DOT_PX, CLUSTER_PX) * pxToWorld)
         const byId = new Map(fans.map((f) => [f.id, f]))
         for (const point of expanded.members) {
           const fan = byId.get(point.id)
@@ -707,17 +720,60 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
       return
     }
 
-    if (spec.kind === "region" && spec.regions) {
-      const tint = new Map(spec.regions.map((r) => [r.regionId, r]))
-      for (const region of regions) {
-        const hit = tint.get(region.id)
-        if (!hit) continue
-        const intensity = hit.intensity == null ? 0.55 : hit.intensity
-        const color = new THREE.Color(hit.color)
-        for (const mat of region.mats) {
-          const base = (mat.userData.base as THREE.Color).clone()
-          mat.color.copy(base.lerp(color, intensity * fade))
+    if (spec.kind === "region") {
+      if (spec.regions?.length) {
+        const tint = new Map(spec.regions.map((r) => [r.regionId, r]))
+        for (const region of regions) {
+          const hit = tint.get(region.id)
+          if (!hit) continue
+          const mix = Math.max(0, Math.min(1, (hit.intensity == null ? 0.75 : hit.intensity) * fade))
+          const color = new THREE.Color(hit.color)
+          for (const mat of region.mats) {
+            // Survives the per-frame brightness pass (see frame loop).
+            mat.userData.overlayTint = color.clone()
+            mat.userData.overlayMix = mix
+            mat.userData.overlayEmissive = 0.45 * mix
+            const base = (mat.userData.base as THREE.Color).clone()
+            mat.color.copy(base.lerp(color, mix))
+            mat.emissive.copy(color)
+            mat.emissiveIntensity = 0.45 * mix
+          }
         }
+      }
+
+      // Approximate admin footprints (e.g. Sumqayıt) when GLB has no matching mesh.
+      for (const poly of spec.polygons ?? []) {
+        if (!poly.ring || poly.ring.length < 3) continue
+        const shape = new THREE.Shape()
+        shape.moveTo(poly.ring[0].x, -poly.ring[0].z)
+        for (let i = 1; i < poly.ring.length; i += 1) {
+          shape.lineTo(poly.ring[i].x, -poly.ring[i].z)
+        }
+        shape.closePath()
+        const geo = new THREE.ShapeGeometry(shape)
+        geo.rotateX(-Math.PI / 2)
+        let cx = 0
+        let cz = 0
+        for (const p of poly.ring) {
+          cx += p.x
+          cz += p.z
+        }
+        cx /= poly.ring.length
+        cz /= poly.ring.length
+        const land = snapLand(cx, cz)
+        const intensity = poly.intensity == null ? 0.55 : poly.intensity
+        const mat = new THREE.MeshBasicMaterial({
+          color: new THREE.Color(poly.color),
+          transparent: true,
+          opacity: Math.max(0.15, intensity * fade),
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        })
+        overlayMats.push(mat)
+        const mesh = new THREE.Mesh(geo, mat)
+        mesh.position.y = (land?.y ?? 0) + 0.025
+        mesh.renderOrder = 2
+        overlayGroup.add(mesh)
       }
     }
   }
@@ -798,7 +854,21 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
         region.lastRise = rise
       }
       const brightness = 1 - dimCurrent * (1 - region.progress)
-      for (const mat of region.mats) mat.color.copy(mat.userData.base as THREE.Color).multiplyScalar(brightness)
+      for (const mat of region.mats) {
+        const base = (mat.userData.base as THREE.Color).clone()
+        const tint = mat.userData.overlayTint as THREE.Color | null | undefined
+        const mix = typeof mat.userData.overlayMix === "number" ? mat.userData.overlayMix : 0
+        const emit = typeof mat.userData.overlayEmissive === "number" ? mat.userData.overlayEmissive : 0
+        if (tint && mix > 0) base.lerp(tint, mix)
+        mat.color.copy(base).multiplyScalar(brightness)
+        if (tint && emit > 0) {
+          mat.emissive.copy(tint).multiplyScalar(brightness)
+          mat.emissiveIntensity = emit
+        } else {
+          mat.emissive.setRGB(0, 0, 0)
+          mat.emissiveIntensity = 0
+        }
+      }
       for (const mesh of region.group.children) {
         if (!mesh.userData.border) continue
         const material = (mesh as THREE.Mesh<THREE.BufferGeometry, THREE.ShaderMaterial>).material

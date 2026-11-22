@@ -28,6 +28,14 @@ export type OverlayRegionTint = {
   intensity?: number
 }
 
+/** Custom mesh-space footprint when GLB has no matching admin boundary. */
+export type OverlayPolygon = {
+  id: string
+  ring: { x: number; z: number }[]
+  color: string
+  intensity?: number
+}
+
 export type OverlayLegendRow = {
   id: string
   label: string
@@ -44,4 +52,5 @@ export type MapOverlaySpec = {
   points?: OverlayPoint[]
   heat?: OverlayHeatSpot[]
   regions?: OverlayRegionTint[]
+  polygons?: OverlayPolygon[]
 } | null

@@ -47,7 +47,10 @@ function overlayKey(spec: MapOverlaySpec) {
     return `heat:${opacity.toFixed(2)}:${heat}`
   }
   const regions = (spec.regions ?? []).map((r) => `${r.regionId}:${r.color}:${r.intensity ?? 0}`).join("|")
-  return `region:${opacity.toFixed(2)}:${regions}`
+  const polys = (spec.polygons ?? [])
+    .map((p) => `${p.id}:${p.color}:${p.intensity ?? 0}:${p.ring.map((q) => `${q.x.toFixed(3)},${q.z.toFixed(3)}`).join(";")}`)
+    .join("|")
+  return `region:${opacity.toFixed(2)}:${regions}:${polys}`
 }
 
 export function MapTile({

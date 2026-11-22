@@ -3,6 +3,7 @@ import { BILLING_REGIONS_URL } from "../wall/billingRegions"
 import { parseCoordinate, projectLatLng, type LatLng } from "../wall/geo"
 import { geocodePlaces } from "../wall/geocode"
 import { statusColor, statusLabelEn, bucketOrderIndex, statusBucket } from "../wall/emergencyStatus"
+import { useMapLayerEnabled } from "../wall/mapLayerControl"
 import type { LocationPrecision, MapOverlaySpec, OverlayPoint } from "../wall/mapOverlay"
 import {
   districtById,
@@ -18,9 +19,13 @@ import {
   regionSeatByRqii,
   registerGeocodedCenter,
 } from "../wall/placesGazetteer"
+import { useWallScope } from "../wall/wallScope"
+import { mapCachedGetJson } from "./mapApiCache"
+import { useLayerPoll } from "./useLayerPoll"
 import { useUfgHierarchy } from "./ufg"
 
 const URL = "/newapi/hub/mfs/api/v1/integration/accident-call/recent"
+/** Calls refresh more often than other map layers. */
 const POLL_MS = 10 * 60 * 1000
 
 type ApiNamed = { id?: number | string | null; title?: string | null }
@@ -253,6 +258,8 @@ const EmergencyContext = createContext<EmergencyCallsState>(empty)
 
 export function EmergencyCallsProvider({ children }: { children: ReactNode }) {
   const hierarchy = useUfgHierarchy()
+  const enabled = useMapLayerEnabled("emergency-calls")
+  const scope = useWallScope()
   const [data, setData] = useState(() => buildData([]))
   const [selectedNo, setSelectedNo] = useState<string | null>(null)
   const [listNos, setListNos] = useState<string[] | null>(null)
@@ -278,17 +285,18 @@ export function EmergencyCallsProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    if (!enabled) return
     ingestHierarchyPlaces({
       regions: hierarchy.regions.map((r) => ({ region_id: r.region_id, name_en: r.name_en })),
       zones: hierarchy.zones.map((z) => ({ zone_id: z.zone_id, region_id: z.region_id, name_en: z.name_en })),
     })
-  }, [hierarchy.regions, hierarchy.zones])
+  }, [enabled, hierarchy.regions, hierarchy.zones])
 
   useEffect(() => {
+    if (!enabled) return
     let live = true
-    fetch(BILLING_REGIONS_URL)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((body: { rows?: { rqii?: string; region?: string }[] } | null) => {
+    mapCachedGetJson<{ rows?: { rqii?: string; region?: string }[] }>(BILLING_REGIONS_URL, { ttlMs: 60 * 60 * 1000 })
+      .then((body) => {
         if (!live || !body?.rows) return
         ingestBillingRegions(body.rows)
       })
@@ -296,44 +304,29 @@ export function EmergencyCallsProvider({ children }: { children: ReactNode }) {
     return () => {
       live = false
     }
-  }, [])
+  }, [enabled])
 
-  useEffect(() => {
-    let live = true
-    async function pull() {
-      try {
-        const res = await fetch(URL)
-        if (!res.ok) throw new Error(String(res.status))
-        const body = (await res.json()) as { data?: ApiCall[] }
-        const rows = Array.isArray(body.data) ? body.data : []
-        let calls = rows.map(resolveCall).filter((c): c is ResolvedCall => Boolean(c))
-        calls = await fillMissingWithGeocode(calls)
-        if (live) {
-          // Keep camera/selection; only refresh call data + overlay points.
-          setData(buildData(calls))
-          setSelectedNo((no) => (no && calls.some((c) => c.no === no) ? no : null))
-          setListNos((nos) => {
-            if (!nos) return null
-            const next = nos.filter((n) => calls.some((c) => c.no === n))
-            return next.length ? next : null
-          })
-        }
-      } catch (err) {
-        if (live) {
-          setData((current) => ({
-            ...current,
-            error: err instanceof Error ? err.message : "fetch failed",
-          }))
-        }
-      }
+  useLayerPoll(enabled, scope, POLL_MS, async ({ force }) => {
+    try {
+      const body = await mapCachedGetJson<{ data?: ApiCall[] }>(URL, { ttlMs: POLL_MS, force })
+      const rows = Array.isArray(body.data) ? body.data : []
+      let calls = rows.map(resolveCall).filter((c): c is ResolvedCall => Boolean(c))
+      calls = await fillMissingWithGeocode(calls)
+      // Keep camera/selection; only refresh call data + overlay points.
+      setData(buildData(calls))
+      setSelectedNo((no) => (no && calls.some((c) => c.no === no) ? no : null))
+      setListNos((nos) => {
+        if (!nos) return null
+        const next = nos.filter((n) => calls.some((c) => c.no === n))
+        return next.length ? next : null
+      })
+    } catch (err) {
+      setData((current) => ({
+        ...current,
+        error: err instanceof Error ? err.message : "fetch failed",
+      }))
     }
-    pull()
-    const id = window.setInterval(pull, POLL_MS)
-    return () => {
-      live = false
-      window.clearInterval(id)
-    }
-  }, [])
+  })
 
   const value = useMemo<EmergencyCallsState>(
     () => ({

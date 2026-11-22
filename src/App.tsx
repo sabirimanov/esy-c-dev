@@ -3,6 +3,14 @@ import { BrowserRouter, Navigate, Route, Routes, useNavigate, useParams } from "
 import { AlertScrollProvider } from "./data/alertScroll"
 import { ConsumptionExceedanceProvider } from "./data/consumptionExceedance"
 import { EmergencyCallsProvider } from "./data/emergencyCalls"
+import { MetersOfflineProvider } from "./data/metersOffline"
+import { RepeatedReadingsProvider } from "./data/repeatedReadings"
+import { TamperingEventsProvider } from "./data/tamperingEvents"
+import { MeterAnomaliesProvider } from "./data/meterAnomalies"
+import { NetworkAlarmsProvider } from "./data/networkAlarms"
+import { NetworkPressureProvider } from "./data/networkPressure"
+import { UfgByRegionProvider } from "./data/ufgByRegion"
+import { MapLayerControlProvider } from "./wall/mapLayerControl"
 import { WallProvider } from "./wall/useWall"
 import { ScreenView } from "./screens/ScreenView"
 import { SnocRoute } from "./snoc/SnocRoute"
@@ -87,8 +95,16 @@ export function App() {
   return (
     <AlertScrollProvider>
     <WallProvider>
+      <MapLayerControlProvider>
       <EmergencyCallsProvider>
       <ConsumptionExceedanceProvider>
+      <MetersOfflineProvider>
+      <RepeatedReadingsProvider>
+      <TamperingEventsProvider>
+      <MeterAnomaliesProvider>
+      <NetworkAlarmsProvider>
+      <NetworkPressureProvider>
+      <UfgByRegionProvider>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<div className="screen" />} />
@@ -101,8 +117,16 @@ export function App() {
           <Route path="/:screenId" element={<RouteScreen />} />
         </Routes>
       </BrowserRouter>
+      </UfgByRegionProvider>
+      </NetworkPressureProvider>
+      </NetworkAlarmsProvider>
+      </MeterAnomaliesProvider>
+      </TamperingEventsProvider>
+      </RepeatedReadingsProvider>
+      </MetersOfflineProvider>
       </ConsumptionExceedanceProvider>
       </EmergencyCallsProvider>
+      </MapLayerControlProvider>
     </WallProvider>
     </AlertScrollProvider>
   )
