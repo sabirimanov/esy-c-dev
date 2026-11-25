@@ -30,7 +30,12 @@ h1, h2, h3, p { margin: 0; }
   top: 0;
   background: #000;
 }
+.overview-full-map {
+  pointer-events: none;
+}
 .overview-half-tile {
+  position: absolute;
+  z-index: 1;
   content-visibility: auto;
   contain-intrinsic-size: 960px 540px;
 }

@@ -1,15 +1,16 @@
 package com.smartazerigas.ccc.ui
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.util.AttributeSet
-import android.view.GestureDetector
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import kotlin.math.abs
 
 /**
- * Detects horizontal page swipes without blocking taps / vertical scrolls inside the WebView.
- * Finger swipe left → next page; swipe right → previous (carousel / page-turn direction).
+ * Interactive horizontal page-drag: content follows the finger, then settles.
+ * Finger left → next; finger right → previous.
  */
 class SwipeFrameLayout @JvmOverloads constructor(
     context: Context,
@@ -17,35 +18,87 @@ class SwipeFrameLayout @JvmOverloads constructor(
 ) : FrameLayout(context, attrs) {
 
     var swipeEnabled: Boolean = true
-    var onSwipeNext: (() -> Unit)? = null
-    var onSwipePrev: (() -> Unit)? = null
 
-    private val minDistancePx = 96f * resources.displayMetrics.density
-    private val minVelocity = 600f
+    var onDragStart: (() -> Unit)? = null
+    var onDrag: ((dx: Float) -> Unit)? = null
+    /** dx = total finger travel (positive = finger right). velocityX in px/s. */
+    var onDragEnd: ((dx: Float, velocityX: Float) -> Unit)? = null
 
-    private val detector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
-        override fun onDown(e: MotionEvent): Boolean = true
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private var downX = 0f
+    private var downY = 0f
+    private var lastX = 0f
+    private var lastT = 0L
+    private var velocityX = 0f
+    private var dragging = false
+    private var tracking = false
 
-        override fun onFling(
-            e1: MotionEvent?,
-            e2: MotionEvent,
-            velocityX: Float,
-            velocityY: Float,
-        ): Boolean {
-            if (!swipeEnabled || e1 == null) return false
-            val dx = e2.x - e1.x
-            val dy = e2.y - e1.y
-            if (abs(dx) < minDistancePx) return false
-            if (abs(dx) < abs(dy) * 1.2f) return false
-            if (abs(velocityX) < minVelocity) return false
-            // Invert: finger moves left (dx < 0) → next; right → previous.
-            if (dx < 0) onSwipeNext?.invoke() else onSwipePrev?.invoke()
-            return true
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        if (!swipeEnabled) return false
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = ev.x
+                downY = ev.y
+                lastX = ev.x
+                lastT = ev.eventTime
+                velocityX = 0f
+                dragging = false
+                tracking = true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!tracking) return false
+                val dx = ev.x - downX
+                val dy = ev.y - downY
+                if (!dragging && abs(dx) > touchSlop && abs(dx) > abs(dy) * 1.15f) {
+                    dragging = true
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    onDragStart?.invoke()
+                    return true
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                tracking = false
+                dragging = false
+            }
         }
-    })
+        return dragging
+    }
 
-    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (swipeEnabled) detector.onTouchEvent(ev)
-        return super.dispatchTouchEvent(ev)
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!swipeEnabled && !dragging) return super.onTouchEvent(event)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_MOVE -> {
+                if (!dragging) {
+                    val dx = event.x - downX
+                    val dy = event.y - downY
+                    if (abs(dx) > touchSlop && abs(dx) > abs(dy) * 1.15f) {
+                        dragging = true
+                        parent?.requestDisallowInterceptTouchEvent(true)
+                        onDragStart?.invoke()
+                    }
+                }
+                if (dragging) {
+                    val now = event.eventTime
+                    val dt = (now - lastT).coerceAtLeast(1)
+                    velocityX = (event.x - lastX) * 1000f / dt
+                    lastX = event.x
+                    lastT = now
+                    onDrag?.invoke(event.x - downX)
+                    return true
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (dragging) {
+                    onDragEnd?.invoke(event.x - downX, velocityX)
+                    dragging = false
+                    tracking = false
+                    return true
+                }
+                tracking = false
+            }
+        }
+        return dragging || super.onTouchEvent(event)
     }
 }

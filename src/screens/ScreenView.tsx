@@ -1,12 +1,11 @@
 import { useEffect, useMemo } from "react"
 import { useEmergencyCalls } from "../data/emergencyCalls"
-import { MapGlowOnly, MapTile, tileOf } from "../wall/map"
+import { MapTile, tileOf } from "../wall/map"
 import { useMapScreenPresence } from "../wall/mapLayerControl"
 import { cityById, mapRegionId } from "../wall/places"
 import { useActiveMapOverlay } from "../wall/useMapCarousel"
 import { useWall } from "../wall/useWall"
 import { isOverviewPath } from "../tablet/mode"
-import { useOverviewMapLiveFor } from "../tablet/overviewMapLive"
 import { screenBody } from "./Screens"
 
 // Screens in this set render gray and dim. Add or remove ids here.
@@ -69,7 +68,6 @@ export function ScreenView({ id }: { id: number }) {
 
   const hasMap = Boolean(tileOf(id))
   const overview = isOverviewPath()
-  const liveMap = useOverviewMapLiveFor(id)
 
   return (
     <div
@@ -84,8 +82,8 @@ export function ScreenView({ id }: { id: number }) {
       data-map-preview={state.mapPreviewSlide ?? ""}
       onClick={!overview && id === 1 ? () => patch({ ufgOpen: !state.ufgOpen }) : undefined}
     >
-      {hasMap && overview ? <MapGlowOnly screen={id} /> : null}
-      {hasMap && (!overview || liveMap) ? <MapScreenLayer id={id} /> : null}
+      {/* View All uses one shared OverviewFullMap — skip per-tile WebGL here. */}
+      {hasMap && !overview ? <MapScreenLayer id={id} /> : null}
       {screenBody(id, state)}
     </div>
   )

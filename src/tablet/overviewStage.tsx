@@ -18,7 +18,7 @@ export function overviewWallSize(cols: number, rows: number) {
 }
 
 /**
- * Fits the whole wall into the WebView by CSS scale(fit-width), top-aligned.
+ * Fits the whole wall into the WebView by CSS scale(fit-width), vertically centered.
  * Android ZoomPanLayout then pinch-zooms this already-fitted page — so View All
  * ALWAYS opens with every screen visible, with no WebView viewport hacks.
  */
@@ -39,6 +39,7 @@ export function useOverviewFit(wallW: number, wallH: number) {
       const vh = Math.max(1, window.innerHeight)
       const fit = vw / wallW
       const stageH = wallH * fit
+      const stageTop = Math.max(0, (vh - stageH) / 2)
 
       for (const node of [document.documentElement, document.body, document.getElementById("root")]) {
         if (!node) continue
@@ -59,6 +60,9 @@ export function useOverviewFit(wallW: number, wallH: number) {
 
       const stage = document.getElementById("overview-stage")
       if (stage) {
+        stage.style.position = "absolute"
+        stage.style.left = "0"
+        stage.style.top = `${stageTop}px`
         stage.style.width = `${vw}px`
         stage.style.height = `${stageH}px`
       }

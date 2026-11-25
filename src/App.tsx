@@ -17,7 +17,7 @@ import { SnocRoute } from "./snoc/SnocRoute"
 import { SocnocRoute } from "./socnoc/SocnocRoute"
 import { SocnocScreen } from "./socnoc/screens"
 import { applyTabletDomClass, withTabletQuery } from "./tablet/mode"
-import { OverviewMapLiveProvider } from "./tablet/overviewMapLive"
+import { OverviewFullMap } from "./tablet/OverviewFullMap"
 import {
   OverviewHalfTile,
   OverviewSkeleton,
@@ -135,20 +135,19 @@ function OpsOverview() {
   }, [])
 
   return (
-    <OverviewMapLiveProvider cols={COLS}>
-      <div id="overview-stage" className="overview-stage">
-        <div id="overview-wall" className="overview-wall">
-          {ids.map((id) => {
-            const { col, row } = place(id)
-            return (
-              <OverviewCell key={id} id={id} col={col} row={row}>
-                <ScreenView id={id} />
-              </OverviewCell>
-            )
-          })}
-        </div>
+    <div id="overview-stage" className="overview-stage">
+      <div id="overview-wall" className="overview-wall">
+        <OverviewFullMap />
+        {ids.map((id) => {
+          const { col, row } = place(id)
+          return (
+            <OverviewCell key={id} id={id} col={col} row={row}>
+              <ScreenView id={id} />
+            </OverviewCell>
+          )
+        })}
       </div>
-    </OverviewMapLiveProvider>
+    </div>
   )
 }
 

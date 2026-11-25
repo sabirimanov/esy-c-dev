@@ -66,7 +66,14 @@ function validate(value: number, min: number, max: number, name: string) {
   return value
 }
 
-export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrain> {
+export async function initTerrain(
+  host: HTMLElement,
+  tile: Tile,
+  opts?: { fullWall?: boolean },
+): Promise<Terrain> {
+  const fullWall = opts?.fullWall === true
+  const viewW = fullWall ? WALL.w : TILE.w
+  const viewH = fullWall ? WALL.h : TILE.h
   const response = await fetch(mapConfig.model)
   if (!response.ok) throw new Error("Model load failed: " + response.status)
   const raw = new Uint8Array(await response.arrayBuffer())
@@ -76,7 +83,7 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
   const bin = 28 + jsonLength
 
   const scene = new THREE.Scene()
-  const borderResolution = new THREE.Vector2(TILE.w, TILE.h)
+  const borderResolution = new THREE.Vector2(viewW, viewH)
   let lift = validate(mapConfig.lift, 0, 1, "Lift")
   let dim = validate(mapConfig.dimPercent, 0, 100, "Dim") / 100
   const borderWidth = validate(mapConfig.borderWidth, 0.5, 6, "Border")
@@ -118,12 +125,12 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
   renderer.setPixelRatio(1)
-  renderer.setSize(TILE.w, TILE.h, false)
+  renderer.setSize(viewW, viewH, false)
   renderer.setClearColor(0x000000, 0)
   renderer.outputColorSpace = THREE.SRGBColorSpace
   renderer.toneMapping = THREE.NoToneMapping
-  renderer.domElement.style.width = `${TILE.w}px`
-  renderer.domElement.style.height = `${TILE.h}px`
+  renderer.domElement.style.width = `${viewW}px`
+  renderer.domElement.style.height = `${viewH}px`
   host.append(renderer.domElement)
 
   const camera = new THREE.OrthographicCamera(-2.5, 2.5, 2, -2, 0.01, 100)
@@ -137,7 +144,7 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
   camera.right = size * ar
   camera.top = size
   camera.bottom = -size
-  camera.setViewOffset(WALL.w, WALL.h, tile.x, tile.y, TILE.w, TILE.h)
+  camera.setViewOffset(WALL.w, WALL.h, fullWall ? 0 : tile.x, fullWall ? 0 : tile.y, viewW, viewH)
   camera.updateProjectionMatrix()
   camera.position
     .set(
@@ -887,8 +894,8 @@ export async function initTerrain(host: HTMLElement, tile: Tile): Promise<Terrai
       const bob = 0 // 0.012 * Math.sin((now * 2 * Math.PI) / 3600)
       marker.position.set(markerPos.x, markerHeight + 0.037 + bob, markerPos.y)
       const anchor = marker.position.clone().add(new THREE.Vector3(0, 0.19, 0)).project(camera)
-      cityLabel.style.left = `${(anchor.x * 0.5 + 0.5) * TILE.w + mapConfig.labelOffset}px`
-      cityLabel.style.top = `${(-anchor.y * 0.5 + 0.5) * TILE.h}px`
+      cityLabel.style.left = `${(anchor.x * 0.5 + 0.5) * viewW + mapConfig.labelOffset}px`
+      cityLabel.style.top = `${(-anchor.y * 0.5 + 0.5) * viewH}px`
     }
     renderer.render(scene, camera)
     frameId = requestAnimationFrame(frame)
