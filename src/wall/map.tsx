@@ -53,6 +53,13 @@ function overlayKey(spec: MapOverlaySpec) {
   return `region:${opacity.toFixed(2)}:${regions}:${polys}`
 }
 
+/** Static glow only — used by tablet View All to avoid mounting Nine WebGL terrains. */
+export function MapGlowOnly({ screen }: { screen: number }) {
+  const src = GLOW[screen]
+  if (!src) return null
+  return <img className="map-glow" src={src} alt="" />
+}
+
 export function MapTile({
   screen,
   selected,

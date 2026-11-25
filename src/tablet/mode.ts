@@ -12,11 +12,16 @@ export function readTabletMode(search = window.location.search): TabletMode {
   return { tablet, noborder }
 }
 
+export function isOverviewPath(pathname = window.location.pathname): boolean {
+  return pathname === "/overview" || pathname === "/socnoc/overview"
+}
+
 /** Apply html classes so CSS can hide frames without touching every screen. */
 export function applyTabletDomClass(search = window.location.search) {
   const { tablet, noborder } = readTabletMode(search)
   document.documentElement.classList.toggle("is-tablet", tablet)
   document.documentElement.classList.toggle("is-noborder", noborder)
+  document.documentElement.classList.toggle("is-overview", isOverviewPath())
   return { tablet, noborder }
 }
 

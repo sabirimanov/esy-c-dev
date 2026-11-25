@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react"
 import { BrowserRouter, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom"
 import { AlertScrollProvider } from "./data/alertScroll"
 import { ConsumptionExceedanceProvider } from "./data/consumptionExceedance"
@@ -17,6 +17,7 @@ import { SnocRoute } from "./snoc/SnocRoute"
 import { SocnocRoute } from "./socnoc/SocnocRoute"
 import { SocnocScreen } from "./socnoc/screens"
 import { applyTabletDomClass, withTabletQuery } from "./tablet/mode"
+import { OverviewMapLiveProvider } from "./tablet/overviewMapLive"
 import "./socnoc/socnoc.css"
 
 function SnocLegacyRedirect() {
@@ -102,15 +103,39 @@ function setOverviewViewport(width: number, height: number) {
   document.documentElement.classList.add("is-overview")
   const meta = document.querySelector('meta[name="viewport"]')
   const prev = meta?.getAttribute("content") ?? "width=1920"
-  meta?.setAttribute(
-    "content",
-    `width=${width}, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no`,
-  )
+  // Fit-width scale is applied by the Android WebView; keep zoom unlocked here.
+  meta?.setAttribute("content", `width=${width}, user-scalable=yes, minimum-scale=0.05, maximum-scale=8`)
   return () => {
     document.documentElement.classList.remove("is-overview")
     meta?.setAttribute("content", prev)
     fitPage(TILE.w, TILE.h)
   }
+}
+
+/** Stagger tile mount so View All does not freeze the WebView on open. */
+function OverviewTile({
+  id,
+  delayMs,
+  style,
+  children,
+}: {
+  id: number
+  delayMs: number
+  style: CSSProperties
+  children: ReactNode
+}) {
+  const [ready, setReady] = useState(delayMs <= 0)
+  useEffect(() => {
+    if (ready) return
+    const t = window.setTimeout(() => setReady(true), delayMs)
+    return () => window.clearTimeout(t)
+  }, [delayMs, ready])
+
+  return (
+    <div className="wall-tile overview-tile" style={style}>
+      {ready ? children : <div className="overview-skeleton">Screen {id}</div>}
+    </div>
+  )
 }
 
 /** Full Operations wall (7×3) at native 16:9 tile size — for tablet View All + pinch zoom. */
@@ -125,16 +150,23 @@ function OpsOverview() {
   }, [width, height])
 
   return (
-    <div className="wall wall-overview" style={{ width, height }}>
-      {ids.map((id) => {
-        const { col, row } = place(id)
-        return (
-          <div key={id} className="wall-tile" style={{ left: col * TILE.w, top: row * TILE.h }}>
-            <ScreenView id={id} />
-          </div>
-        )
-      })}
-    </div>
+    <OverviewMapLiveProvider>
+      <div className="wall wall-overview" style={{ width, height }}>
+        {ids.map((id) => {
+          const { col, row } = place(id)
+          return (
+            <OverviewTile
+              key={id}
+              id={id}
+              delayMs={(id - 1) * 50}
+              style={{ left: col * TILE.w, top: row * TILE.h }}
+            >
+              <ScreenView id={id} />
+            </OverviewTile>
+          )
+        })}
+      </div>
+    </OverviewMapLiveProvider>
   )
 }
 
@@ -154,11 +186,16 @@ function SocnocOverview() {
       {ids.map((id) => {
         const { col, row } = place(id, SOCNOC_COLS)
         return (
-          <div key={id} className="wall-tile" style={{ left: col * TILE.w, top: row * TILE.h }}>
+          <OverviewTile
+            key={id}
+            id={id}
+            delayMs={(id - 1) * 50}
+            style={{ left: col * TILE.w, top: row * TILE.h }}
+          >
             <div className="screen" data-socnoc={id}>
               <SocnocScreen id={id} />
             </div>
-          </div>
+          </OverviewTile>
         )
       })}
     </div>

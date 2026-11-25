@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.graphics.Color
 import android.os.Bundle
 import android.view.View
+import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -22,18 +23,18 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.smartazerigas.ccc.ui.LetterboxLayout
 import com.smartazerigas.ccc.ui.SwipeFrameLayout
-import com.smartazerigas.ccc.ui.ZoomPanLayout
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var letterbox: LetterboxLayout
-    private lateinit var zoomHost: ZoomPanLayout
     private lateinit var swipeHost: SwipeFrameLayout
     private lateinit var pageBadge: TextView
     private lateinit var fab: FloatingActionButton
+    private lateinit var bottomChrome: View
 
     private var nav = WallNav()
+    private var loadGeneration = 0
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,12 +44,13 @@ class MainActivity : AppCompatActivity() {
 
         webView = findViewById(R.id.webView)
         letterbox = findViewById(R.id.letterbox)
-        zoomHost = findViewById(R.id.zoomHost)
         swipeHost = findViewById(R.id.swipeHost)
         pageBadge = findViewById(R.id.pageBadge)
         fab = findViewById(R.id.fab)
+        bottomChrome = findViewById(R.id.bottomChrome)
 
         configureWebView()
+        reserveBottomChrome()
 
         swipeHost.onSwipeNext = { go(nav.next()) }
         swipeHost.onSwipePrev = { go(nav.prev()) }
@@ -73,8 +75,8 @@ class MainActivity : AppCompatActivity() {
         val restored = savedInstanceState?.getString(STATE_URL)
         if (restored != null) {
             nav = decodeNav(restored) ?: nav
-            webView.loadUrl(restored)
             applyChrome()
+            loadNavUrl()
         } else {
             go(nav, force = true)
         }
@@ -101,6 +103,17 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    private fun reserveBottomChrome() {
+        bottomChrome.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                letterbox.bottomReservePx = bottomChrome.height
+                if (bottomChrome.height > 0) {
+                    bottomChrome.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                }
+            }
+        })
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureWebView() {
         webView.setBackgroundColor(Color.BLACK)
@@ -108,14 +121,24 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url.toString()
-                decodeNav(url)?.let { nav = it; applyChrome() }
+                decodeNav(url)?.let {
+                    nav = it
+                    applyChrome()
+                }
                 return false
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 url ?: return
-                decodeNav(url)?.let { nav = it; applyChrome() }
-                if (nav.overview) injectOverviewViewport()
+                decodeNav(url)?.let {
+                    nav = it
+                    applyChrome()
+                }
+                if (nav.overview) {
+                    injectOverviewViewport()
+                    // Re-assert fit-width scale after layout/meta settle.
+                    view?.post { fitOverviewScale() }
+                }
             }
         }
 
@@ -127,17 +150,24 @@ class MainActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_DEFAULT
             useWideViewPort = true
             loadWithOverviewMode = true
-            builtInZoomControls = false
+            builtInZoomControls = true
             displayZoomControls = false
-            setSupportZoom(false)
+            setSupportZoom(true)
             textZoom = 100
             userAgentString = "$userAgentString SmartAzerigasCCC/1.0"
         }
     }
 
+    /**
+     * Lock the overview so the full wall fits by width (black bars top/bottom),
+     * and allow pinch-zoom in from that floor up to a close-up of any region.
+     */
     private fun injectOverviewViewport() {
         val w = nav.overviewWidthPx
         val h = nav.overviewHeightPx
+        val viewW = webView.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val fit = (viewW.toDouble() / w.toDouble()).coerceIn(0.05, 1.0)
+        val maxScale = (fit * 10.0).coerceAtMost(3.0)
         val js = """
             (function(){
               var m = document.querySelector('meta[name="viewport"]');
@@ -146,37 +176,68 @@ class MainActivity : AppCompatActivity() {
                 m.name = 'viewport';
                 document.head.appendChild(m);
               }
-              m.setAttribute('content', 'width=$w, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no');
-              document.documentElement.classList.add('is-overview');
+              m.setAttribute('content',
+                'width=$w, initial-scale=$fit, minimum-scale=$fit, maximum-scale=$maxScale, user-scalable=yes');
+              document.documentElement.classList.add('is-overview','is-tablet','is-noborder');
               document.documentElement.style.width = '${w}px';
               document.documentElement.style.height = '${h}px';
+              document.documentElement.style.overflow = 'hidden';
               document.body.style.width = '${w}px';
               document.body.style.height = '${h}px';
+              document.body.style.overflow = 'hidden';
+              document.body.style.margin = '0';
+              document.body.style.background = '#000';
               var root = document.getElementById('root');
-              if (root) { root.style.width = '${w}px'; root.style.height = '${h}px'; }
+              if (root) {
+                root.style.width = '${w}px';
+                root.style.height = '${h}px';
+                root.style.overflow = 'hidden';
+              }
             })();
         """.trimIndent()
         webView.evaluateJavascript(js, null)
+    }
+
+    private fun fitOverviewScale() {
+        if (!nav.overview) return
+        val viewW = webView.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val scalePct = ((viewW * 100f) / nav.overviewWidthPx.toFloat()).toInt().coerceIn(1, 100)
+        webView.setInitialScale(scalePct)
     }
 
     private fun go(next: WallNav, force: Boolean = false) {
         if (!force && next == nav) return
         nav = next.clamped()
         applyChrome()
-        webView.loadUrl(nav.url())
+        loadNavUrl()
+    }
+
+    private fun loadNavUrl() {
+        val gen = ++loadGeneration
+        if (nav.overview) {
+            webView.settings.setSupportZoom(true)
+            webView.settings.builtInZoomControls = true
+            webView.settings.displayZoomControls = false
+            webView.settings.loadWithOverviewMode = true
+            webView.settings.useWideViewPort = true
+            webView.post {
+                if (gen != loadGeneration) return@post
+                fitOverviewScale()
+                webView.loadUrl(nav.url())
+            }
+        } else {
+            webView.settings.setSupportZoom(false)
+            webView.settings.builtInZoomControls = false
+            webView.setInitialScale(0)
+            webView.loadUrl(nav.url())
+        }
     }
 
     private fun applyChrome() {
         val overview = nav.overview
+        // Overview uses the full screen (black bars come from wall aspect via WebView scale).
         letterbox.enabledLetterbox = !overview
         swipeHost.swipeEnabled = !overview
-        zoomHost.contentAspect = nav.overviewAspect
-        zoomHost.zoomEnabled = overview
-        if (overview) zoomHost.resetTransform(requestLayout = true)
-
-        // Overview zoom is handled by ZoomPanLayout; disable WebView's own zoom.
-        webView.settings.setSupportZoom(false)
-        webView.settings.builtInZoomControls = false
 
         pageBadge.text = if (overview) {
             getString(R.string.view_all)
