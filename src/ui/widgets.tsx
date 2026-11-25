@@ -1,10 +1,12 @@
 import type { CSSProperties, ReactNode } from "react"
+import { readTabletMode } from "../tablet/mode"
 
 export function Frame({ children, border = true, mirror = false }: { children: ReactNode; border?: boolean; mirror?: boolean }) {
+  const showBorder = border && !readTabletMode().noborder
   return (
     <div className="screen-body canvas">
-      {border && <div className="frame-plate" />}
-      {border && <div className={mirror ? "frame-stroke is-mirrored" : "frame-stroke"} />}
+      {showBorder && <div className="frame-plate" />}
+      {showBorder && <div className={mirror ? "frame-stroke is-mirrored" : "frame-stroke"} />}
       {children}
     </div>
   )

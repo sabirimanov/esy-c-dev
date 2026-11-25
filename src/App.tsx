@@ -15,6 +15,9 @@ import { WallProvider } from "./wall/useWall"
 import { ScreenView } from "./screens/ScreenView"
 import { SnocRoute } from "./snoc/SnocRoute"
 import { SocnocRoute } from "./socnoc/SocnocRoute"
+import { SocnocScreen } from "./socnoc/screens"
+import { applyTabletDomClass, withTabletQuery } from "./tablet/mode"
+import "./socnoc/socnoc.css"
 
 function SnocLegacyRedirect() {
   const { screenId } = useParams()
@@ -22,6 +25,7 @@ function SnocLegacyRedirect() {
 }
 
 const COLS = 7
+const SOCNOC_COLS = 4
 const TILE = { w: 1920, h: 1080 }
 
 function parseScreens(param: string | undefined) {
@@ -29,9 +33,9 @@ function parseScreens(param: string | undefined) {
   return ids.filter((id) => Number.isInteger(id) && id >= 1 && id <= 21)
 }
 
-function place(id: number) {
+function place(id: number, cols = COLS) {
   const index = id - 1
-  return { col: index % COLS, row: Math.floor(index / COLS) }
+  return { col: index % cols, row: Math.floor(index / cols) }
 }
 
 function fitPage(width: number, height: number) {
@@ -58,6 +62,7 @@ function RouteScreen() {
   const scaleY = TILE.h / height
 
   useEffect(() => {
+    applyTabletDomClass()
     fitPage(TILE.w, TILE.h)
     document.title = ids.join("--") || "CCC"
     return () => fitPage(TILE.w, TILE.h)
@@ -71,7 +76,7 @@ function RouteScreen() {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
       event.preventDefault()
       const next = event.key === "ArrowRight" ? Math.min(21, current + 1) : Math.max(1, current - 1)
-      if (next !== current) navigate(`/${next}`)
+      if (next !== current) navigate(withTabletQuery(`/${next}`))
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
@@ -87,6 +92,62 @@ function RouteScreen() {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+/** Full Operations wall (7×3) at native 16:9 tile size — for tablet View All + pinch zoom. */
+function OpsOverview() {
+  const ids = Array.from({ length: 21 }, (_, i) => i + 1)
+  const width = COLS * TILE.w
+  const height = 3 * TILE.h
+
+  useEffect(() => {
+    applyTabletDomClass()
+    fitPage(width, height)
+    document.title = "overview"
+    return () => fitPage(TILE.w, TILE.h)
+  }, [width, height])
+
+  return (
+    <div className="wall wall-overview" style={{ width, height }}>
+      {ids.map((id) => {
+        const { col, row } = place(id)
+        return (
+          <div key={id} className="wall-tile" style={{ left: col * TILE.w, top: row * TILE.h }}>
+            <ScreenView id={id} />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Full SOC/NOC wall (4×3) at native tile size. */
+function SocnocOverview() {
+  const ids = Array.from({ length: 12 }, (_, i) => i + 1)
+  const width = SOCNOC_COLS * TILE.w
+  const height = 3 * TILE.h
+
+  useEffect(() => {
+    applyTabletDomClass()
+    fitPage(width, height)
+    document.title = "socnoc overview"
+    return () => fitPage(TILE.w, TILE.h)
+  }, [width, height])
+
+  return (
+    <div className="wall wall-overview" style={{ width, height }}>
+      {ids.map((id) => {
+        const { col, row } = place(id, SOCNOC_COLS)
+        return (
+          <div key={id} className="wall-tile" style={{ left: col * TILE.w, top: row * TILE.h }}>
+            <div className="screen" data-socnoc={id}>
+              <SocnocScreen id={id} />
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -108,10 +169,12 @@ export function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<div className="screen" />} />
+          <Route path="/overview" element={<OpsOverview />} />
           <Route path="/snoc" element={<Navigate to="/socnoc2/1" replace />} />
           <Route path="/snoc/:screenId" element={<SnocLegacyRedirect />} />
           <Route path="/socnoc2" element={<Navigate to="/socnoc2/1" replace />} />
           <Route path="/socnoc2/:screenId" element={<SnocRoute />} />
+          <Route path="/socnoc/overview" element={<SocnocOverview />} />
           <Route path="/socnoc" element={<Navigate to="/socnoc/1" replace />} />
           <Route path="/socnoc/:screenId" element={<SocnocRoute />} />
           <Route path="/:screenId" element={<RouteScreen />} />

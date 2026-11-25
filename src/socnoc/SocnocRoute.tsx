@@ -1,5 +1,6 @@
 import { useEffect } from "react"
 import { useNavigate, useParams } from "react-router-dom"
+import { applyTabletDomClass, withTabletQuery } from "../tablet/mode"
 import { SocnocScreen } from "./screens"
 import "./socnoc.css"
 
@@ -18,6 +19,7 @@ export function SocnocRoute() {
   const ok = Number.isInteger(id) && id >= 1 && id <= 12
 
   useEffect(() => {
+    applyTabletDomClass()
     fitPage()
     document.title = ok ? `socnoc ${id}` : "socnoc"
   }, [id, ok])
@@ -29,7 +31,7 @@ export function SocnocRoute() {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
       event.preventDefault()
       const next = event.key === "ArrowRight" ? Math.min(12, id + 1) : Math.max(1, id - 1)
-      if (next !== id) navigate(`/socnoc/${next}`)
+      if (next !== id) navigate(withTabletQuery(`/socnoc/${next}`))
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)

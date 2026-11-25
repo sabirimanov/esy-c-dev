@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SmartAzerigas CCC</string>
+    <string name="controls_title">Controls</string>
+    <string name="dashboard">Dashboard</string>
+    <string name="operations">Operations</string>
+    <string name="socnoc">SOC / NOC</string>
+    <string name="filters">Select filters</string>
+    <string name="view_all">View all</string>
+    <string name="back_to_page">Back to page</string>
+    <string name="page_label">Page %1$d / %2$d</string>
+    <string name="menu_content_description">Open controls</string>
+    <string name="close">Close</string>
+</resources>

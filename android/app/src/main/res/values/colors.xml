@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ccc_bg">#000000</color>
+    <color name="ccc_panel">#081214</color>
+    <color name="ccc_panel_elevated">#0E2426</color>
+    <color name="ccc_cyan">#34EFDE</color>
+    <color name="ccc_cyan_dim">#1E897F</color>
+    <color name="ccc_muted">#93A3AB</color>
+    <color name="ccc_text">#F3F7F8</color>
+    <color name="ccc_line">#6BECDD</color>
+    <color name="ccc_fab_fill">#0E2426</color>
+    <color name="ccc_scrim">#CC000000</color>
+</resources>

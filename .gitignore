@@ -4,3 +4,8 @@ dist
 server/wall-state.json
 server/api-cache.json
 .DS_Store
+
+# Android
+android/local.properties
+android/.gradle/
+android/**/build/

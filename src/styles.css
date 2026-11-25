@@ -19,6 +19,9 @@ h1, h2, h3, p { margin: 0; }
 .wall-fit { width: 1920px; height: 1080px; overflow: hidden; background: #000; }
 .wall { position: relative; transform-origin: top left; background: #000; }
 .wall-tile { position: absolute; width: 1920px; height: 1080px; }
+.wall-overview { overflow: visible; }
+html.is-noborder .frame-plate,
+html.is-noborder .frame-stroke { display: none !important; }
 .screen { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
 .screen.is-off { filter: grayscale(1); opacity: 0.9; pointer-events: none; }
 .screen.is-ufg-dim { filter: grayscale(1) blur(2px); opacity: 0.5; }

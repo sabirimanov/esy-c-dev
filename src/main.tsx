@@ -6,7 +6,10 @@ import "@fontsource/roboto/latin-700.css"
 import "@fontsource/roboto/latin-900.css"
 import "@fontsource/inter/latin-400.css"
 import { App } from "./App"
+import { applyTabletDomClass } from "./tablet/mode"
 import "./styles.css"
+
+applyTabletDomClass()
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
