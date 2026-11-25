@@ -20,6 +20,12 @@ h1, h2, h3, p { margin: 0; }
 .wall { position: relative; transform-origin: top left; background: #000; }
 .wall-tile { position: absolute; width: 1920px; height: 1080px; }
 .wall-overview { overflow: visible; }
+html.is-overview,
+html.is-overview body,
+html.is-overview #root {
+  overflow: hidden;
+  background: #000;
+}
 html.is-noborder .frame-plate,
 html.is-noborder .frame-stroke { display: none !important; }
 .screen { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #000; }

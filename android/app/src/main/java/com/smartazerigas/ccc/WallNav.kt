@@ -39,6 +39,19 @@ data class WallNav(
 
     fun exitOverview(): WallNav = copy(overview = false)
 
+    /** Full wall canvas size in CSS px (for View All zoom host). */
+    val overviewWidthPx: Int
+        get() = when (dashboard) {
+            Dashboard.OPERATIONS -> 7 * 1920
+            Dashboard.SOCNOC -> 4 * 1920
+        }
+
+    val overviewHeightPx: Int
+        get() = 3 * 1080
+
+    val overviewAspect: Float
+        get() = overviewWidthPx.toFloat() / overviewHeightPx.toFloat()
+
     fun path(): String = when {
         overview && dashboard == Dashboard.OPERATIONS -> "/overview"
         overview && dashboard == Dashboard.SOCNOC -> "/socnoc/overview"

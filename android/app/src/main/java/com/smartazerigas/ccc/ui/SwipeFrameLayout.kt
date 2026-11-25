@@ -9,7 +9,7 @@ import kotlin.math.abs
 
 /**
  * Detects horizontal page swipes without blocking taps / vertical scrolls inside the WebView.
- * Swipe right (finger moves right) → next; swipe left → previous. Matches the wall remote UX.
+ * Finger swipe left → next page; swipe right → previous (carousel / page-turn direction).
  */
 class SwipeFrameLayout @JvmOverloads constructor(
     context: Context,
@@ -38,7 +38,8 @@ class SwipeFrameLayout @JvmOverloads constructor(
             if (abs(dx) < minDistancePx) return false
             if (abs(dx) < abs(dy) * 1.2f) return false
             if (abs(velocityX) < minVelocity) return false
-            if (dx > 0) onSwipeNext?.invoke() else onSwipePrev?.invoke()
+            // Invert: finger moves left (dx < 0) → next; right → previous.
+            if (dx < 0) onSwipeNext?.invoke() else onSwipePrev?.invoke()
             return true
         }
     })

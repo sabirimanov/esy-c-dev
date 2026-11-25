@@ -96,6 +96,23 @@ function RouteScreen() {
   )
 }
 
+function setOverviewViewport(width: number, height: number) {
+  applyTabletDomClass()
+  fitPage(width, height)
+  document.documentElement.classList.add("is-overview")
+  const meta = document.querySelector('meta[name="viewport"]')
+  const prev = meta?.getAttribute("content") ?? "width=1920"
+  meta?.setAttribute(
+    "content",
+    `width=${width}, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no`,
+  )
+  return () => {
+    document.documentElement.classList.remove("is-overview")
+    meta?.setAttribute("content", prev)
+    fitPage(TILE.w, TILE.h)
+  }
+}
+
 /** Full Operations wall (7×3) at native 16:9 tile size — for tablet View All + pinch zoom. */
 function OpsOverview() {
   const ids = Array.from({ length: 21 }, (_, i) => i + 1)
@@ -103,10 +120,8 @@ function OpsOverview() {
   const height = 3 * TILE.h
 
   useEffect(() => {
-    applyTabletDomClass()
-    fitPage(width, height)
     document.title = "overview"
-    return () => fitPage(TILE.w, TILE.h)
+    return setOverviewViewport(width, height)
   }, [width, height])
 
   return (
@@ -130,10 +145,8 @@ function SocnocOverview() {
   const height = 3 * TILE.h
 
   useEffect(() => {
-    applyTabletDomClass()
-    fitPage(width, height)
     document.title = "socnoc overview"
-    return () => fitPage(TILE.w, TILE.h)
+    return setOverviewViewport(width, height)
   }, [width, height])
 
   return (

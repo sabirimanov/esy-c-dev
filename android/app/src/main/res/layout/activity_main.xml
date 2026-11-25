@@ -11,45 +11,64 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
-        <com.smartazerigas.ccc.ui.SwipeFrameLayout
-            android:id="@+id/swipeHost"
+        <com.smartazerigas.ccc.ui.ZoomPanLayout
+            android:id="@+id/zoomHost"
             android:layout_width="match_parent"
             android:layout_height="match_parent">
 
-            <android.webkit.WebView
-                android:id="@+id/webView"
+            <com.smartazerigas.ccc.ui.SwipeFrameLayout
+                android:id="@+id/swipeHost"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="@color/ccc_bg"
-                android:overScrollMode="never" />
-        </com.smartazerigas.ccc.ui.SwipeFrameLayout>
+                android:layout_height="match_parent">
+
+                <android.webkit.WebView
+                    android:id="@+id/webView"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@color/ccc_bg"
+                    android:overScrollMode="never" />
+            </com.smartazerigas.ccc.ui.SwipeFrameLayout>
+        </com.smartazerigas.ccc.ui.ZoomPanLayout>
     </com.smartazerigas.ccc.ui.LetterboxLayout>
 
-    <TextView
-        android:id="@+id/pageBadge"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:id="@+id/bottomChrome"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|start"
-        android:layout_marginStart="16dp"
-        android:layout_marginTop="12dp"
-        android:background="@drawable/bg_chip"
-        android:paddingHorizontal="14dp"
-        android:paddingVertical="6dp"
-        android:textColor="@color/ccc_muted"
-        android:textSize="13sp" />
+        android:layout_gravity="bottom"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="10dp"
+        android:paddingTop="6dp">
 
-    <com.google.android.material.floatingactionbutton.FloatingActionButton
-        android:id="@+id/fab"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center_vertical|end"
-        android:layout_marginEnd="12dp"
-        android:contentDescription="@string/menu_content_description"
-        android:src="@drawable/ic_menu_dots"
-        app:backgroundTint="@color/ccc_fab_fill"
-        app:borderWidth="0dp"
-        app:elevation="6dp"
-        app:fabSize="normal"
-        app:maxImageSize="22dp"
-        app:tint="@color/ccc_cyan" />
+        <TextView
+            android:id="@+id/pageBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_chip"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="4dp"
+            android:textColor="@color/ccc_muted"
+            android:textSize="11sp" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fab"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="@string/menu_content_description"
+            android:src="@drawable/ic_menu_dots"
+            app:backgroundTint="@color/ccc_fab_fill"
+            app:borderWidth="0dp"
+            app:elevation="4dp"
+            app:fabCustomSize="40dp"
+            app:maxImageSize="16dp"
+            app:tint="@color/ccc_cyan" />
+    </LinearLayout>
 </FrameLayout>

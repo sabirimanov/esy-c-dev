@@ -18,6 +18,10 @@
         <item name="bottomSheetStyle">@style/Widget.SmartAzerigasCCC.BottomSheet</item>
         <item name="android:windowIsFloating">false</item>
         <item name="android:navigationBarColor">@color/ccc_panel</item>
+        <item name="behavior_skipCollapsed">true</item>
+        <item name="behavior_fitToContents">true</item>
+        <item name="behavior_peekHeight">0dp</item>
+        <item name="behavior_expandedOffset">0dp</item>
     </style>
 
     <style name="Widget.SmartAzerigasCCC.BottomSheet" parent="Widget.MaterialComponents.BottomSheet.Modal">

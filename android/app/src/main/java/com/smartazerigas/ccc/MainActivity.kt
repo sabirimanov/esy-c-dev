@@ -16,16 +16,19 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.smartazerigas.ccc.ui.LetterboxLayout
 import com.smartazerigas.ccc.ui.SwipeFrameLayout
+import com.smartazerigas.ccc.ui.ZoomPanLayout
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var letterbox: LetterboxLayout
+    private lateinit var zoomHost: ZoomPanLayout
     private lateinit var swipeHost: SwipeFrameLayout
     private lateinit var pageBadge: TextView
     private lateinit var fab: FloatingActionButton
@@ -40,6 +43,7 @@ class MainActivity : AppCompatActivity() {
 
         webView = findViewById(R.id.webView)
         letterbox = findViewById(R.id.letterbox)
+        zoomHost = findViewById(R.id.zoomHost)
         swipeHost = findViewById(R.id.swipeHost)
         pageBadge = findViewById(R.id.pageBadge)
         fab = findViewById(R.id.fab)
@@ -111,6 +115,7 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 url ?: return
                 decodeNav(url)?.let { nav = it; applyChrome() }
+                if (nav.overview) injectOverviewViewport()
             }
         }
 
@@ -122,12 +127,36 @@ class MainActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_DEFAULT
             useWideViewPort = true
             loadWithOverviewMode = true
-            builtInZoomControls = true
+            builtInZoomControls = false
             displayZoomControls = false
-            setSupportZoom(true)
+            setSupportZoom(false)
             textZoom = 100
             userAgentString = "$userAgentString SmartAzerigasCCC/1.0"
         }
+    }
+
+    private fun injectOverviewViewport() {
+        val w = nav.overviewWidthPx
+        val h = nav.overviewHeightPx
+        val js = """
+            (function(){
+              var m = document.querySelector('meta[name="viewport"]');
+              if (!m) {
+                m = document.createElement('meta');
+                m.name = 'viewport';
+                document.head.appendChild(m);
+              }
+              m.setAttribute('content', 'width=$w, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no');
+              document.documentElement.classList.add('is-overview');
+              document.documentElement.style.width = '${w}px';
+              document.documentElement.style.height = '${h}px';
+              document.body.style.width = '${w}px';
+              document.body.style.height = '${h}px';
+              var root = document.getElementById('root');
+              if (root) { root.style.width = '${w}px'; root.style.height = '${h}px'; }
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(js, null)
     }
 
     private fun go(next: WallNav, force: Boolean = false) {
@@ -141,8 +170,13 @@ class MainActivity : AppCompatActivity() {
         val overview = nav.overview
         letterbox.enabledLetterbox = !overview
         swipeHost.swipeEnabled = !overview
-        webView.settings.setSupportZoom(overview)
-        webView.settings.builtInZoomControls = overview
+        zoomHost.contentAspect = nav.overviewAspect
+        zoomHost.zoomEnabled = overview
+        if (overview) zoomHost.resetTransform(requestLayout = true)
+
+        // Overview zoom is handled by ZoomPanLayout; disable WebView's own zoom.
+        webView.settings.setSupportZoom(false)
+        webView.settings.builtInZoomControls = false
 
         pageBadge.text = if (overview) {
             getString(R.string.view_all)
@@ -155,6 +189,16 @@ class MainActivity : AppCompatActivity() {
         val dialog = BottomSheetDialog(this, R.style.Theme_SmartAzerigasCCC_BottomSheet)
         val sheet = layoutInflater.inflate(R.layout.sheet_controls, null)
         dialog.setContentView(sheet)
+
+        dialog.setOnShowListener {
+            val bottomSheet = dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+            bottomSheet?.let { view ->
+                val behavior = BottomSheetBehavior.from(view)
+                behavior.skipCollapsed = true
+                behavior.isFitToContents = true
+                behavior.state = BottomSheetBehavior.STATE_EXPANDED
+            }
+        }
 
         val pageLabel = sheet.findViewById<TextView>(R.id.sheetPageLabel)
         val btnOps = sheet.findViewById<MaterialButton>(R.id.btnOperations)
