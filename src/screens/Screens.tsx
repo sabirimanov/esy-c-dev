@@ -486,7 +486,7 @@ function Screen2(_props: { state: WallState }) {
     { label: "Nov", x: 1827.07 },
   ]
   return (
-    <Frame mirror>
+    <Frame>
       <Pin x={43} y={33} size={32} weight={900} color="#34efde" lh={40}>CALIBRATION STATUS</Pin>
       {kpis.map((card) => (
         <span key={card.label}>
@@ -2176,7 +2176,7 @@ function Screen15() {
   const opsConnectTotal = connectOpsHardcoded.reduce((sum, row) => sum + row.connect, 0)
 
   return (
-    <Frame mirror>
+    <Frame>
       <Pin x={67} y={28} size={32} weight={900} color="#34efde" lh={40}>REVENUE & BILLING PERFORMANCE</Pin>
 
       {kpis.map((card) => (
@@ -3075,7 +3075,7 @@ function Screen21({ state }: { state: WallState }) {
   ]
   const clusterRows = cccTopPressureClusters.map((cluster, index) => ({ ...cluster, ...clusterLayout[index] }))
   return (
-    <Frame>
+    <Frame mirror>
       <Pin x={32} y={28} size={32} weight={900} color="#34efde" lh={40}>PRESSURE & LEAK DETECTION</Pin>
       {kpis.map((card) => (
         <span key={card.label}>
@@ -3171,24 +3171,24 @@ function Screen21({ state }: { state: WallState }) {
 
 const bodies: Record<number, (state: WallState) => ReactNode> = {
   1: (state) => <Screen1 state={state} />,
-  2: (state) => (state.ufgOpen ? <UfgScreen2 state={state} /> : <Screen2 state={state} />),
+  2: (state) => (state.ufgOpen ? <UfgScreen2 state={state} /> : <Screen7 state={state} />),
   3: () => <Screen3 />,
   4: () => <Screen4 />,
   5: () => <Screen5 />,
   6: () => <Screen6 />,
-  7: (state) => <Screen7 state={state} />,
+  7: (state) => <Screen2 state={state} />,
   8: (state) => (state.ufgOpen ? <UfgScreen8 /> : <Screen8 state={state} />),
   9: (state) => (state.ufgOpen ? <UfgScreen9 state={state} /> : <Screen9 state={state} />),
   13: (state) => <Screen13CallCenter state={state} />,
   // 22: (state) => <Screen22 state={state} />,
   14: (state) => <Screen14 state={state} />,
-  15: () => <Screen15 />,
+  15: (state) => <Screen21 state={state} />,
   16: (state) => <Screen16 state={state} />,
   17: (state) => <Screen17 state={state} />,
   18: () => <Screen18 />,
   19: () => <Screen19 />,
   20: (state) => <Screen20 state={state} />,
-  21: (state) => <Screen21 state={state} />,
+  21: () => <Screen15 />,
 }
 
 export function screenBody(id: number, state: WallState) {
