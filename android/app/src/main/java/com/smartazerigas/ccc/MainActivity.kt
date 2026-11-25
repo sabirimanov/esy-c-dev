@@ -72,8 +72,8 @@ class MainActivity : AppCompatActivity() {
         reserveBottomChrome()
 
         zoomHost.onEnterSinglePage = { page ->
-            if (nav.overview && !animating) {
-                go(nav.copy(overview = false, page = page).clamped())
+            if (nav.overview) {
+                go(nav.copy(overview = false, page = page).clamped(), force = true)
             }
         }
         zoomHost.onPinchOut = {
@@ -330,7 +330,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun go(next: WallNav, force: Boolean = false) {
         if (!force && next == nav) return
-        if (animating || dragging) return
+        if (!force && (animating || dragging)) return
+        animating = false
+        dragging = false
         nav = next.clamped()
         applyChrome()
         front.animate().cancel()

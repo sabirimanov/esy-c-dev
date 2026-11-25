@@ -56,6 +56,11 @@ class ZoomPanLayout @JvmOverloads constructor(
     private var pinchOutFired = false
     private var zoomAnimator: ValueAnimator? = null
 
+    // Manual double-tap (GestureDetector is unreliable while ScaleGestureDetector also runs).
+    private var lastTapTime = 0L
+    private var lastTapX = 0f
+    private var lastTapY = 0f
+
     private val scaleDetector = ScaleGestureDetector(
         context,
         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -117,10 +122,11 @@ class ZoomPanLayout @JvmOverloads constructor(
             }
 
             override fun onDoubleTap(e: MotionEvent): Boolean {
-                if (!zoomEnabled || enteredPage) return false
-                zoomIntoPage(pageAtPoint(e.x, e.y), enterSingle = true)
+                handleDoubleTap(e.x, e.y)
                 return true
             }
+
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean = false
         },
     )
 
@@ -156,15 +162,18 @@ class ZoomPanLayout @JvmOverloads constructor(
 
     /** Smooth zoom into a page until it fills the viewport, then open single-page mode. */
     fun zoomIntoPage(page: Int, enterSingle: Boolean) {
-        if (!zoomEnabled) return
+        if (!zoomEnabled || enteredPage) return
         val safePage = page.coerceIn(1, gridCols * gridRows)
         val target = transformForPage(safePage, fillScale = enterPageScale)
-        animateTo(target.scale, target.x, target.y, durationMs = 480) {
-            if (enterSingle && !enteredPage) {
-                enteredPage = true
-                onEnterSinglePage?.invoke(safePage)
-            }
+        if (enterSingle) enteredPage = true
+        animateTo(target.scale, target.x, target.y, durationMs = 520) {
+            if (enterSingle) onEnterSinglePage?.invoke(safePage)
         }
+    }
+
+    private fun handleDoubleTap(x: Float, y: Float) {
+        if (!zoomEnabled || enteredPage) return
+        zoomIntoPage(pageAtPoint(x, y), enterSingle = true)
     }
 
     fun pageAtCenter(): Int = pageAtPoint(measuredWidth / 2f, measuredHeight / 2f)
@@ -304,8 +313,32 @@ class ZoomPanLayout @JvmOverloads constructor(
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!zoomEnabled && !pinchOutEnabled) return super.onTouchEvent(event)
+        if (event.pointerCount >= 2) {
+            scaleDetector.onTouchEvent(event)
+            lastTapTime = 0L
+            return true
+        }
         scaleDetector.onTouchEvent(event)
-        if (zoomEnabled) panDetector.onTouchEvent(event)
+        if (zoomEnabled) {
+            panDetector.onTouchEvent(event)
+            // Backup double-tap detection — works even when GestureDetector misses.
+            when (event.actionMasked) {
+                MotionEvent.ACTION_UP -> {
+                    val now = event.eventTime
+                    val dx = event.x - lastTapX
+                    val dy = event.y - lastTapY
+                    val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                    if (lastTapTime > 0 && now - lastTapTime <= 320 && dist < 96f * resources.displayMetrics.density) {
+                        handleDoubleTap(event.x, event.y)
+                        lastTapTime = 0L
+                    } else {
+                        lastTapTime = now
+                        lastTapX = event.x
+                        lastTapY = event.y
+                    }
+                }
+            }
+        }
         return true
     }
 

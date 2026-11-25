@@ -145,15 +145,12 @@ export async function initTerrain(
   camera.right = size * ar
   camera.top = size
   camera.bottom = -size
-  // fullWall: show entire master map (viewOffset covers WALL) into a smaller canvas.
-  camera.setViewOffset(
-    WALL.w,
-    WALL.h,
-    fullWall ? 0 : tile.x,
-    fullWall ? 0 : tile.y,
-    fullWall ? WALL.w : viewW,
-    fullWall ? WALL.h : viewH,
-  )
+  if (fullWall) {
+    // Full overview map: no tile crop — entire wall frustum into the (possibly smaller) canvas.
+    camera.clearViewOffset()
+  } else {
+    camera.setViewOffset(WALL.w, WALL.h, tile.x, tile.y, TILE.w, TILE.h)
+  }
   camera.updateProjectionMatrix()
   camera.position
     .set(

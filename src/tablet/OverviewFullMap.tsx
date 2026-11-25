@@ -9,7 +9,8 @@ import { useWall } from "../wall/useWall"
 import { OVERVIEW_TILE_SCALE, overviewTileSize } from "./overviewStage"
 
 /**
- * Shared map for View All: per-tile green glow immediately + one Three.js full-map terrain.
+ * Shared map for View All: per-tile green glow immediately + one Three.js full-map terrain
+ * (with overlays / circles / counts).
  */
 export function OverviewFullMap() {
   useMapScreenPresence()
@@ -38,6 +39,18 @@ export function OverviewFullMap() {
     [emergency.selectCall, emergency.openCallList, emergency.expandCluster, emergency.clearMapSelection],
   )
 
+  // Keep latest values for async terrain init.
+  const selectedRef = useRef(selected)
+  const placeRef = useRef(place)
+  const overlayRef = useRef(overlay)
+  const callUiRef = useRef(callUi)
+  const callHandlersRef = useRef(callHandlers)
+  selectedRef.current = selected
+  placeRef.current = place
+  overlayRef.current = overlay
+  callUiRef.current = callUi
+  callHandlersRef.current = callHandlers
+
   useEffect(() => {
     const node = host.current
     if (!node) return
@@ -49,13 +62,11 @@ export function OverviewFullMap() {
           return
         }
         terrain.current = api
-        api.setRegion(selected)
-        api.setPlace(place)
-        if (overlayOn) {
-          api.setCallHandlers(callHandlers)
-          api.setCallUi(callUi)
-        }
-        api.setOverlay(overlay)
+        api.setRegion(selectedRef.current)
+        api.setPlace(placeRef.current)
+        api.setCallHandlers(callHandlersRef.current)
+        api.setCallUi(callUiRef.current)
+        api.setOverlay(overlayRef.current)
       })
       .catch((err) => {
         console.error("OverviewFullMap terrain failed", err)
@@ -65,7 +76,6 @@ export function OverviewFullMap() {
       terrain.current?.dispose()
       terrain.current = null
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -77,22 +87,18 @@ export function OverviewFullMap() {
   }, [place])
 
   useEffect(() => {
-    terrain.current?.setOverlay(overlay)
-  }, [overlay])
-
-  useEffect(() => {
-    if (!overlayOn) return
-    terrain.current?.setCallHandlers(callHandlers)
-    terrain.current?.setCallUi(callUi)
-  }, [overlayOn, callHandlers, callUi])
+    const api = terrain.current
+    if (!api) return
+    api.setCallHandlers(callHandlers)
+    api.setCallUi(callUi)
+    api.setOverlay(overlay)
+  }, [overlay, callUi, callHandlers])
 
   const t = overviewTileSize()
-  // Map block = screens 3,4,5 / 10,11,12 / 17,18,19 → starts at col 2.
   const left = 2 * t.w
   const top = 0
   const w = 3 * t.w
   const h = 3 * t.h
-  // Block is 2880×1620 (half of 5760×3240). Terrain canvas is also 2880×1620 → 1:1.
 
   return (
     <div
@@ -108,7 +114,6 @@ export function OverviewFullMap() {
         pointerEvents: "none",
       }}
     >
-      {/* Green glow — visible immediately while WebGL loads */}
       {MAP_SCREENS.map((id) => {
         const index = MAP_SCREENS.indexOf(id)
         const col = index % 3
@@ -139,7 +144,6 @@ export function OverviewFullMap() {
         )
       })}
 
-      {/* One shared 3D map on top of glows */}
       <div
         ref={host}
         className="overview-full-map-host"
@@ -149,6 +153,7 @@ export function OverviewFullMap() {
           top: 0,
           width: 2880,
           height: 1620,
+          zIndex: 1,
         }}
       />
     </div>
