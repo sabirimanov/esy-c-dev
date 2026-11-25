@@ -80,9 +80,11 @@ export function ScreenView({ id }: { id: number }) {
       data-ufg={state.ufgOpen ? "open" : "closed"}
       data-map-mode={state.mapMode}
       data-map-preview={state.mapPreviewSlide ?? ""}
+      data-overview-map={overview && hasMap ? "1" : undefined}
       onClick={!overview && id === 1 ? () => patch({ ufgOpen: !state.ufgOpen }) : undefined}
+      style={overview && hasMap ? { background: "transparent" } : undefined}
     >
-      {/* View All uses one shared OverviewFullMap — skip per-tile WebGL here. */}
+      {/* View All: glow+3D come from OverviewFullMap under transparent map tiles. */}
       {hasMap && !overview ? <MapScreenLayer id={id} /> : null}
       {screenBody(id, state)}
     </div>

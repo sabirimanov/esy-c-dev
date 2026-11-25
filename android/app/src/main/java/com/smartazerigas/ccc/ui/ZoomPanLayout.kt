@@ -1,5 +1,8 @@
 package com.smartazerigas.ccc.ui
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.util.AttributeSet
@@ -8,7 +11,6 @@ import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
-import kotlin.math.min
 
 /**
  * Smooth pinch-zoom + pan for View All, plus pinch-out detection on single pages.
@@ -29,7 +31,7 @@ class ZoomPanLayout @JvmOverloads constructor(
     var onPinchOut: (() -> Unit)? = null
 
     /**
-     * Fired once when overview zoom reaches ~one page.
+     * Fired once when overview zoom reaches ~one page (pinch or double-tap).
      * page is 1-based wall id.
      */
     var onEnterSinglePage: ((page: Int) -> Unit)? = null
@@ -39,9 +41,9 @@ class ZoomPanLayout @JvmOverloads constructor(
     var gridCols: Int = 7
     var gridRows: Int = 3
 
-    /** Overview scale at which one column roughly fills the width (cols / 1.05). */
+    /** Overview scale at which one column roughly fills the width. */
     private val enterPageScale: Float
-        get() = gridCols / 1.08f
+        get() = gridCols / 1.05f
 
     private var scale = 1f
     private val minScale = 1f
@@ -52,6 +54,7 @@ class ZoomPanLayout @JvmOverloads constructor(
     private var pinchOutProgress = 1f
     private var enteredPage = false
     private var pinchOutFired = false
+    private var zoomAnimator: ValueAnimator? = null
 
     private val scaleDetector = ScaleGestureDetector(
         context,
@@ -64,8 +67,8 @@ class ZoomPanLayout @JvmOverloads constructor(
 
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 if (zoomEnabled) {
+                    if (enteredPage) return true
                     val factor = detector.scaleFactor
-                    // Ease extreme jumps for smoother feel
                     val eased = 1f + (factor - 1f) * 0.92f
                     val newScale = (scale * eased).coerceIn(minScale, maxScale)
                     val focusX = detector.focusX
@@ -103,7 +106,7 @@ class ZoomPanLayout @JvmOverloads constructor(
                 distanceX: Float,
                 distanceY: Float,
             ): Boolean {
-                if (!zoomEnabled || scaleDetector.isInProgress) return false
+                if (!zoomEnabled || enteredPage || scaleDetector.isInProgress) return false
                 if (scale <= minScale + 0.01f) return false
                 transX -= distanceX
                 transY -= distanceY
@@ -114,15 +117,8 @@ class ZoomPanLayout @JvmOverloads constructor(
             }
 
             override fun onDoubleTap(e: MotionEvent): Boolean {
-                if (!zoomEnabled) return false
-                if (scale > minScale + 0.05f) {
-                    animateTo(1f, 0f, 0f)
-                } else {
-                    val target = min(maxScale, enterPageScale * 0.72f)
-                    val nx = measuredWidth / 2f - e.x * target
-                    val ny = measuredHeight / 2f - e.y * target
-                    animateTo(target, nx, ny)
-                }
+                if (!zoomEnabled || enteredPage) return false
+                zoomIntoPage(pageAtPoint(e.x, e.y), enterSingle = true)
                 return true
             }
         },
@@ -132,7 +128,8 @@ class ZoomPanLayout @JvmOverloads constructor(
 
     fun resetTransform(animate: Boolean) {
         enteredPage = false
-        if (animate) animateTo(1f, 0f, 0f)
+        zoomAnimator?.cancel()
+        if (animate) animateTo(1f, 0f, 0f, durationMs = 280)
         else {
             scale = 1f
             transX = 0f
@@ -144,38 +141,71 @@ class ZoomPanLayout @JvmOverloads constructor(
 
     /** Focus a wall page (1-based) at a scale slightly wider than one page. */
     fun focusPage(page: Int, animate: Boolean = true) {
-        val cols = gridCols
-        val rows = gridRows
-        val index = (page - 1).coerceIn(0, cols * rows - 1)
-        val col = index % cols
-        val row = index / cols
-        val targetScale = (cols / 1.35f).coerceIn(2.5f, maxScale)
-        val pageCx = (col + 0.5f) / cols * measuredWidth
-        val pageCy = (row + 0.5f) / rows * measuredHeight
-        // Keep stage vertically centered content in view: approximate mid.
-        val nx = measuredWidth / 2f - pageCx * targetScale
-        val ny = measuredHeight / 2f - pageCy * targetScale
         enteredPage = false
-        if (animate) animateTo(targetScale, nx, ny)
+        val target = transformForPage(page, fillScale = enterPageScale / 1.28f)
+        if (animate) animateTo(target.scale, target.x, target.y, durationMs = 360)
         else {
-            scale = targetScale
-            transX = nx
-            transY = ny
+            scale = target.scale
+            transX = target.x
+            transY = target.y
             clampTranslation()
             applyToChild()
             notifyTransform()
         }
     }
 
-    fun pageAtCenter(): Int {
+    /** Smooth zoom into a page until it fills the viewport, then open single-page mode. */
+    fun zoomIntoPage(page: Int, enterSingle: Boolean) {
+        if (!zoomEnabled) return
+        val safePage = page.coerceIn(1, gridCols * gridRows)
+        val target = transformForPage(safePage, fillScale = enterPageScale)
+        animateTo(target.scale, target.x, target.y, durationMs = 480) {
+            if (enterSingle && !enteredPage) {
+                enteredPage = true
+                onEnterSinglePage?.invoke(safePage)
+            }
+        }
+    }
+
+    fun pageAtCenter(): Int = pageAtPoint(measuredWidth / 2f, measuredHeight / 2f)
+
+    fun pageAtPoint(viewX: Float, viewY: Float): Int {
         val cols = gridCols
         val rows = gridRows
-        if (scale < 1.01f) return 1
-        val cx = (measuredWidth / 2f - transX) / scale
-        val cy = (measuredHeight / 2f - transY) / scale
-        val col = ((cx / measuredWidth) * cols).toInt().coerceIn(0, cols - 1)
-        val row = ((cy / measuredHeight) * rows).toInt().coerceIn(0, rows - 1)
+        val stage = stageRect()
+        val cx = (viewX - transX) / scale
+        val cy = (viewY - transY) / scale
+        val lx = ((cx - stage.left) / stage.width).coerceIn(0f, 0.999f)
+        val ly = ((cy - stage.top) / stage.height).coerceIn(0f, 0.999f)
+        val col = (lx * cols).toInt().coerceIn(0, cols - 1)
+        val row = (ly * rows).toInt().coerceIn(0, rows - 1)
         return row * cols + col + 1
+    }
+
+    private data class Transform(val scale: Float, val x: Float, val y: Float)
+    private data class RectF(val left: Float, val top: Float, val width: Float, val height: Float)
+
+    /** Overview stage is fit-width and vertically centered inside the WebView. */
+    private fun stageRect(): RectF {
+        val stageW = measuredWidth.toFloat().coerceAtLeast(1f)
+        val stageH = stageW * (gridRows * 9f) / (gridCols * 16f)
+        val stageTop = (measuredHeight - stageH) / 2f
+        return RectF(0f, stageTop, stageW, stageH)
+    }
+
+    private fun transformForPage(page: Int, fillScale: Float): Transform {
+        val cols = gridCols
+        val rows = gridRows
+        val index = (page - 1).coerceIn(0, cols * rows - 1)
+        val col = index % cols
+        val row = index / cols
+        val stage = stageRect()
+        val pageCx = stage.left + (col + 0.5f) / cols * stage.width
+        val pageCy = stage.top + (row + 0.5f) / rows * stage.height
+        val targetScale = fillScale.coerceIn(2.2f, maxScale)
+        val nx = measuredWidth / 2f - pageCx * targetScale
+        val ny = measuredHeight / 2f - pageCy * targetScale
+        return Transform(targetScale, nx, ny)
     }
 
     private fun maybeEnterSinglePage() {
@@ -185,22 +215,54 @@ class ZoomPanLayout @JvmOverloads constructor(
         onEnterSinglePage?.invoke(pageAtCenter())
     }
 
-    private fun animateTo(targetScale: Float, targetX: Float, targetY: Float) {
+    private fun animateTo(
+        targetScale: Float,
+        targetX: Float,
+        targetY: Float,
+        durationMs: Long = 320,
+        onEnd: (() -> Unit)? = null,
+    ) {
+        zoomAnimator?.cancel()
         val startS = scale
         val startX = transX
         val startY = transY
-        val anim = android.animation.ValueAnimator.ofFloat(0f, 1f)
-        anim.duration = 220
-        anim.interpolator = DecelerateInterpolator()
-        anim.addUpdateListener {
-            val t = it.animatedValue as Float
-            scale = startS + (targetScale - startS) * t
-            transX = startX + (targetX - startX) * t
-            transY = startY + (targetY - startY) * t
+        // Clamp end translation for the target scale.
+        val end = run {
+            scale = targetScale
+            transX = targetX
+            transY = targetY
             clampTranslation()
+            val ex = transX
+            val ey = transY
+            scale = startS
+            transX = startX
+            transY = startY
+            Transform(targetScale, ex, ey)
+        }
+        val anim = ValueAnimator.ofFloat(0f, 1f)
+        zoomAnimator = anim
+        anim.duration = durationMs
+        anim.interpolator = DecelerateInterpolator(1.6f)
+        anim.addUpdateListener {
+            val t = it.animatedFraction
+            // Smoothstep for a softer settle.
+            val e = t * t * (3f - 2f * t)
+            scale = startS + (end.scale - startS) * e
+            transX = startX + (end.x - startX) * e
+            transY = startY + (end.y - startY) * e
             applyToChild()
             notifyTransform()
         }
+        anim.addListener(object : AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: Animator) {
+                scale = end.scale
+                transX = end.x
+                transY = end.y
+                applyToChild()
+                notifyTransform()
+                onEnd?.invoke()
+            }
+        })
         anim.start()
     }
 

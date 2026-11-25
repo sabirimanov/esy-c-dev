@@ -72,8 +72,9 @@ export async function initTerrain(
   opts?: { fullWall?: boolean },
 ): Promise<Terrain> {
   const fullWall = opts?.fullWall === true
-  const viewW = fullWall ? WALL.w : TILE.w
-  const viewH = fullWall ? WALL.h : TILE.h
+  // Overview renders the full 3×3 map once; half framebuffer keeps tablet WebView alive.
+  const viewW = fullWall ? Math.round(WALL.w / 2) : TILE.w
+  const viewH = fullWall ? Math.round(WALL.h / 2) : TILE.h
   const response = await fetch(mapConfig.model)
   if (!response.ok) throw new Error("Model load failed: " + response.status)
   const raw = new Uint8Array(await response.arrayBuffer())
@@ -144,7 +145,15 @@ export async function initTerrain(
   camera.right = size * ar
   camera.top = size
   camera.bottom = -size
-  camera.setViewOffset(WALL.w, WALL.h, fullWall ? 0 : tile.x, fullWall ? 0 : tile.y, viewW, viewH)
+  // fullWall: show entire master map (viewOffset covers WALL) into a smaller canvas.
+  camera.setViewOffset(
+    WALL.w,
+    WALL.h,
+    fullWall ? 0 : tile.x,
+    fullWall ? 0 : tile.y,
+    fullWall ? WALL.w : viewW,
+    fullWall ? WALL.h : viewH,
+  )
   camera.updateProjectionMatrix()
   camera.position
     .set(

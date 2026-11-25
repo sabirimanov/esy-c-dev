@@ -33,11 +33,30 @@ h1, h2, h3, p { margin: 0; }
 .overview-full-map {
   pointer-events: none;
 }
+.overview-full-map-host {
+  position: absolute;
+  overflow: hidden;
+}
+.overview-full-map-host canvas {
+  display: block;
+  width: 2880px !important;
+  height: 1620px !important;
+  max-width: none !important;
+  max-height: none !important;
+}
 .overview-half-tile {
   position: absolute;
   z-index: 1;
   content-visibility: auto;
   contain-intrinsic-size: 960px 540px;
+}
+/* Map screens in View All must not paint a black plate over the shared map. */
+html.is-overview .screen[data-overview-map="1"] {
+  background: transparent !important;
+}
+html.is-overview .screen[data-overview-map="1"].is-off {
+  opacity: 1;
+  filter: none;
 }
 .overview-skeleton {
   width: 100%;

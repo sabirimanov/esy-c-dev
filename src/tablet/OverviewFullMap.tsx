@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef } from "react"
 import { useEmergencyCalls } from "../data/emergencyCalls"
+import { MAP_SCREENS, MapGlowOnly } from "../wall/map"
 import { useMapScreenPresence } from "../wall/mapLayerControl"
 import { cityById, mapRegionId } from "../wall/places"
 import { initTerrain, type Terrain } from "../wall/terrain"
 import { useActiveMapOverlay } from "../wall/useMapCarousel"
 import { useWall } from "../wall/useWall"
-import { overviewTileSize } from "./overviewStage"
+import { OVERVIEW_TILE_SCALE, overviewTileSize } from "./overviewStage"
 
 /**
- * One shared Three.js terrain covering the whole 3×3 map block on View All.
- * Avoids mounting nine WebGL contexts while keeping the live map visible immediately.
+ * Shared map for View All: per-tile green glow immediately + one Three.js full-map terrain.
  */
 export function OverviewFullMap() {
   useMapScreenPresence()
@@ -42,26 +42,29 @@ export function OverviewFullMap() {
     const node = host.current
     if (!node) return
     let active = true
-    initTerrain(node, { x: 0, y: 0 }, { fullWall: true }).then((api) => {
-      if (!active) {
-        api.dispose()
-        return
-      }
-      terrain.current = api
-      api.setRegion(selected)
-      api.setPlace(place)
-      if (overlayOn) {
-        api.setCallHandlers(callHandlers)
-        api.setCallUi(callUi)
-      }
-      api.setOverlay(overlay)
-    })
+    initTerrain(node, { x: 0, y: 0 }, { fullWall: true })
+      .then((api) => {
+        if (!active) {
+          api.dispose()
+          return
+        }
+        terrain.current = api
+        api.setRegion(selected)
+        api.setPlace(place)
+        if (overlayOn) {
+          api.setCallHandlers(callHandlers)
+          api.setCallUi(callUi)
+        }
+        api.setOverlay(overlay)
+      })
+      .catch((err) => {
+        console.error("OverviewFullMap terrain failed", err)
+      })
     return () => {
       active = false
       terrain.current?.dispose()
       terrain.current = null
     }
-    // Mount once for the overview session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -84,11 +87,12 @@ export function OverviewFullMap() {
   }, [overlayOn, callHandlers, callUi])
 
   const t = overviewTileSize()
-  // Map block starts at screen 3 (col 2, row 0) and spans 3×3 tiles.
+  // Map block = screens 3,4,5 / 10,11,12 / 17,18,19 → starts at col 2.
   const left = 2 * t.w
   const top = 0
   const w = 3 * t.w
   const h = 3 * t.h
+  // Block is 2880×1620 (half of 5760×3240). Terrain canvas is also 2880×1620 → 1:1.
 
   return (
     <div
@@ -104,16 +108,49 @@ export function OverviewFullMap() {
         pointerEvents: "none",
       }}
     >
+      {/* Green glow — visible immediately while WebGL loads */}
+      {MAP_SCREENS.map((id) => {
+        const index = MAP_SCREENS.indexOf(id)
+        const col = index % 3
+        const row = Math.floor(index / 3)
+        return (
+          <div
+            key={id}
+            style={{
+              position: "absolute",
+              left: col * t.w,
+              top: row * t.h,
+              width: t.w,
+              height: t.h,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                width: 1920,
+                height: 1080,
+                transform: `scale(${OVERVIEW_TILE_SCALE})`,
+                transformOrigin: "0 0",
+              }}
+            >
+              <MapGlowOnly screen={id} />
+            </div>
+          </div>
+        )
+      })}
+
+      {/* One shared 3D map on top of glows */}
       <div
+        ref={host}
+        className="overview-full-map-host"
         style={{
-          width: 5760,
-          height: 3240,
-          transform: "scale(0.5)",
-          transformOrigin: "0 0",
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: 2880,
+          height: 1620,
         }}
-      >
-        <div ref={host} className="map-terrain" style={{ width: 5760, height: 3240 }} />
-      </div>
+      />
     </div>
   )
 }
