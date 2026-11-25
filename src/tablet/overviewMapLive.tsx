@@ -1,26 +1,26 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { MAP_SCREENS } from "../wall/map"
 import { isOverviewPath } from "./mode"
+import { OVERVIEW_TILE_SCALE } from "./overviewStage"
 
-const TILE_W = 1920
-const TILE_H = 1080
+const TILE_W = 1920 * OVERVIEW_TILE_SCALE
+const TILE_H = 1080 * OVERVIEW_TILE_SCALE
 const COLS = 7
-const WALL_W = COLS * TILE_W
 
-/** Live Three.js when the visible CSS width is ≤ ~4 screens (user zoomed in from full wall). */
-const LIVE_MAX_VISIBLE_WIDTH = TILE_W * 4.2
-/** Max simultaneous WebGL terrains — keeps the tablet from locking up. */
+/** Native ZoomPanLayout scale above this unlocks live Three.js (page already shows all 21 at scale=1). */
+const LIVE_NATIVE_SCALE = 2.2
 const MAX_LIVE_TILES = 4
-const VIEW_PAD = 240
 
 type OverviewMapLiveValue = {
   zoomedIn: boolean
   liveIds: ReadonlySet<number>
+  nativeScale: number
 }
 
 const OverviewMapLiveContext = createContext<OverviewMapLiveValue>({
   zoomedIn: false,
   liveIds: new Set(),
+  nativeScale: 1,
 })
 
 function wallRect(screenId: number) {
@@ -37,105 +37,104 @@ function wallRect(screenId: number) {
   }
 }
 
-function computeLiveIds(offsetLeft: number, offsetTop: number, width: number, height: number) {
-  // Prefer visible CSS width: works with Android WebView pinch even when scale reporting is odd.
-  const zoomedIn = width > 0 && width <= LIVE_MAX_VISIBLE_WIDTH
-  if (!zoomedIn) return { zoomedIn: false, liveIds: new Set<number>() }
+/**
+ * Approximate which map tiles are under the zoomed viewport.
+ * content is CSS-fit into the WebView; native scale/pan come from Android ZoomPanLayout.
+ */
+function liveIdsForTransform(scale: number, transX: number, transY: number, viewW: number, viewH: number, wallW: number) {
+  if (scale < LIVE_NATIVE_SCALE) return new Set<number>()
 
-  const left = offsetLeft - VIEW_PAD
-  const top = offsetTop - VIEW_PAD
-  const right = offsetLeft + width + VIEW_PAD
-  const bottom = offsetTop + height + VIEW_PAD
-  const vcx = offsetLeft + width / 2
-  const vcy = offsetTop + height / 2
+  const fit = viewW / wallW
+  // Point in wall CSS space under the view center:
+  const vcx = (viewW / 2 - transX) / (fit * scale)
+  const vcy = (viewH / 2 - transY) / (fit * scale)
+  // Visible wall size:
+  const visW = viewW / (fit * scale)
+  const visH = viewH / (fit * scale)
+  const left = vcx - visW / 2
+  const top = vcy - visH / 2
+  const right = vcx + visW / 2
+  const bottom = vcy + visH / 2
 
-  const visible = MAP_SCREENS.map((id) => {
-    const r = wallRect(id)
-    const intersects = r.left < right && r.right > left && r.top < bottom && r.bottom > top
-    const dist = intersects ? (r.cx - vcx) ** 2 + (r.cy - vcy) ** 2 : Number.POSITIVE_INFINITY
-    return { id, intersects, dist }
-  })
-    .filter((t) => t.intersects)
-    .sort((a, b) => a.dist - b.dist)
-    .slice(0, MAX_LIVE_TILES)
-    .map((t) => t.id)
-
-  return { zoomedIn: true, liveIds: new Set(visible) }
+  return new Set(
+    MAP_SCREENS.map((id) => {
+      const r = wallRect(id)
+      const intersects = r.left < right && r.right > left && r.top < bottom && r.bottom > top
+      const dist = intersects ? (r.cx - vcx) ** 2 + (r.cy - vcy) ** 2 : Number.POSITIVE_INFINITY
+      return { id, intersects, dist }
+    })
+      .filter((t) => t.intersects)
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, MAX_LIVE_TILES)
+      .map((t) => t.id),
+  )
 }
 
-function readViewport() {
-  const vv = window.visualViewport
-  if (vv) {
-    return {
-      offsetLeft: vv.pageLeft ?? vv.offsetLeft,
-      offsetTop: vv.pageTop ?? vv.offsetTop,
-      width: vv.width,
-      height: vv.height,
-    }
-  }
-  // Fallback: approximate from scroll + layout width.
-  const scale = Math.min(1, window.innerWidth / WALL_W)
-  return {
-    offsetLeft: window.scrollX / (scale || 1),
-    offsetTop: window.scrollY / (scale || 1),
-    width: window.innerWidth / (scale || 1),
-    height: window.innerHeight / (scale || 1),
+declare global {
+  interface Window {
+    __CCC_OVERVIEW_ZOOM?: (scale: number, transX: number, transY: number, viewW: number, viewH: number) => void
   }
 }
 
-export function OverviewMapLiveProvider({ children }: { children: ReactNode }) {
+export function OverviewMapLiveProvider({
+  children,
+  cols = 7,
+}: {
+  children: ReactNode
+  cols?: number
+}) {
   const active = isOverviewPath()
-  const [zoomedIn, setZoomedIn] = useState(false)
+  const wallW = cols * TILE_W
+  const [nativeScale, setNativeScale] = useState(1)
   const [liveIds, setLiveIds] = useState<ReadonlySet<number>>(() => new Set())
 
   useEffect(() => {
     if (!active) {
-      setZoomedIn(false)
+      setNativeScale(1)
       setLiveIds(new Set())
       return
     }
 
-    const vv = window.visualViewport
-    let timer = 0
-
-    const read = () => {
-      const vp = readViewport()
-      const next = computeLiveIds(vp.offsetLeft, vp.offsetTop, vp.width, vp.height)
-      setZoomedIn(next.zoomedIn)
+    const apply = (scale: number, transX: number, transY: number, viewW: number, viewH: number) => {
+      setNativeScale(scale)
+      const next = liveIdsForTransform(scale, transX, transY, viewW, viewH, wallW)
       setLiveIds((prev) => {
-        if (prev.size === next.liveIds.size && [...prev].every((id) => next.liveIds.has(id))) return prev
-        return next.liveIds
+        if (prev.size === next.size && [...prev].every((id) => next.has(id))) return prev
+        return next
       })
     }
 
-    const schedule = () => {
-      window.clearTimeout(timer)
-      timer = window.setTimeout(read, 120)
+    window.__CCC_OVERVIEW_ZOOM = apply
+    const onEvent = (event: Event) => {
+      const detail = (event as CustomEvent).detail as {
+        scale: number
+        transX: number
+        transY: number
+        viewW: number
+        viewH: number
+      }
+      apply(detail.scale, detail.transX, detail.transY, detail.viewW, detail.viewH)
     }
-
-    read()
-    vv?.addEventListener("resize", schedule)
-    vv?.addEventListener("scroll", schedule)
-    window.addEventListener("scroll", schedule, true)
-    window.addEventListener("touchend", schedule)
+    window.addEventListener("ccc-overview-zoom", onEvent)
     return () => {
-      window.clearTimeout(timer)
-      vv?.removeEventListener("resize", schedule)
-      vv?.removeEventListener("scroll", schedule)
-      window.removeEventListener("scroll", schedule, true)
-      window.removeEventListener("touchend", schedule)
+      delete window.__CCC_OVERVIEW_ZOOM
+      window.removeEventListener("ccc-overview-zoom", onEvent)
     }
-  }, [active])
+  }, [active, wallW])
 
-  const value = useMemo(() => ({ zoomedIn, liveIds }), [zoomedIn, liveIds])
+  const value = useMemo(
+    () => ({
+      zoomedIn: nativeScale >= LIVE_NATIVE_SCALE,
+      liveIds,
+      nativeScale,
+    }),
+    [nativeScale, liveIds],
+  )
+
   return <OverviewMapLiveContext.Provider value={value}>{children}</OverviewMapLiveContext.Provider>
 }
 
-export function useOverviewMapLive() {
-  return useContext(OverviewMapLiveContext)
-}
-
 export function useOverviewMapLiveFor(screenId: number) {
-  const { liveIds } = useOverviewMapLive()
+  const { liveIds } = useContext(OverviewMapLiveContext)
   return liveIds.has(screenId)
 }

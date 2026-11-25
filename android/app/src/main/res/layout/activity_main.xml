@@ -11,18 +11,38 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
-        <com.smartazerigas.ccc.ui.SwipeFrameLayout
-            android:id="@+id/swipeHost"
+        <com.smartazerigas.ccc.ui.ZoomPanLayout
+            android:id="@+id/zoomHost"
             android:layout_width="match_parent"
             android:layout_height="match_parent">
 
-            <android.webkit.WebView
-                android:id="@+id/webView"
+            <com.smartazerigas.ccc.ui.SwipeFrameLayout
+                android:id="@+id/swipeHost"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="@color/ccc_bg"
-                android:overScrollMode="never" />
-        </com.smartazerigas.ccc.ui.SwipeFrameLayout>
+                android:layout_height="match_parent">
+
+                <FrameLayout
+                    android:id="@+id/pagerHost"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent">
+
+                    <android.webkit.WebView
+                        android:id="@+id/webA"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@color/ccc_bg"
+                        android:overScrollMode="never" />
+
+                    <android.webkit.WebView
+                        android:id="@+id/webB"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@color/ccc_bg"
+                        android:overScrollMode="never"
+                        android:visibility="invisible" />
+                </FrameLayout>
+            </com.smartazerigas.ccc.ui.SwipeFrameLayout>
+        </com.smartazerigas.ccc.ui.ZoomPanLayout>
     </com.smartazerigas.ccc.ui.LetterboxLayout>
 
     <LinearLayout

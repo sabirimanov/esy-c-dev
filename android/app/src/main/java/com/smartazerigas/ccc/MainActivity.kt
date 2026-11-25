@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.view.View
 import android.view.ViewTreeObserver
 import android.view.WindowManager
+import android.view.animation.DecelerateInterpolator
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -23,18 +24,25 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.smartazerigas.ccc.ui.LetterboxLayout
 import com.smartazerigas.ccc.ui.SwipeFrameLayout
+import com.smartazerigas.ccc.ui.ZoomPanLayout
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var webView: WebView
+    private lateinit var webA: WebView
+    private lateinit var webB: WebView
+    private lateinit var front: WebView
+    private lateinit var back: WebView
     private lateinit var letterbox: LetterboxLayout
+    private lateinit var zoomHost: ZoomPanLayout
     private lateinit var swipeHost: SwipeFrameLayout
     private lateinit var pageBadge: TextView
     private lateinit var fab: FloatingActionButton
     private lateinit var bottomChrome: View
 
     private var nav = WallNav()
-    private var loadGeneration = 0
+    private var animating = false
+    private var pendingReveal: WebView? = null
+    private var slideDirection = 1
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,18 +50,33 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         enterImmersive()
 
-        webView = findViewById(R.id.webView)
+        webA = findViewById(R.id.webA)
+        webB = findViewById(R.id.webB)
+        front = webA
+        back = webB
         letterbox = findViewById(R.id.letterbox)
+        zoomHost = findViewById(R.id.zoomHost)
         swipeHost = findViewById(R.id.swipeHost)
         pageBadge = findViewById(R.id.pageBadge)
         fab = findViewById(R.id.fab)
         bottomChrome = findViewById(R.id.bottomChrome)
 
-        configureWebView()
+        configureWebView(webA)
+        configureWebView(webB)
+        back.visibility = View.INVISIBLE
         reserveBottomChrome()
 
-        swipeHost.onSwipeNext = { go(nav.next()) }
-        swipeHost.onSwipePrev = { go(nav.prev()) }
+        zoomHost.onTransformChanged = { scale, tx, ty ->
+            if (nav.overview) {
+                val js =
+                    "window.__CCC_OVERVIEW_ZOOM&&window.__CCC_OVERVIEW_ZOOM($scale,$tx,$ty,${zoomHost.width},${zoomHost.height});" +
+                        "window.dispatchEvent(new CustomEvent('ccc-overview-zoom',{detail:{scale:$scale,transX:$tx,transY:$ty,viewW:${zoomHost.width},viewH:${zoomHost.height}}}));"
+                front.evaluateJavascript(js, null)
+            }
+        }
+
+        swipeHost.onSwipeNext = { slideTo(nav.next(), direction = 1) }
+        swipeHost.onSwipePrev = { slideTo(nav.prev(), direction = -1) }
 
         fab.background = getDrawable(R.drawable.bg_fab)
         fab.setOnClickListener { openControls() }
@@ -62,7 +85,6 @@ class MainActivity : AppCompatActivity() {
             override fun handleOnBackPressed() {
                 when {
                     nav.overview -> go(nav.exitOverview())
-                    webView.canGoBack() -> webView.goBack()
                     else -> {
                         isEnabled = false
                         onBackPressedDispatcher.onBackPressed()
@@ -76,7 +98,7 @@ class MainActivity : AppCompatActivity() {
         if (restored != null) {
             nav = decodeNav(restored) ?: nav
             applyChrome()
-            loadNavUrl()
+            front.loadUrl(nav.url())
         } else {
             go(nav, force = true)
         }
@@ -90,16 +112,19 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         enterImmersive()
-        webView.onResume()
+        webA.onResume()
+        webB.onResume()
     }
 
     override fun onPause() {
-        webView.onPause()
+        webA.onPause()
+        webB.onPause()
         super.onPause()
     }
 
     override fun onDestroy() {
-        webView.destroy()
+        webA.destroy()
+        webB.destroy()
         super.onDestroy()
     }
 
@@ -115,34 +140,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private fun configureWebView() {
-        webView.setBackgroundColor(Color.BLACK)
-        webView.webChromeClient = WebChromeClient()
-        webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                val url = request.url.toString()
-                decodeNav(url)?.let {
-                    nav = it
-                    applyChrome()
-                }
-                return false
-            }
+    private fun configureWebView(web: WebView) {
+        web.setBackgroundColor(Color.BLACK)
+        web.webChromeClient = WebChromeClient()
+        web.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
 
             override fun onPageFinished(view: WebView?, url: String?) {
-                url ?: return
-                decodeNav(url)?.let {
-                    nav = it
-                    applyChrome()
-                }
-                if (nav.overview) {
-                    injectOverviewViewport()
-                    // Re-assert fit-width scale after layout/meta settle.
-                    view?.post { fitOverviewScale() }
+                if (view != null && view === pendingReveal) {
+                    pendingReveal = null
+                    finishSlideIn(view)
                 }
             }
         }
 
-        with(webView.settings) {
+        with(web.settings) {
             javaScriptEnabled = true
             domStorageEnabled = true
             mediaPlaybackRequiresUserGesture = false
@@ -150,94 +162,85 @@ class MainActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_DEFAULT
             useWideViewPort = true
             loadWithOverviewMode = true
-            builtInZoomControls = true
+            builtInZoomControls = false
             displayZoomControls = false
-            setSupportZoom(true)
+            setSupportZoom(false)
             textZoom = 100
             userAgentString = "$userAgentString SmartAzerigasCCC/1.0"
         }
     }
 
-    /**
-     * Lock the overview so the full wall fits by width (black bars top/bottom),
-     * and allow pinch-zoom in from that floor up to a close-up of any region.
-     */
-    private fun injectOverviewViewport() {
-        val w = nav.overviewWidthPx
-        val h = nav.overviewHeightPx
-        val viewW = webView.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
-        val fit = (viewW.toDouble() / w.toDouble()).coerceIn(0.05, 1.0)
-        val maxScale = (fit * 10.0).coerceAtMost(3.0)
-        val js = """
-            (function(){
-              var m = document.querySelector('meta[name="viewport"]');
-              if (!m) {
-                m = document.createElement('meta');
-                m.name = 'viewport';
-                document.head.appendChild(m);
-              }
-              m.setAttribute('content',
-                'width=$w, initial-scale=$fit, minimum-scale=$fit, maximum-scale=$maxScale, user-scalable=yes');
-              document.documentElement.classList.add('is-overview','is-tablet','is-noborder');
-              document.documentElement.style.width = '${w}px';
-              document.documentElement.style.height = '${h}px';
-              document.documentElement.style.overflow = 'hidden';
-              document.body.style.width = '${w}px';
-              document.body.style.height = '${h}px';
-              document.body.style.overflow = 'hidden';
-              document.body.style.margin = '0';
-              document.body.style.background = '#000';
-              var root = document.getElementById('root');
-              if (root) {
-                root.style.width = '${w}px';
-                root.style.height = '${h}px';
-                root.style.overflow = 'hidden';
-              }
-            })();
-        """.trimIndent()
-        webView.evaluateJavascript(js, null)
-    }
-
-    private fun fitOverviewScale() {
-        if (!nav.overview) return
-        val viewW = webView.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
-        val scalePct = ((viewW * 100f) / nav.overviewWidthPx.toFloat()).toInt().coerceIn(1, 100)
-        webView.setInitialScale(scalePct)
-    }
-
     private fun go(next: WallNav, force: Boolean = false) {
         if (!force && next == nav) return
+        if (animating) return
         nav = next.clamped()
         applyChrome()
-        loadNavUrl()
+        front.translationX = 0f
+        back.translationX = 0f
+        back.visibility = View.INVISIBLE
+        front.visibility = View.VISIBLE
+        pendingReveal = null
+        front.loadUrl(nav.url())
     }
 
-    private fun loadNavUrl() {
-        val gen = ++loadGeneration
-        if (nav.overview) {
-            webView.settings.setSupportZoom(true)
-            webView.settings.builtInZoomControls = true
-            webView.settings.displayZoomControls = false
-            webView.settings.loadWithOverviewMode = true
-            webView.settings.useWideViewPort = true
-            webView.post {
-                if (gen != loadGeneration) return@post
-                fitOverviewScale()
-                webView.loadUrl(nav.url())
+    /**
+     * @param direction +1 = next page (content slides left), -1 = previous (slides right)
+     */
+    private fun slideTo(next: WallNav, direction: Int) {
+        if (animating || next == nav || nav.overview) return
+        animating = true
+        swipeHost.swipeEnabled = false
+        nav = next.clamped()
+        applyChrome()
+
+        val width = front.width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
+        slideDirection = direction
+        pendingReveal = back
+        back.translationX = direction * width
+        back.visibility = View.INVISIBLE
+        back.loadUrl(nav.url())
+    }
+
+    private fun finishSlideIn(incoming: WebView) {
+        val width = front.width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
+        val direction = slideDirection
+        val outgoing = front
+
+        incoming.translationX = direction * width
+        incoming.visibility = View.VISIBLE
+        incoming.bringToFront()
+
+        outgoing.animate()
+            .translationX(-direction * width)
+            .setDuration(240)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
+
+        incoming.animate()
+            .translationX(0f)
+            .setDuration(240)
+            .setInterpolator(DecelerateInterpolator())
+            .withEndAction {
+                front = incoming
+                back = if (front === webA) webB else webA
+                outgoing.animate().cancel()
+                back.animate().cancel()
+                back.translationX = 0f
+                back.visibility = View.INVISIBLE
+                front.translationX = 0f
+                front.visibility = View.VISIBLE
+                animating = false
+                swipeHost.swipeEnabled = !nav.overview
             }
-        } else {
-            webView.settings.setSupportZoom(false)
-            webView.settings.builtInZoomControls = false
-            webView.setInitialScale(0)
-            webView.loadUrl(nav.url())
-        }
+            .start()
     }
 
     private fun applyChrome() {
         val overview = nav.overview
-        // Overview uses the full screen (black bars come from wall aspect via WebView scale).
         letterbox.enabledLetterbox = !overview
-        swipeHost.swipeEnabled = !overview
+        swipeHost.swipeEnabled = !overview && !animating
+        zoomHost.zoomEnabled = overview
+        if (overview) zoomHost.resetTransform(requestLayout = false)
 
         pageBadge.text = if (overview) {
             getString(R.string.view_all)

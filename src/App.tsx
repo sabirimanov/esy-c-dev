@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react"
+import { useEffect, type ReactNode } from "react"
 import { BrowserRouter, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom"
 import { AlertScrollProvider } from "./data/alertScroll"
 import { ConsumptionExceedanceProvider } from "./data/consumptionExceedance"
@@ -18,6 +18,14 @@ import { SocnocRoute } from "./socnoc/SocnocRoute"
 import { SocnocScreen } from "./socnoc/screens"
 import { applyTabletDomClass, withTabletQuery } from "./tablet/mode"
 import { OverviewMapLiveProvider } from "./tablet/overviewMapLive"
+import {
+  OverviewHalfTile,
+  OverviewSkeleton,
+  overviewTileSize,
+  overviewWallSize,
+  useOverviewFit,
+  useStaggeredReady,
+} from "./tablet/overviewStage"
 import "./socnoc/socnoc.css"
 
 function SnocLegacyRedirect() {
@@ -97,107 +105,75 @@ function RouteScreen() {
   )
 }
 
-function setOverviewViewport(width: number, height: number) {
-  applyTabletDomClass()
-  fitPage(width, height)
-  document.documentElement.classList.add("is-overview")
-  const meta = document.querySelector('meta[name="viewport"]')
-  const prev = meta?.getAttribute("content") ?? "width=1920"
-  // Fit-width scale is applied by the Android WebView; keep zoom unlocked here.
-  meta?.setAttribute("content", `width=${width}, user-scalable=yes, minimum-scale=0.05, maximum-scale=8`)
-  return () => {
-    document.documentElement.classList.remove("is-overview")
-    meta?.setAttribute("content", prev)
-    fitPage(TILE.w, TILE.h)
-  }
-}
-
-/** Stagger tile mount so View All does not freeze the WebView on open. */
-function OverviewTile({
+function OverviewCell({
   id,
-  delayMs,
-  style,
+  col,
+  row,
   children,
 }: {
   id: number
-  delayMs: number
-  style: CSSProperties
+  col: number
+  row: number
   children: ReactNode
 }) {
-  const [ready, setReady] = useState(delayMs <= 0)
-  useEffect(() => {
-    if (ready) return
-    const t = window.setTimeout(() => setReady(true), delayMs)
-    return () => window.clearTimeout(t)
-  }, [delayMs, ready])
-
+  const ready = useStaggeredReady((id - 1) * 40)
+  const t = overviewTileSize()
   return (
-    <div className="wall-tile overview-tile" style={style}>
-      {ready ? children : <div className="overview-skeleton">Screen {id}</div>}
-    </div>
+    <OverviewHalfTile x={col * t.w} y={row * t.h}>
+      {ready ? children : <OverviewSkeleton id={id} />}
+    </OverviewHalfTile>
   )
 }
 
-/** Full Operations wall (7×3) at native 16:9 tile size — for tablet View All + pinch zoom. */
+/** View All: half-res wall CSS-fit to the WebView width → all screens visible immediately. */
 function OpsOverview() {
   const ids = Array.from({ length: 21 }, (_, i) => i + 1)
-  const width = COLS * TILE.w
-  const height = 3 * TILE.h
-
+  const wall = overviewWallSize(COLS, 3)
+  useOverviewFit(wall.w, wall.h)
   useEffect(() => {
     document.title = "overview"
-    return setOverviewViewport(width, height)
-  }, [width, height])
+  }, [])
 
   return (
-    <OverviewMapLiveProvider>
-      <div className="wall wall-overview" style={{ width, height }}>
-        {ids.map((id) => {
-          const { col, row } = place(id)
-          return (
-            <OverviewTile
-              key={id}
-              id={id}
-              delayMs={(id - 1) * 50}
-              style={{ left: col * TILE.w, top: row * TILE.h }}
-            >
-              <ScreenView id={id} />
-            </OverviewTile>
-          )
-        })}
+    <OverviewMapLiveProvider cols={COLS}>
+      <div id="overview-stage" className="overview-stage">
+        <div id="overview-wall" className="overview-wall">
+          {ids.map((id) => {
+            const { col, row } = place(id)
+            return (
+              <OverviewCell key={id} id={id} col={col} row={row}>
+                <ScreenView id={id} />
+              </OverviewCell>
+            )
+          })}
+        </div>
       </div>
     </OverviewMapLiveProvider>
   )
 }
 
-/** Full SOC/NOC wall (4×3) at native tile size. */
 function SocnocOverview() {
   const ids = Array.from({ length: 12 }, (_, i) => i + 1)
-  const width = SOCNOC_COLS * TILE.w
-  const height = 3 * TILE.h
-
+  const wall = overviewWallSize(SOCNOC_COLS, 3)
+  useOverviewFit(wall.w, wall.h)
   useEffect(() => {
     document.title = "socnoc overview"
-    return setOverviewViewport(width, height)
-  }, [width, height])
+  }, [])
 
   return (
-    <div className="wall wall-overview" style={{ width, height }}>
-      {ids.map((id) => {
-        const { col, row } = place(id, SOCNOC_COLS)
-        return (
-          <OverviewTile
-            key={id}
-            id={id}
-            delayMs={(id - 1) * 50}
-            style={{ left: col * TILE.w, top: row * TILE.h }}
-          >
-            <div className="screen" data-socnoc={id}>
-              <SocnocScreen id={id} />
-            </div>
-          </OverviewTile>
-        )
-      })}
+    <div id="overview-stage" className="overview-stage">
+      <div id="overview-wall" className="overview-wall">
+        {ids.map((id) => {
+          const { col, row } = place(id, SOCNOC_COLS)
+          return (
+            <OverviewCell key={id} id={id} col={col} row={row}>
+              <div className="screen" data-socnoc={id}>
+                <SocnocScreen id={id} />
+              </div>
+            </OverviewCell>
+          )
+        })}
+      </div>
     </div>
   )
 }
