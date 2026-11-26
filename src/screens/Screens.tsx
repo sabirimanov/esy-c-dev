@@ -3181,15 +3181,16 @@ const bodies: Record<number, (state: WallState) => ReactNode> = {
   3: () => <Screen3 />,
   4: () => <Screen4 />,
   5: () => <Screen5 />,
-  // Was 9 (connectivity); frame: slot 6 = non-mirrored
-  6: (state) => <Screen9 state={state} />,
+  // Executive board (was 14); frame: slot 6 = non-mirrored
+  6: (state) => <Screen14 state={state} />,
   7: (state) => <Screen2 state={state} />,
   // Permanent UFG detail (former ufgOpen content of slot 8)
   8: () => <UfgScreen8 />,
   // Was 8 (demand); frame stays mirrored for slot 9
   9: (state) => <Screen8 state={state} />,
   13: (state) => <Screen13CallCenter state={state} />,
-  14: (state) => <Screen14 state={state} />,
+  // Connectivity (was 6 / originally 9); frame: slot 14 = non-mirrored
+  14: (state) => <Screen9 state={state} />,
   // Permanent UFG detail (former ufgOpen content of slot 9)
   15: (state) => <UfgScreen9 state={state} />,
   // Was 15 (pressure & leaks)
