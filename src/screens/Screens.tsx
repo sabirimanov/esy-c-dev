@@ -2084,18 +2084,15 @@ const connectOpsHardcoded = [
 ] as const
 
 function Screen15() {
-  const { state } = useWall()
-  const billing = useBilling(state)
-  const current = billingForRange(billing, state.date, state.dateTo)
-  const loading = billing == null
   const kpiPad = 22
+  // First-row KPI figures temporarily hidden (dashes).
   const kpis = [
-    { x: 34, w: 295.014, label: "Revenue Realization Gross", value: loading ? "—" : fieldPercent(current?.revenueRealizationGross ?? null) },
-    { x: 340.92, w: 295.675, label: "Revenue Realization Net", value: loading ? "—" : fieldPercent(current?.revenueRealizationNet ?? null) },
-    { x: 649.16, w: 294.352, label: "Bill Payment Rate", value: loading ? "—" : fieldPercent(current?.billPaymentRate ?? null) },
-    { x: 952.78, w: 295.014, label: "Outstanding Credit", value: loading ? "—" : current ? `${billingAmount(current.outstandingCredit)} AZN` : "—" },
-    { x: 1260.37, w: 294.352, label: "Outstanding Balance", value: loading ? "—" : current ? `${billingAmount(current.outstandingBalance)} AZN` : "—" },
-    { x: 1563.99, w: 295.014, label: "Positive Balance %", value: loading ? "—" : fieldPercent(current?.positiveBalanceShare ?? null) },
+    { x: 34, w: 295.014, label: "Revenue Realization Gross", value: "—" },
+    { x: 340.92, w: 295.675, label: "Revenue Realization Net", value: "—" },
+    { x: 649.16, w: 294.352, label: "Bill Payment Rate", value: "—" },
+    { x: 952.78, w: 295.014, label: "Outstanding Credit", value: "—" },
+    { x: 1260.37, w: 294.352, label: "Outstanding Balance", value: "—" },
+    { x: 1563.99, w: 295.014, label: "Positive Balance %", value: "—" },
   ]
 
   const billPanelY = 250
@@ -2848,49 +2845,57 @@ function recordView(received: number, expected: number) {
 function Screen20({ state }: { state: WallState }) {
   const d = useContent().screen20
   const quality = useQuality(state)
-  const counts = quality ? [quality.total, quality.residential, quality.nonResidential, quality.balance] : [null, null, null, null]
-  const arrived = quality ? [quality.received.overall, quality.received.residential, quality.received.nonResidential, quality.received.balance] : [null, null, null, null]
+  // Balance meters hidden — keep Total / Residential / Non-residential only.
+  const counts = quality ? [quality.total, quality.residential, quality.nonResidential] : [null, null, null]
+  const arrived = quality
+    ? [quality.received.overall, quality.received.residential, quality.received.nonResidential]
+    : [null, null, null]
   const days = quality?.days ?? 0
   const views = counts.map((count, index) => {
     const got = arrived[index]
     if (count == null || got == null) return { text: "—", fill: 0, gap: "—" }
     return recordView(got, count * days)
   })
-  const kpis = [
-    { x: 29, lx: 60 },
-    { x: 495, lx: 516 },
-    { x: 960, lx: 980 },
-    { x: 1426, lx: 1446 },
-  ].map((item, index) => ({ ...item, ...d.cards[index], value: counts[index] == null ? "—" : counts[index].toLocaleString("en-US") }))
-  const expected = [
-    { y: 429 },
-    { y: 500 },
-    { y: 571 },
-    { y: 642 },
-  ].map((item, index) => ({
-    ...item,
-    ...d.expected[index],
-    daily: counts[index] == null ? "—" : counts[index].toLocaleString("en-US"),
-    period: counts[index] == null ? "—" : (counts[index] * days).toLocaleString("en-US"),
+  const kpiGap = 22
+  const kpiW = Math.round((1842 - kpiGap * 2) / 3)
+  const kpis = [0, 1, 2].map((index) => {
+    const x = 29 + index * (kpiW + kpiGap)
+    return {
+      x,
+      lx: x + 31,
+      w: kpiW,
+      label: d.cards[index].label,
+      value: counts[index] == null ? "—" : counts[index]!.toLocaleString("en-US"),
+    }
+  })
+  // Stretch 3 rows across the former 4-row vertical band (429 → 642).
+  const rowYs = [429, 535, 642]
+  const expected = rowYs.map((y, index) => ({
+    y,
+    label: d.expected[index].label,
+    daily: counts[index] == null ? "—" : counts[index]!.toLocaleString("en-US"),
+    period: counts[index] == null ? "—" : (counts[index]! * days).toLocaleString("en-US"),
   }))
-  const complete = [
-    { y: 434, bar: 440, py: 414 },
-    { y: 502, bar: 508, py: 481 },
-    { y: 572, bar: 578, py: 554 },
-    { y: 644, bar: 650, py: 625 },
-  ].map((item, index) => ({ ...item, ...d.complete[index], ...views[index] }))
+  const complete = rowYs.map((y, index) => ({
+    y,
+    bar: y + 6,
+    py: y - 20,
+    label: d.complete[index].label,
+    ...views[index],
+  }))
   const reads = [
     { y: 852, rule: 818, vy: 845 },
     { y: 907, rule: 884, vy: 900 },
     { y: 962, rule: 939, vy: 955 },
   ].map((item, index) => ({ ...item, ...d.reads[index], daily: views[index].gap, period: views[index].gap, hourly: "—" }))
+  const midRules = [rowYs[0] + 43, rowYs[1] + 43]
   return (
     <Frame>
       <Pin x={27} y={28} size={32} weight={900} color="#34efde" lh={40}>DATA QUALITY</Pin>
       <Pin x={1742} y={42} size={17} color="#f3f5f4" lh={20}>{periodLabel(state.date)}</Pin>
       {kpis.map((card) => (
         <span key={card.label}>
-          <At x={card.x} y={97} w={445} h={150}><div className="kpi" /></At>
+          <At x={card.x} y={97} w={card.w} h={150}><div className="kpi" /></At>
           <Pin x={card.lx} y={99} size={24} weight={500} color="#34efde" lh={28}>{card.label}</Pin>
           <Pin x={card.lx} y={154} size={60} weight={700} color="#ffffff" lh={48}>{card.value}</Pin>
         </span>
@@ -2909,9 +2914,9 @@ function Screen20({ state }: { state: WallState }) {
           <Pin x={620} y={row.y} w={210} size={24} color="#ffffff" lh={28} align="right">{row.period}</Pin>
         </span>
       ))}
-      <Rule x={51} y={472} w={776} />
-      <Rule x={51} y={543} w={776} />
-      <Rule x={51} y={616} w={776} />
+      {midRules.map((y) => (
+        <Rule key={`exp-${y}`} x={51} y={y} w={776} />
+      ))}
 
       <At x={875} y={270} w={996} h={434}><div className="panel shell dim" /></At>
       <Pin x={898} y={302} size={24} weight={700} color="#ffffff" lh={28}>Data completeness</Pin>
@@ -2931,9 +2936,9 @@ function Screen20({ state }: { state: WallState }) {
           <Pin x={1786} y={row.py} size={18} color="#ffffff" lh={21}>{row.text}</Pin>
         </span>
       ))}
-      <Rule x={899} y={472} w={936} />
-      <Rule x={898} y={543} w={937} />
-      <Rule x={899} y={616} w={936} />
+      {midRules.map((y) => (
+        <Rule key={`cmp-${y}`} x={899} y={y} w={936} />
+      ))}
 
       <At x={27} y={720} w={1840} h={307}><div className="panel shell dim" /></At>
       <Pin x={51} y={736} size={24} color="#ffffff" lh={28}>Estimated reads</Pin>
