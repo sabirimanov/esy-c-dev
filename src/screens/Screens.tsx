@@ -611,11 +611,7 @@ function Screen3() {
   const then = useUfgSummary({ ...state, date: earlier.date, dateTo: earlier.dateTo })
   const volume = useDemand(state)
   const volumeThen = useDemand({ ...state, date: earlier.date, dateTo: earlier.dateTo })
-  const billing = useBilling(state)
   const revenue = useContent().screen3.cards[3]
-  const currentBilling = billingForRange(billing, state.date, state.dateTo)
-  const thenBilling = billingForRange(billing, earlier.date, earlier.dateTo)
-  const collection = billing == null ? "—" : currentBilling ? fieldPercent(currentBilling.revenueRealizationGross) : revenue.value
   const supply = volume?.supply ?? null
   const demand = supply == null ? "—" : `${compactCount(Math.round(supply))} m³`
   const ufg = now.current == null ? "—" : `${now.current.toFixed(1)}%`
@@ -627,7 +623,7 @@ function Screen3() {
         { label: "CURRENT DEMAND", value: demand, ...dayShift(supply, volumeThen?.supply ?? null) },
         { label: "UFG", value: ufg, ...dayShift(now.current, then.current) },
         { label: "CUSTOMERS AVAILABLE", value: customers, ...dayShift(now.consumers, then.consumers) },
-        { label: revenue.label, value: collection, ...dayShift(currentBilling?.revenueRealizationGross ?? null, thenBilling?.revenueRealizationGross ?? null) },
+        { label: revenue.label, value: "—", ...dayShift(null, null) },
       ]}
     />
   )
@@ -1981,10 +1977,9 @@ function Screen14({ state }: { state: WallState }) {
   const d = useContent().screen14
   const ufg = useUfgSummary(state)
   const quality = useQuality(state)
-  const billing = useBilling(state)
-  const currentBilling = billingForRange(billing, state.date, state.dateTo)
-  const collectionText = billing == null ? "—" : currentBilling ? fieldPercent(currentBilling.revenueRealizationGross) : d.collection
-  const balanceText = billing == null ? "—" : currentBilling ? billingAmount(currentBilling.outstandingBalance) : d.balance
+  // Temporarily hide Realization Gross / Outstanding Balance.
+  const collectionText = "—"
+  const balanceText = "—"
   const ufgText = ufg.current == null ? "—" : `${ufg.current.toFixed(1)}%`
   const coverageShare = quality && quality.total > 0 && quality.days > 0 ? quality.received.overall / (quality.total * quality.days) : null
   const metersText = coverageShare == null ? "—" : `${(coverageShare * 100).toFixed(1)}%`
@@ -2027,7 +2022,7 @@ function Screen14({ state }: { state: WallState }) {
       <Pin x={385} y={116} size={24} weight={500} color="#34efde" lh={40}>Realization Gross</Pin>
       <Pin x={382} y={180} size={60} weight={700} color="#ffffff" lh={40}>{collectionText}</Pin>
       <Pin x={669} y={113} size={24} color="#34efde" lh={40}>Outstanding Balance</Pin>
-      <Pin x={669} y={180} size={60} weight={700} color="#ffffff" lh={40}>{balanceText} <span style={{ fontSize: 33 }}>{currentBilling ? "AZN" : ""}</span></Pin>
+      <Pin x={669} y={180} size={60} weight={700} color="#ffffff" lh={40}>{balanceText}</Pin>
       <Pin x={982} y={116} size={24} weight={500} color="#34efde" lh={40}>Emergency Response</Pin>
       <Pin x={1000} y={180} size={60} weight={700} color="#ffffff" lh={40}>N/A {/*<span style={{ fontSize: 33 }}>MIN</span>*/}</Pin>
       <Pin x={1301} y={116} size={24} color="#34efde" lh={40}>Reconnect within 24 h</Pin>

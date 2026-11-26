@@ -19,55 +19,78 @@ const WEEKDAYS: { label: string; x: number; w: number }[] = [
   { label: "Sun", x: 678.5, w: 38 },
 ]
 
-/** Exact Figma day centers for October 2026 (Mon-first). */
-const DAYS: { d: number; x: number; y: number; w: number }[] = [
-  { d: 1, x: 391, y: 377, w: 14 }, { d: 2, x: 488, y: 377, w: 14 }, { d: 3, x: 582.5, y: 377, w: 14 }, { d: 4, x: 690, y: 377, w: 14 },
-  { d: 5, x: 78.5, y: 430, w: 14 }, { d: 6, x: 183, y: 430, w: 14 }, { d: 7, x: 286.5, y: 430, w: 14 }, { d: 8, x: 391, y: 430, w: 14 },
-  { d: 9, x: 488, y: 430, w: 14 }, { d: 10, x: 576.5, y: 430, w: 27 }, { d: 11, x: 684, y: 430, w: 27 },
-  { d: 12, x: 73, y: 483, w: 27 }, { d: 13, x: 177, y: 483, w: 27 }, { d: 14, x: 280.5, y: 483, w: 27 }, { d: 15, x: 385, y: 483, w: 27 },
-  { d: 16, x: 482, y: 483, w: 27 }, { d: 17, x: 576.5, y: 483, w: 27 }, { d: 18, x: 684, y: 483, w: 27 },
-  { d: 19, x: 72.5, y: 536, w: 27 }, { d: 20, x: 177, y: 536, w: 27 }, { d: 21, x: 280.5, y: 536, w: 27 }, { d: 22, x: 385, y: 536, w: 27 },
-  { d: 23, x: 482.5, y: 536, w: 27 }, { d: 24, x: 576.5, y: 536, w: 27 }, { d: 25, x: 683, y: 536, w: 28 },
-  { d: 26, x: 72.5, y: 589, w: 27 }, { d: 27, x: 177, y: 589, w: 27 }, { d: 28, x: 280.5, y: 589, w: 27 }, { d: 29, x: 385, y: 589, w: 27 },
-  { d: 30, x: 482, y: 589, w: 27 }, { d: 31, x: 576.5, y: 589, w: 27 },
+/** Figma day-cell columns (Mon→Sun): single-digit vs two-digit x/w. */
+const COLS = [
+  { x1: 78.5, w1: 14, x2: 73, w2: 27 },
+  { x1: 183, w1: 14, x2: 177, w2: 27 },
+  { x1: 286.5, w1: 14, x2: 280.5, w2: 27 },
+  { x1: 391, w1: 14, x2: 385, w2: 27 },
+  { x1: 488, w1: 14, x2: 482, w2: 27 },
+  { x1: 582.5, w1: 14, x2: 576.5, w2: 27 },
+  { x1: 690, w1: 14, x2: 684, w2: 27 },
 ]
+const ROW_YS_5 = [377, 430, 483, 536, 589]
+/** Tighter rows when the month needs a 6th week (keeps DATE SELECTION clear). */
+const ROW_YS_6 = [377, 425, 473, 521, 569, 617]
 
-const SERVICES = [
-  { name: "HES", pct: "99.8%", x: 794, y: 305.5, w: 199, tx: 819, ty: 316, px: 819, py: 346 },
-  { name: "MDM", pct: "99.92%", x: 1010, y: 305.5, w: 200, tx: 1039, ty: 316, px: 1039, py: 346 },
-  { name: "WFM", pct: "100%", x: 1228, y: 305.5, w: 199, tx: 1257, ty: 316, px: 1257, py: 346 },
-  { name: "GIS", pct: "99.92%", x: 1444, y: 305.5, w: 200, tx: 1476, ty: 316, px: 1476, py: 346 },
-  { name: "UFG", pct: "99.92%", x: 1661, y: 305.5, w: 201, tx: 1694, ty: 316, px: 1694, py: 346 },
-  { name: "Gas Simulation", pct: "99.94%", x: 794, y: 408.5, w: 199, tx: 819, ty: 419, px: 819, py: 449 },
-  { name: "AD / DNS", pct: "99.98%", x: 1010, y: 408.5, w: 200, tx: 1039, ty: 419, px: 1039, py: 449 },
-  { name: "Central NGINX", pct: "99.93%", x: 1228, y: 408.5, w: 199, tx: 1257, ty: 419, px: 1257, py: 449 },
-  { name: "ELK Logging", pct: "99.9%", x: 1444, y: 408.5, w: 200, tx: 1476, ty: 419, px: 1476, py: 449 },
-  { name: "Network", pct: "99.94%", x: 1661, y: 408.5, w: 201, tx: 1694, ty: 419, px: 1694, py: 449 },
-]
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 
-type Incident = {
-  service: string
-  type: "Degraded" | "Outage"
-  started: string
-  duration: string
-  rowY?: number
-  textY: number
-  typeY: number
-  pillY: number
-  statusSrc: string
-  typeColor: string
-  typeBg: string
-  typeX: number
+function pad2(n: number) {
+  return n < 10 ? `0${n}` : String(n)
 }
 
-const INCIDENTS: Incident[] = [
-  { service: "AD / DNS", type: "Degraded", started: "29 Oct, 17:38", duration: "72 min", rowY: 630.5, textY: 644, typeY: 648, pillY: 640.5, statusSrc: statusOrange, typeColor: "#ffb14f", typeBg: "#40301a", typeX: 1036.7 },
-  { service: "UFG", type: "Degraded", started: "28 Oct, 22:11", duration: "33 min", textY: 713.5, typeY: 717.5, pillY: 706.5, statusSrc: statusOrangeAlt, typeColor: "#ffb14f", typeBg: "#40301a", typeX: 1037 },
-  { service: "HES", type: "Degraded", started: "27 Oct, 23:04", duration: "10 min", rowY: 765.5, textY: 778.5, typeY: 782.5, pillY: 774.5, statusSrc: statusOrange, typeColor: "#ffb14f", typeBg: "#40301a", typeX: 1037 },
-  { service: "Network", type: "Outage", started: "27 Oct, 21:11", duration: "25 min", textY: 842.5, typeY: 846.5, pillY: 838.5, statusSrc: statusRedAlt, typeColor: "#ff765e", typeBg: "#41211e", typeX: 1047 },
-  { service: "Network", type: "Degraded", started: "26 Oct, 14:24", duration: "16 min", rowY: 896.5, textY: 909.5, typeY: 913.5, pillY: 904.5, statusSrc: statusOrange, typeColor: "#ffb14f", typeBg: "#40301a", typeX: 1037 },
-  { service: "UFG", type: "Outage", started: "25 Oct, 05:15", duration: "7.7 min", textY: 975.5, typeY: 975.5, pillY: 969.5, statusSrc: statusRedAlt, typeColor: "#ff765e", typeBg: "#41211e", typeX: 1047 },
-]
+function formatIncidentStarted(date: Date, time: string) {
+  return `${pad2(date.getDate())} ${MONTHS[date.getMonth()].slice(0, 3)}, ${time}`
+}
+
+function buildCalendar(today: Date) {
+  const year = today.getFullYear()
+  const month = today.getMonth()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  // Mon-first index of day 1: JS Sun=0 → Mon=0 … Sun=6
+  const firstDow = (new Date(year, month, 1).getDay() + 6) % 7
+  const weekCount = Math.ceil((firstDow + daysInMonth) / 7)
+  const rowYs = weekCount > 5 ? ROW_YS_6 : ROW_YS_5
+  const days: { d: number; x: number; y: number; w: number; col: number; row: number }[] = []
+  for (let d = 1; d <= daysInMonth; d += 1) {
+    const slot = firstDow + d - 1
+    const col = slot % 7
+    const row = Math.floor(slot / 7)
+    const cell = COLS[col]
+    const two = d >= 10
+    days.push({
+      d,
+      x: two ? cell.x2 : cell.x1,
+      y: rowYs[row] ?? rowYs[rowYs.length - 1],
+      w: two ? cell.w2 : cell.w1,
+      col,
+      row,
+    })
+  }
+  return {
+    label: `${MONTHS[month]} ${year}`,
+    todayDay: today.getDate(),
+    days,
+  }
+}
+
+function buildIncidents(today: Date) {
+  // Spread across the last 7 days (today inclusive).
+  const offsets = [1, 2, 3, 3, 4, 6]
+  const times = ["17:38", "22:11", "23:04", "21:11", "14:24", "05:15"]
+  const base = [
+    { service: "AD / DNS", type: "Degraded" as const, duration: "72 min", rowY: 630.5, textY: 644, typeY: 648, pillY: 640.5, statusSrc: statusOrange, typeColor: "#ffb14f", typeBg: "#40301a", typeX: 1036.7 },
+    { service: "UFG", type: "Degraded" as const, duration: "33 min", textY: 713.5, typeY: 717.5, pillY: 706.5, statusSrc: statusOrangeAlt, typeColor: "#ffb14f", typeBg: "#40301a", typeX: 1037 },
+    { service: "HES", type: "Degraded" as const, duration: "10 min", rowY: 765.5, textY: 778.5, typeY: 782.5, pillY: 774.5, statusSrc: statusOrange, typeColor: "#ffb14f", typeBg: "#40301a", typeX: 1037 },
+    { service: "Network", type: "Outage" as const, duration: "25 min", textY: 842.5, typeY: 846.5, pillY: 838.5, statusSrc: statusRedAlt, typeColor: "#ff765e", typeBg: "#41211e", typeX: 1047 },
+    { service: "Network", type: "Degraded" as const, duration: "16 min", rowY: 896.5, textY: 909.5, typeY: 913.5, pillY: 904.5, statusSrc: statusOrange, typeColor: "#ffb14f", typeBg: "#40301a", typeX: 1037 },
+    { service: "UFG", type: "Outage" as const, duration: "7.7 min", textY: 975.5, typeY: 975.5, pillY: 969.5, statusSrc: statusRedAlt, typeColor: "#ff765e", typeBg: "#41211e", typeX: 1047 },
+  ]
+  return base.map((row, i) => {
+    const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offsets[i])
+    return { ...row, started: formatIncidentStarted(date, times[i]) }
+  })
+}
 
 function Kpi({
   x, y, w, label, value, grad = KPI_GRAD,
@@ -84,6 +107,13 @@ function Kpi({
 }
 
 export function Screen1() {
+  const today = new Date()
+  const calendar = buildCalendar(today)
+  const incidents = buildIncidents(today)
+  const selected = calendar.days.find((day) => day.d === calendar.todayDay)
+  const activeX = selected ? selected.x + selected.w / 2 - 27 : 670.5
+  const activeY = selected ? selected.y - 13 : 523
+
   return (
     <Frame>
       <Pin x={99} y={16.75} size={32} weight={900} color={TEAL} w={644} lh={40}>OPERATIONS OVERVIEW</Pin>
@@ -110,22 +140,22 @@ export function Screen1() {
       />
 
       <Pin x={106} y={274} size={32} weight={400} color="#9da9aa" lh={38}>‹</Pin>
-      <Pin x={293} y={274} size={32} weight={700} color="#f2f6f5" w={196} lh={38} align="center">October 2026</Pin>
+      <Pin x={293} y={274} size={32} weight={700} color="#f2f6f5" w={196} lh={38} align="center">{calendar.label}</Pin>
       <Pin x={671} y={274} size={32} weight={400} color="#9da9aa" w={10} lh={38} align="center">›</Pin>
 
       {WEEKDAYS.map((day) => (
         <Pin key={day.label} x={day.x} y={334} size={22} weight={400} color="#9da9aa" w={day.w} lh={26} align="center">{day.label}</Pin>
       ))}
 
-      <ImgAt x={670.5} y={523} w={54} h={54} src={calendarDayActive} />
-      {DAYS.map((day) => (
+      <ImgAt x={activeX} y={activeY} w={54} h={54} src={calendarDayActive} />
+      {calendar.days.map((day) => (
         <Pin
           key={day.d}
           x={day.x}
           y={day.y}
           size={24}
-          weight={day.d === 25 ? 700 : 400}
-          color={day.d === 25 ? "#071817" : "#f2f6f5"}
+          weight={day.d === calendar.todayDay ? 700 : 400}
+          color={day.d === calendar.todayDay ? "#071817" : "#f2f6f5"}
           w={day.w}
           lh={28}
           align="center"
@@ -177,14 +207,14 @@ export function Screen1() {
 
       <Panel x={773} y={541.5} w={1108} h={503} />
       <ImgAt x={794} y={617.5} w={1068} h={1} src={dividerIncidents} />
-      <Pin x={795} y={554.5} size={21} weight={700} color="#e8f2f0" lh={25}>RECENT INCIDENTS / LAST 30 DAYS</Pin>
+      <Pin x={795} y={554.5} size={21} weight={700} color="#e8f2f0" lh={25}>RECENT INCIDENTS / LAST 7 DAYS</Pin>
       <Pin x={844} y={593.5} size={15} weight={700} color="#8ba4a2" lh={18}>SERVICE</Pin>
       <Pin x={1069} y={593.5} size={15} weight={700} color="#8ba4a2" lh={18}>TYPE</Pin>
       <Pin x={1301} y={593.5} size={15} weight={700} color="#8ba4a2" lh={18}>STARTED</Pin>
       <Pin x={1562} y={593.5} size={15} weight={700} color="#8ba4a2" lh={18}>DURATION</Pin>
       <Pin x={1790} y={593.5} size={15} weight={700} color="#8ba4a2" lh={18}>STATE</Pin>
 
-      {INCIDENTS.map((row, i) => (
+      {incidents.map((row, i) => (
         <div key={i}>
           {row.rowY != null && (
             <div className="at" style={{ left: 794, top: row.rowY, width: 1068, height: 58, borderRadius: 95, background: "#232323", border: "1px solid #282b2a" }} />
@@ -201,3 +231,16 @@ export function Screen1() {
     </Frame>
   )
 }
+
+const SERVICES = [
+  { name: "HES", pct: "99.8%", x: 794, y: 305.5, w: 199, tx: 819, ty: 316, px: 819, py: 346 },
+  { name: "MDM", pct: "99.92%", x: 1010, y: 305.5, w: 200, tx: 1039, ty: 316, px: 1039, py: 346 },
+  { name: "WFM", pct: "100%", x: 1228, y: 305.5, w: 199, tx: 1257, ty: 316, px: 1257, py: 346 },
+  { name: "GIS", pct: "99.92%", x: 1444, y: 305.5, w: 200, tx: 1476, ty: 316, px: 1476, py: 346 },
+  { name: "UFG", pct: "99.92%", x: 1661, y: 305.5, w: 201, tx: 1694, ty: 316, px: 1694, py: 346 },
+  { name: "Gas Simulation", pct: "99.94%", x: 794, y: 408.5, w: 199, tx: 819, ty: 419, px: 819, py: 449 },
+  { name: "AD / DNS", pct: "99.98%", x: 1010, y: 408.5, w: 200, tx: 1039, ty: 419, px: 1039, py: 449 },
+  { name: "Central NGINX", pct: "99.93%", x: 1228, y: 408.5, w: 199, tx: 1257, ty: 419, px: 1257, py: 449 },
+  { name: "ELK Logging", pct: "99.9%", x: 1444, y: 408.5, w: 200, tx: 1476, ty: 419, px: 1476, py: 449 },
+  { name: "Network", pct: "99.94%", x: 1661, y: 408.5, w: 201, tx: 1694, ty: 419, px: 1694, py: 449 },
+]

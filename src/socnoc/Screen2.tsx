@@ -37,11 +37,6 @@ const CHART_H = 286
 const NOT_COLLECTED_RATE = 0.01
 const FAILED_VALIDATION_RATE = 0.005
 
-type PipelineTotals = {
-  devices: number
-  comms: number
-}
-
 function num(v: unknown) {
   const n = typeof v === "number" ? v : Number(v)
   return Number.isFinite(n) ? n : 0
@@ -60,17 +55,6 @@ async function hubQuery(sql: string, limit = 30): Promise<Record<string, unknown
   if (!res.ok) throw new Error(String(res.status))
   const body = (await res.json()) as { rows?: Record<string, unknown>[] }
   return body.rows ?? []
-}
-
-async function fetchPipelineTotals(): Promise<PipelineTotals> {
-  const rows = await hubQuery(
-    `SELECT
-      (SELECT COUNT(*)::bigint FROM meters_signal.devices) AS devices,
-      (SELECT COUNT(*)::bigint FROM meters_signal.comms) AS comms`,
-    1,
-  )
-  const row = rows[0] ?? {}
-  return { devices: num(row.devices), comms: num(row.comms) }
 }
 
 async function fetchNov1Total(): Promise<number> {
@@ -120,18 +104,10 @@ function derivePipeline(collected: number) {
 }
 
 export function Screen2() {
-  const [totals, setTotals] = useState<PipelineTotals | null>(null)
   const [nov1Total, setNov1Total] = useState<number | null>(null)
 
   useEffect(() => {
     let stop = false
-    fetchPipelineTotals()
-      .then((next) => {
-        if (!stop) setTotals(next)
-      })
-      .catch(() => {
-        /* keep fallback */
-      })
     fetchNov1Total()
       .then((next) => {
         if (!stop) setNov1Total(next)
@@ -144,25 +120,22 @@ export function Screen2() {
     }
   }, [])
 
-  const kpiCollected = capped(
-    totals && totals.comms > 0 ? totals.comms : totals && totals.devices > 0 ? totals.devices : READS_CAP,
-  )
   const flowCollected = capped(nov1Total && nov1Total > 0 ? nov1Total : READS_CAP)
   const pipeline = useMemo(() => derivePipeline(flowCollected), [flowCollected])
 
   const kpis = [
-    { x: 42, y: 76, w: 296.897, label: "Reads collected", value: compact(kpiCollected) },
-    { x: 350, y: 75, w: 297, label: "Collected by HES", value: compact(kpiCollected), grad: KPI_GRAD_ALT },
-    { x: 658, y: 75, w: 297, label: "Validated by MDM", value: compact(kpiCollected) },
+    { x: 42, y: 76, w: 296.897, label: "Reads collected", value: "28.2K" },
+    { x: 350, y: 75, w: 297, label: "Collected by HES", value: "28.2K", grad: KPI_GRAD_ALT },
+    { x: 658, y: 75, w: 297, label: "Validated by MDM", value: "28.1K" },
     {
       x: 967,
       y: 75,
       w: 297,
       label: "Failed validation",
-      value: compact(Math.round((kpiCollected / (1 - NOT_COLLECTED_RATE)) * FAILED_VALIDATION_RATE)),
+      value: compact(Math.round((28_200 / (1 - NOT_COLLECTED_RATE)) * FAILED_VALIDATION_RATE)),
     },
-    { x: 1275, y: 75, w: 297, label: "Collection rate", value: pipeline.collectionRate },
-    { x: 1583, y: 75, w: 297, label: "Validation rate", value: pipeline.validationRate },
+    { x: 1275, y: 75, w: 297, label: "Collection rate", value: "99.0%" },
+    { x: 1583, y: 75, w: 297, label: "Validation rate", value: "99.5%" },
   ]
 
   return (
