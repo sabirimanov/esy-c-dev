@@ -9,8 +9,9 @@ import { isOverviewPath } from "../tablet/mode"
 import { screenBody } from "./Screens"
 
 // Screens in this set render gray and dim. Add or remove ids here.
-const offScreens = new Set([6])
-const ufgScreens = new Set([2, 8, 9])
+const offScreens = new Set<number>()
+// UFG detail lives permanently on 8 + 15; slot 2 still toggles with ufgOpen.
+const ufgScreens = new Set([2, 8, 15])
 
 /** Map tiles only — registers presence so layers fetch, and binds overlay/call UI. */
 function MapScreenLayer({ id }: { id: number }) {

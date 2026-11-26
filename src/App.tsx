@@ -39,7 +39,7 @@ const TILE = { w: 1920, h: 1080 }
 
 function parseScreens(param: string | undefined) {
   const ids = [...new Set((param ?? "").split("--").map(Number))]
-  return ids.filter((id) => Number.isInteger(id) && id >= 1 && id <= 21)
+  return ids.filter((id) => Number.isInteger(id) && id >= 1 && id <= 23)
 }
 
 function place(id: number, cols = COLS) {

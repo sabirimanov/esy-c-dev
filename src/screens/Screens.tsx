@@ -1567,7 +1567,8 @@ function Screen9({ state }: { state: WallState }) {
     label: chartAxisLabel(installedMax * share),
   }))
   return (
-    <Frame mirror>
+    // Slot 6: cyan accent on the right (not mirrored).
+    <Frame>
       {kpis.map((card) => (
         <At key={card.source} x={card.x} y={97} w={427.394} h={150}><div className="kpi" /></At>
       ))}
@@ -3180,20 +3181,28 @@ const bodies: Record<number, (state: WallState) => ReactNode> = {
   3: () => <Screen3 />,
   4: () => <Screen4 />,
   5: () => <Screen5 />,
-  6: () => <Screen6 />,
+  // Was 9 (connectivity); frame: slot 6 = non-mirrored
+  6: (state) => <Screen9 state={state} />,
   7: (state) => <Screen2 state={state} />,
-  8: (state) => (state.ufgOpen ? <UfgScreen8 /> : <Screen8 state={state} />),
-  9: (state) => (state.ufgOpen ? <UfgScreen9 state={state} /> : <Screen9 state={state} />),
+  // Permanent UFG detail (former ufgOpen content of slot 8)
+  8: () => <UfgScreen8 />,
+  // Was 8 (demand); frame stays mirrored for slot 9
+  9: (state) => <Screen8 state={state} />,
   13: (state) => <Screen13CallCenter state={state} />,
-  // 22: (state) => <Screen22 state={state} />,
   14: (state) => <Screen14 state={state} />,
-  15: (state) => <Screen21 state={state} />,
-  16: (state) => <Screen16 state={state} />,
+  // Permanent UFG detail (former ufgOpen content of slot 9)
+  15: (state) => <UfgScreen9 state={state} />,
+  // Was 15 (pressure & leaks)
+  16: (state) => <Screen21 state={state} />,
   17: (state) => <Screen17 state={state} />,
   18: () => <Screen18 />,
   19: () => <Screen19 />,
   20: (state) => <Screen20 state={state} />,
   21: () => <Screen15 />,
+  // Temporarily stashed off-wall (former slot 9 after 6↔9 swap = camera vision)
+  22: () => <Screen6 />,
+  // Temporarily stashed off-wall (former slot 16 = field operation)
+  23: (state) => <Screen16 state={state} />,
 }
 
 export function screenBody(id: number, state: WallState) {
