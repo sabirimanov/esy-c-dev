@@ -1,14 +1,9 @@
-import { useEffect, useMemo, useState } from "react"
 import dividerTop from "../assets/socnoc/screen2/divider-top.svg"
 import dividerV from "../assets/socnoc/screen2/divider-v.svg"
-import { compact } from "../snoc/format"
 import { AreaLineChart, ChartGrid, ProgBar } from "./charts"
 import { Frame, ImgAt, KPI_GRAD_ALT, KpiCard, LiveBadge, Panel, Pin, TEAL, TEAL_GRAD } from "./ui"
 
 const PANEL_BOTTOM_GRAD = "linear-gradient(146.94deg, rgba(48, 48, 48, 0.33) 0%, rgba(26, 26, 26, 0.33) 100%)"
-const HUB_QUERY = "/newapi/hub/esyduckdb/db/query"
-const DAY = "2026-11-01"
-const READS_CAP = 28_498
 
 /** Reads over 24h — peaks near 1.21M. */
 const READS_SERIES = [
@@ -34,116 +29,50 @@ const CHART_Y = 393
 const CHART_W = 836
 const CHART_H = 286
 
-const NOT_COLLECTED_RATE = 0.01
-const FAILED_VALIDATION_RATE = 0.005
+/** Hardcoded KPIs / right-panel flow (collection 99.0%, validation 99.5%). */
+const COLLECTED = 28_200
+const VALIDATED = 28_100
+const NOT_COLLECTED = Math.round(COLLECTED / 0.99 - COLLECTED) // ~285
+const FAILED = COLLECTED - VALIDATED // 100
+const FLOW_MAX = COLLECTED + NOT_COLLECTED
 
-function num(v: unknown) {
-  const n = typeof v === "number" ? v : Number(v)
-  return Number.isFinite(n) ? n : 0
-}
+const FLOW = [
+  { label: "Collected", value: "28.2K", labelY: 397, barY: 432, fillW: BAR_TRACK_W },
+  { label: "Collected via HES", value: "28.2K", labelY: 470, barY: 505, fillW: BAR_TRACK_W },
+  { label: "Validated", value: "28.1K", labelY: 543, barY: 578, fillW: Math.max(8, Math.round((VALIDATED / FLOW_MAX) * BAR_TRACK_W)) },
+  {
+    label: "Not collected",
+    value: String(NOT_COLLECTED),
+    labelY: 616,
+    barY: 651,
+    fillW: Math.max(8, Math.round((NOT_COLLECTED / FLOW_MAX) * BAR_TRACK_W)),
+  },
+  {
+    label: "Failed validation",
+    value: String(FAILED),
+    labelY: 689,
+    barY: 724,
+    fillW: Math.max(8, Math.round((FAILED / FLOW_MAX) * BAR_TRACK_W)),
+  },
+]
 
-function capped(n: number) {
-  return Math.min(Math.max(0, n), READS_CAP)
-}
-
-async function hubQuery(sql: string, limit = 30): Promise<Record<string, unknown>[]> {
-  const res = await fetch(HUB_QUERY, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sql, limit }),
-  })
-  if (!res.ok) throw new Error(String(res.status))
-  const body = (await res.json()) as { rows?: Record<string, unknown>[] }
-  return body.rows ?? []
-}
-
-async function fetchNov1Total(): Promise<number> {
-  const rows = await hubQuery(
-    `SELECT COUNT(*)::bigint AS n
-     FROM meters_signal.comms
-     WHERE "RTC" >= TIMESTAMP '${DAY}'
-       AND "RTC" < TIMESTAMP '${DAY}' + INTERVAL '1 day'`,
-    1,
-  )
-  return num(rows[0]?.n)
-}
-
-function derivePipeline(collected: number) {
-  const expected = collected / (1 - NOT_COLLECTED_RATE)
-  const notCollected = Math.round(expected * NOT_COLLECTED_RATE)
-  const failed = Math.round(expected * FAILED_VALIDATION_RATE)
-  const validated = collected
-  const maxBar = Math.max(collected, expected)
-  return {
-    collected,
-    validated,
-    notCollected,
-    failed,
-    collectionRate: ((1 - NOT_COLLECTED_RATE) * 100).toFixed(1) + "%",
-    validationRate: ((1 - FAILED_VALIDATION_RATE) * 100).toFixed(1) + "%",
-    flow: [
-      { label: "Collected", value: compact(collected), labelY: 397, barY: 432, fillW: BAR_TRACK_W },
-      { label: "Collected via HES", value: compact(collected), labelY: 470, barY: 505, fillW: BAR_TRACK_W },
-      { label: "Validated", value: compact(validated), labelY: 543, barY: 578, fillW: BAR_TRACK_W },
-      {
-        label: "Not collected",
-        value: compact(notCollected),
-        labelY: 616,
-        barY: 651,
-        fillW: Math.max(8, Math.round((notCollected / maxBar) * BAR_TRACK_W)),
-      },
-      {
-        label: "Failed validation",
-        value: compact(failed),
-        labelY: 689,
-        barY: 724,
-        fillW: Math.max(8, Math.round((failed / maxBar) * BAR_TRACK_W)),
-      },
-    ],
-  }
-}
+const KPIS = [
+  { x: 42, y: 76, w: 296.897, label: "Reads collected", value: "28.2K" },
+  { x: 350, y: 75, w: 297, label: "Collected by HES", value: "28.2K", grad: KPI_GRAD_ALT },
+  { x: 658, y: 75, w: 297, label: "Validated by MDM", value: "28.1K" },
+  { x: 967, y: 75, w: 297, label: "Failed validation", value: String(FAILED) },
+  { x: 1275, y: 75, w: 297, label: "Collection rate", value: "99.0%" },
+  { x: 1583, y: 75, w: 297, label: "Validation rate", value: "99.5%" },
+]
 
 export function Screen2() {
-  const [nov1Total, setNov1Total] = useState<number | null>(null)
-
-  useEffect(() => {
-    let stop = false
-    fetchNov1Total()
-      .then((next) => {
-        if (!stop) setNov1Total(next)
-      })
-      .catch(() => {
-        /* keep fallback */
-      })
-    return () => {
-      stop = true
-    }
-  }, [])
-
-  const flowCollected = capped(nov1Total && nov1Total > 0 ? nov1Total : READS_CAP)
-  const pipeline = useMemo(() => derivePipeline(flowCollected), [flowCollected])
-
-  const kpis = [
-    { x: 42, y: 76, w: 296.897, label: "Reads collected", value: "28.2K" },
-    { x: 350, y: 75, w: 297, label: "Collected by HES", value: "28.2K", grad: KPI_GRAD_ALT },
-    { x: 658, y: 75, w: 297, label: "Validated by MDM", value: "28.1K" },
-    {
-      x: 967,
-      y: 75,
-      w: 297,
-      label: "Failed validation",
-      value: compact(Math.round((28_200 / (1 - NOT_COLLECTED_RATE)) * FAILED_VALIDATION_RATE)),
-    },
-    { x: 1275, y: 75, w: 297, label: "Collection rate", value: "99.0%" },
-    { x: 1583, y: 75, w: 297, label: "Validation rate", value: "99.5%" },
-  ]
 
   return (
     <Frame>
       <Pin x={67} y={30} size={32} weight={900} color={TEAL} lh={40}>METER DATA PIPELINE · HES → MDM</Pin>
       <LiveBadge />
 
-      {kpis.map((k) => (
+      {KPIS.map((k) => (
         <KpiCard key={k.label} x={k.x} y={k.y} w={k.w} label={k.label} value={k.value} grad={k.grad} />
       ))}
 
@@ -169,7 +98,7 @@ export function Screen2() {
 
       <AreaLineChart x={CHART_X} y={CHART_Y} w={CHART_W} h={CHART_H} series={READS_SERIES} yMax={1_210_000} />
 
-      {pipeline.flow.map((row) => (
+      {FLOW.map((row) => (
         <div key={row.label}>
           <Pin x={BAR_X} y={row.labelY} size={19} weight={400} color="#8ba4a2">{row.label}</Pin>
           <Pin x={1752} y={row.labelY - 3} size={23} weight={700} color="#e8f2f0" w={120} align="right">{row.value}</Pin>
