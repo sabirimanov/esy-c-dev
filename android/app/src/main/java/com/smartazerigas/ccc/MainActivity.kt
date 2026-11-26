@@ -3,10 +3,13 @@ package com.smartazerigas.ccc
 import android.annotation.SuppressLint
 import android.graphics.Color
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -48,6 +51,9 @@ class MainActivity : AppCompatActivity() {
     private var backTarget: WallNav? = null
     private var backReady = false
     private var focusPageAfterOverview = -1
+    private var pendingOverviewPage = -1
+
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,10 +77,11 @@ class MainActivity : AppCompatActivity() {
         back.visibility = View.INVISIBLE
         reserveBottomChrome()
 
+        zoomHost.onZoomIntoPageStarted = { page ->
+            if (nav.overview) preloadOverviewTarget(page)
+        }
         zoomHost.onEnterSinglePage = { page ->
-            if (nav.overview) {
-                go(nav.copy(overview = false, page = page).clamped(), force = true)
-            }
+            if (nav.overview) enterPageFromOverview(page)
         }
         zoomHost.onPinchOut = {
             if (!nav.overview && !animating) {
@@ -133,6 +140,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
         webA.destroy()
         webB.destroy()
         super.onDestroy()
@@ -152,6 +160,7 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureWebView(web: WebView) {
         web.setBackgroundColor(Color.BLACK)
+        web.addJavascriptInterface(UfgBridge(), "CccNative")
         web.webChromeClient = WebChromeClient()
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
@@ -160,6 +169,7 @@ class MainActivity : AppCompatActivity() {
                 if (view === back && backTarget != null) {
                     backReady = true
                 }
+                if (view != null) injectUfgObserver(view)
                 if (view === front && nav.overview && focusPageAfterOverview > 0) {
                     val page = focusPageAfterOverview
                     focusPageAfterOverview = -1
@@ -186,6 +196,48 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private inner class UfgBridge {
+        @JavascriptInterface
+        fun onUfg(open: Boolean) {
+            runOnUiThread { applyUfgOpen(open) }
+        }
+    }
+
+    private fun injectUfgObserver(web: WebView) {
+        web.evaluateJavascript(
+            """
+            (function () {
+              if (window.__cccUfgBound) return;
+              window.__cccUfgBound = true;
+              function report() {
+                try {
+                  var el = document.querySelector('[data-ufg]');
+                  var open = !!(el && el.getAttribute('data-ufg') === 'open');
+                  if (window.CccNative && CccNative.onUfg) CccNative.onUfg(open);
+                } catch (e) {}
+              }
+              report();
+              try {
+                new MutationObserver(report).observe(document.documentElement, {
+                  attributes: true,
+                  subtree: true,
+                  attributeFilter: ['data-ufg']
+                });
+              } catch (e) {}
+              setInterval(report, 1200);
+            })();
+            """.trimIndent(),
+            null,
+        )
+    }
+
+    private fun applyUfgOpen(open: Boolean) {
+        if (nav.ufgOpen == open) return
+        nav = nav.withUfg(open)
+        applyChrome()
+        if (!nav.overview) preloadNeighbors()
+    }
+
     private fun pageWidth(): Float =
         front.width.toFloat().takeIf { it > 0 } ?: resources.displayMetrics.widthPixels.toFloat()
 
@@ -200,8 +252,81 @@ class MainActivity : AppCompatActivity() {
 
     private fun preloadNeighbors() {
         if (nav.overview) return
-        // Prefer next page warm in the buffer.
         ensureNeighbor(+1)
+    }
+
+    private fun preloadOverviewTarget(page: Int) {
+        pendingOverviewPage = page
+        val target = nav.copy(overview = false, page = page).clamped()
+        if (backTarget == target && (backReady || back.url == target.url())) return
+        backTarget = target
+        backReady = false
+        back.alpha = 0f
+        back.visibility = View.VISIBLE
+        back.translationX = 0f
+        back.loadUrl(target.url())
+    }
+
+    /**
+     * After overview zoom settles: fade overview out → reset transform on black → fade page in.
+     * Avoids the old flash (reset zoom while overview still visible, then hard URL jump).
+     */
+    private fun enterPageFromOverview(page: Int) {
+        if (!nav.overview || animating) return
+        animating = true
+        swipeHost.swipeEnabled = false
+        val target = nav.copy(overview = false, page = page).clamped()
+        if (pendingOverviewPage != page || backTarget != target) {
+            preloadOverviewTarget(page)
+        }
+
+        val startFade = Runnable {
+            front.animate().cancel()
+            back.animate().cancel()
+            front.animate()
+                .alpha(0f)
+                .setDuration(240)
+                .setInterpolator(DecelerateInterpolator())
+                .withEndAction {
+                    // Black frame: swap to the preloaded page and drop overview zoom.
+                    nav = target
+                    val pageReady = backTarget == target && (backReady || (back.url?.contains(target.path()) == true))
+                    if (pageReady) {
+                        val old = front
+                        front = back
+                        back = old
+                    } else {
+                        front.loadUrl(target.url())
+                    }
+                    front.alpha = 0f
+                    front.visibility = View.VISIBLE
+                    front.translationX = 0f
+                    back.alpha = 1f
+                    back.visibility = View.INVISIBLE
+                    back.translationX = 0f
+                    backTarget = null
+                    backReady = false
+                    pendingOverviewPage = -1
+
+                    zoomHost.resetTransform(animate = false)
+                    applyChrome()
+
+                    front.animate()
+                        .alpha(1f)
+                        .setDuration(320)
+                        .setInterpolator(DecelerateInterpolator())
+                        .withEndAction {
+                            animating = false
+                            swipeHost.swipeEnabled = !nav.overview
+                            preloadNeighbors()
+                        }
+                        .start()
+                }
+                .start()
+        }
+
+        // Let the destination WebView paint if it finished during the zoom.
+        mainHandler.postDelayed(startFade, if (backReady) 40L else 160L)
     }
 
     private fun onPageDragStart() {
@@ -212,9 +337,8 @@ class MainActivity : AppCompatActivity() {
     private fun onPageDrag(dx: Float) {
         if (!dragging || nav.overview || animating) return
         val w = pageWidth()
-        // Rubber-band at edges
-        val atStart = nav.page <= 1 && dx > 0
-        val atEnd = nav.page >= nav.maxPage && dx < 0
+        val atStart = !nav.canPrev() && dx > 0
+        val atEnd = !nav.canNext() && dx < 0
         val drag = when {
             atStart || atEnd -> dx * 0.35f
             else -> dx
@@ -226,8 +350,8 @@ class MainActivity : AppCompatActivity() {
         if (target != nav) {
             ensureNeighbor(direction)
             back.visibility = View.VISIBLE
+            back.alpha = 1f
             back.translationX = drag + direction * w
-            // Keep peek behind front when overlapping
             if (abs(drag) > 4f) back.bringToFront()
             front.bringToFront()
         } else {
@@ -245,9 +369,8 @@ class MainActivity : AppCompatActivity() {
 
         val w = pageWidth()
         val threshold = w * 0.22f
-        // Finger left (dx < 0) → next; finger right → previous.
-        val goNext = dx < -threshold || velocityX < -900f
-        val goPrev = dx > threshold || velocityX > 900f
+        val goNext = (dx < -threshold || velocityX < -900f) && nav.canNext()
+        val goPrev = (dx > threshold || velocityX > 900f) && nav.canPrev()
         val target = when {
             goNext -> nav.next()
             goPrev -> nav.prev()
@@ -289,13 +412,13 @@ class MainActivity : AppCompatActivity() {
         applyChrome()
 
         val w = pageWidth()
-        // If back isn't the right page yet, force-load and wait briefly via visibility.
         if (backTarget != target) {
             backTarget = target
             backReady = false
             back.loadUrl(target.url())
         }
         back.visibility = View.VISIBLE
+        back.alpha = 1f
         if (back.translationX == 0f && front.translationX == 0f) {
             back.translationX = direction * w
         }
@@ -319,6 +442,7 @@ class MainActivity : AppCompatActivity() {
                 back.visibility = View.INVISIBLE
                 front.translationX = 0f
                 front.visibility = View.VISIBLE
+                front.alpha = 1f
                 backTarget = null
                 backReady = false
                 animating = false
@@ -333,12 +457,16 @@ class MainActivity : AppCompatActivity() {
         if (!force && (animating || dragging)) return
         animating = false
         dragging = false
+        pendingOverviewPage = -1
+        mainHandler.removeCallbacksAndMessages(null)
         nav = next.clamped()
         applyChrome()
         front.animate().cancel()
         back.animate().cancel()
         front.translationX = 0f
         back.translationX = 0f
+        front.alpha = 1f
+        back.alpha = 1f
         back.visibility = View.INVISIBLE
         backTarget = null
         backReady = false
@@ -358,10 +486,13 @@ class MainActivity : AppCompatActivity() {
             zoomHost.resetTransform(animate = false)
         }
 
-        pageBadge.text = if (overview) {
-            getString(R.string.view_all)
-        } else {
-            getString(R.string.page_label, nav.page, nav.maxPage)
+        pageBadge.text = when {
+            overview -> getString(R.string.view_all)
+            nav.ufgOpen && nav.dashboard == Dashboard.OPERATIONS -> {
+                val idx = WallNav.UFG_PAGES.indexOf(nav.page).let { if (it >= 0) it + 1 else 1 }
+                getString(R.string.ufg_page_label, idx, WallNav.UFG_PAGES.size, nav.page)
+            }
+            else -> getString(R.string.page_label, nav.page, nav.maxPage)
         }
     }
 
@@ -442,7 +573,7 @@ class MainActivity : AppCompatActivity() {
         val uri = runCatching { android.net.Uri.parse(url) }.getOrNull() ?: return null
         val path = uri.path?.trimEnd('/') ?: return null
         return when {
-            path == "/overview" -> WallNav(Dashboard.OPERATIONS, overview = true)
+            path == "/overview" -> WallNav(Dashboard.OPERATIONS, overview = true, ufgOpen = nav.ufgOpen)
             path == "/socnoc/overview" -> WallNav(Dashboard.SOCNOC, overview = true)
             path.startsWith("/socnoc/") -> {
                 val id = path.removePrefix("/socnoc/").toIntOrNull() ?: return null
@@ -450,7 +581,7 @@ class MainActivity : AppCompatActivity() {
             }
             path.matches(Regex("/\\d+")) -> {
                 val id = path.removePrefix("/").toIntOrNull() ?: return null
-                WallNav(Dashboard.OPERATIONS, page = id).clamped()
+                WallNav(Dashboard.OPERATIONS, page = id, ufgOpen = nav.ufgOpen).clamped()
             }
             else -> null
         }

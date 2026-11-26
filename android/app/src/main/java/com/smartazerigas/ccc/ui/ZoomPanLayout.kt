@@ -36,6 +36,9 @@ class ZoomPanLayout @JvmOverloads constructor(
      */
     var onEnterSinglePage: ((page: Int) -> Unit)? = null
 
+    /** Fired at the start of a zoom-into-page animation so the host can preload. */
+    var onZoomIntoPageStarted: ((page: Int) -> Unit)? = null
+
     var onTransformChanged: ((scale: Float, transX: Float, transY: Float) -> Unit)? = null
 
     var gridCols: Int = 7
@@ -165,8 +168,11 @@ class ZoomPanLayout @JvmOverloads constructor(
         if (!zoomEnabled || enteredPage) return
         val safePage = page.coerceIn(1, gridCols * gridRows)
         val target = transformForPage(safePage, fillScale = enterPageScale)
-        if (enterSingle) enteredPage = true
-        animateTo(target.scale, target.x, target.y, durationMs = 520) {
+        if (enterSingle) {
+            enteredPage = true
+            onZoomIntoPageStarted?.invoke(safePage)
+        }
+        animateTo(target.scale, target.x, target.y, durationMs = 560) {
             if (enterSingle) onEnterSinglePage?.invoke(safePage)
         }
     }
@@ -221,7 +227,9 @@ class ZoomPanLayout @JvmOverloads constructor(
         if (enteredPage || !zoomEnabled) return
         if (scale < enterPageScale) return
         enteredPage = true
-        onEnterSinglePage?.invoke(pageAtCenter())
+        val page = pageAtCenter()
+        onZoomIntoPageStarted?.invoke(page)
+        onEnterSinglePage?.invoke(page)
     }
 
     private fun animateTo(
