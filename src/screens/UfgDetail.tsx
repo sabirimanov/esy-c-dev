@@ -146,7 +146,8 @@ export function UfgScreen2({ state }: { state: WallState }) {
   const high = ufg.extremes?.high
   const gapText = delta == null ? "—" : delta > 0 ? `+${delta.toFixed(1)} pp` : delta < 0 ? `${delta.toFixed(1)} pp` : "0 pp"
   return (
-    <Frame mirror>
+    // Slot 21: cyan accent on the right (not mirrored).
+    <Frame>
       <Head hint="What changed / How far from target / How much gas remains unaccounted" aside={scopeTitle(state, clusterName)} />
       <Kpi {...current} label="CURRENT UFG" value={shown == null ? "—" : `${shown.toFixed(1)}%`} note="Selected period" glow={above ? "heat" : undefined} labelColor={above ? "#eb7d5c" : "#34efde"} />
       <Kpi {...target} label="Target UFG" value="5.0%" note="Configured target" labelColor="#34efde" />

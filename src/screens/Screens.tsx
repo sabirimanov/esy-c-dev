@@ -1204,7 +1204,8 @@ function Screen7({ state }: { state: WallState }) {
     return index % step === 0 || index === daily.length - 1
   })
   return (
-    <Frame mirror>
+    // Slot 21: cyan accent on the right (not mirrored).
+    <Frame>
       <At x={55} y={716} w={901} h={31}>
         <div style={{ height: "100%", borderRadius: 95, background: "#232323", border: "1px solid #282b2a" }} />
       </At>
@@ -2174,7 +2175,8 @@ function Screen15() {
   const opsConnectTotal = connectOpsHardcoded.reduce((sum, row) => sum + row.connect, 0)
 
   return (
-    <Frame>
+    // Slot 2: cyan accent on the left (mirrored).
+    <Frame mirror>
       <Pin x={67} y={28} size={32} weight={900} color="#34efde" lh={40}>REVENUE & BILLING PERFORMANCE</Pin>
 
       {kpis.map((card) => (
@@ -3177,7 +3179,8 @@ function Screen21({ state }: { state: WallState }) {
 
 const bodies: Record<number, (state: WallState) => ReactNode> = {
   1: (state) => <Screen1 state={state} />,
-  2: (state) => (state.ufgOpen ? <UfgScreen2 state={state} /> : <Screen7 state={state} />),
+  // Billing (was 21); frame: slot 2 = mirrored
+  2: () => <Screen15 />,
   3: () => <Screen3 />,
   4: () => <Screen4 />,
   5: () => <Screen5 />,
@@ -3199,7 +3202,8 @@ const bodies: Record<number, (state: WallState) => ReactNode> = {
   18: () => <Screen18 />,
   19: () => <Screen19 />,
   20: (state) => <Screen20 state={state} />,
-  21: () => <Screen15 />,
+  // OM jobs / UFG2 toggle (was 2); frame: slot 21 = non-mirrored
+  21: (state) => (state.ufgOpen ? <UfgScreen2 state={state} /> : <Screen7 state={state} />),
   // Temporarily stashed off-wall (former slot 9 after 6↔9 swap = camera vision)
   22: () => <Screen6 />,
   // Temporarily stashed off-wall (former slot 16 = field operation)
