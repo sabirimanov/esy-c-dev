@@ -7,7 +7,6 @@ import { At, Frame, PlaceText } from "../ui/widgets"
 import { useContent } from "../data/live"
 import { useSocPanel } from "../data/socDashboard"
 import { useLeaks } from "../data/leaks"
-import { usePressure } from "../data/pressure"
 import { useDemand } from "../data/demand"
 import { useGis } from "../data/gis"
 import { useQuality } from "../data/quality"
@@ -1134,15 +1133,30 @@ function Screen7({ state }: { state: WallState }) {
   const attended = jobs?.attended ?? null
   const resolved = jobs?.resolved ?? null
   const telco = jobs?.telco ?? 50
-  const kpis = [
-    { x: 43, y: 96, label: "Jobs assigned", lx: 73.92, ly: 107.03, value: fmt(assigned), vx: 73.92, vy: 168.05, vw: 120 },
-    { x: 308.48, y: 101, label: "Cases attended", lx: 340.99, ly: 112, value: fmt(attended), vx: 340.99, vy: 173.02, vw: 120 },
-    { x: 573.95, y: 101, label: "Cases resolved", lx: 605.95, ly: 112, value: fmt(resolved), vx: 605.95, vy: 173.02, vw: 120 },
-    { x: 839.43, y: 101, label: "Telco Escalations", lx: 872.06, ly: 112, value: String(telco), vx: 872.06, vy: 173.02, vw: 68.93 },
-    { x: 1104.91, y: 101, label: "Resolution rate", lx: 1132.99, ly: 112, value: pct(jobs?.resolutionRate), vx: 1132.99, vy: 173.02, vw: 166.08 },
-    { x: 1370.39, y: 101, label: "Last 7 days visits", lx: 1401.98, ly: 112, value: fmt(jobs?.visits7), vx: 1401.98, vy: 173.02, vw: 68.93 },
-    { x: 1635.89, y: 101, label: "Last 30 days visits", lx: 1668.1, ly: 112, value: fmt(jobs?.visits30), vx: 1668.1, vy: 173.02, vw: 103.87 },
+  const kpiGap = 22
+  const kpiLeft = 43
+  const kpiW = Math.round((1840 - kpiGap * 3) / 4)
+  const kpiDefs = [
+    { label: "Jobs assigned", value: fmt(assigned) },
+    { label: "Cases attended", value: fmt(attended) },
+    { label: "Cases resolved", value: fmt(resolved) },
+    { label: "Telco Escalations", value: String(telco) },
   ]
+  const kpis = kpiDefs.map((item, index) => {
+    const x = kpiLeft + index * (kpiW + kpiGap)
+    return {
+      x,
+      y: 101,
+      w: kpiW,
+      label: item.label,
+      lx: x + 28,
+      ly: 112,
+      value: item.value,
+      vx: x + 28,
+      vy: 173,
+      vw: kpiW - 56,
+    }
+  })
   const actionYs = [767.02, 799.96, 833, 866.05, 898.99, 932.04, 964.98]
   const actions = (jobs?.actions ?? []).map((row, index) => ({
     ...row,
@@ -1208,7 +1222,7 @@ function Screen7({ state }: { state: WallState }) {
         <div style={{ height: "100%", borderRadius: 95, background: "#232323", border: "1px solid #282b2a" }} />
       </At>
       {kpis.map((card) => (
-        <At key={card.label} x={card.x} y={card.y} w={246.025} h={150}><div className="kpi" /></At>
+        <At key={card.label} x={card.x} y={card.y} w={card.w} h={150}><div className="kpi" /></At>
       ))}
       <At x={43} y={652} w={933} h={408}><div className="panel shell dim" /></At>
       <At x={43} y={268} w={1840} h={371}><div className="panel shell dim" /></At>
@@ -1218,7 +1232,7 @@ function Screen7({ state }: { state: WallState }) {
       {kpis.map((card) => (
         <span key={card.label}>
           <Pin x={card.lx} y={card.ly} size={24} weight={500} color="#34efde" lh={40}>{card.label}</Pin>
-          <Pin x={card.vx} y={card.vy} w={card.vw} size={60} weight={700} color="#ffffff" lh={40} align="center">{card.value}</Pin>
+          <Pin x={card.vx} y={card.vy} w={card.vw} size={60} weight={700} color="#ffffff" lh={40} align="left">{card.value}</Pin>
         </span>
       ))}
 
@@ -1381,33 +1395,47 @@ function adjustIncompleteActual(series: (number | null)[]) {
 }
 
 function Screen8({ state }: { state: WallState }) {
-  const demand = useDemand(state)
-  const forecastEnd = demand?.forecast?.predicted.reduce((last, point) => (point.date > last ? point.date : last), state.dateTo) ?? state.dateTo
-  const days = demand ? spanDays(state.date, forecastEnd) : []
+  // Chart is always 14 days anchored on range end: 7 actual + 7 forecast — independent of span length.
+  const anchor = state.date <= state.dateTo ? state.dateTo : state.date
+  const actualDays = Array.from({ length: 7 }, (_, index) => addDays(anchor, -6 + index))
+  const forecastDays = Array.from({ length: 7 }, (_, index) => addDays(anchor, 1 + index))
+  const days = [...actualDays, ...forecastDays]
+  const periodDemand = useDemand(state)
+  const chartDemand = useDemand({ ...state, date: actualDays[0], dateTo: forecastDays[6] })
   const today = todayIso()
-  const byDate = new Map(demand?.points.map((point) => [point.date, point.value]) ?? [])
-  // Hide today and future; patch incomplete trailing actual days
-  const series = adjustIncompleteActual(
-    days.map((date) => (date >= today ? null : byDate.has(date) ? (byDate.get(date) as number) : null)),
-  )
-  const simulated = new Map(demand?.forecast?.simulated.map((point) => [point.date, point.value]) ?? [])
-  const predicted = new Map(demand?.forecast?.predicted.map((point) => [point.date, point.value]) ?? [])
-  const forecastSeries = demand?.forecast
-    ? days.map((date) => {
-        const predictedValue = predicted.get(date)
-        // Excel / weather overlay wins whenever present so forecast has no gaps
-        if (predictedValue != null) return predictedValue
-        const simulatedValue = simulated.get(date)
-        if (date <= today && simulatedValue != null) return simulatedValue
-        return null
-      })
+  const byDate = new Map(chartDemand?.points.map((point) => [point.date, point.value]) ?? [])
+  const simulated = new Map(chartDemand?.forecast?.simulated.map((point) => [point.date, point.value]) ?? [])
+  const predicted = new Map(chartDemand?.forecast?.predicted.map((point) => [point.date, point.value]) ?? [])
+  const forecastValue = (date: string) => {
+    const predictedValue = predicted.get(date)
+    if (predictedValue != null) return predictedValue
+    const simulatedValue = simulated.get(date)
+    if (date <= today && simulatedValue != null) return simulatedValue
+    return null
+  }
+  // First 7: actual only (no future). Last 7: forecast only.
+  const series = [
+    ...adjustIncompleteActual(
+      actualDays.map((date) => (date > today ? null : byDate.has(date) ? (byDate.get(date) as number) : null)),
+    ),
+    ...Array.from({ length: 7 }, () => null as number | null),
+  ]
+  const forecastSeries = chartDemand?.forecast
+    ? [
+        ...Array.from({ length: 7 }, () => null as number | null),
+        ...forecastDays.map((date) => forecastValue(date)),
+      ]
     : null
   const actualNumbers = series.filter((value): value is number => value != null)
   const forecastNumbers = (forecastSeries ?? []).filter((value): value is number => value != null)
+  const nextWeekForecast = forecastDays.reduce((sum, date) => {
+    const value = forecastValue(date)
+    return value != null ? sum + value : sum
+  }, 0)
   const max = demandMax([...actualNumbers, ...forecastNumbers])
-  const ticks = demand ? [max, (max * 2) / 3, max / 3, 0] : []
-  const actual = demand ? compactCount(Math.round(demand.supply), 1) : "—"
-  const forecastText = !demand ? "—" : demand.forecast ? compactCount(Math.round(forecastNumbers.reduce((sum, value) => sum + value, 0)), 1) : "N/A"
+  const ticks = chartDemand ? [max, (max * 2) / 3, max / 3, 0] : []
+  const actual = periodDemand ? compactCount(Math.round(periodDemand.supply), 1) : "—"
+  const forecastText = !chartDemand ? "—" : chartDemand.forecast ? compactCount(Math.round(nextWeekForecast), 1) : "N/A"
   return (
     <Frame mirror>
       <Pin x={67} y={32} size={32} weight={900} color="#34efde" lh={40}>GAS DEMAND & FLOW</Pin>
@@ -1422,7 +1450,7 @@ function Screen8({ state }: { state: WallState }) {
       <Pin x={993.98} y={100.98} size={24} weight={500} color="#34efde" lh={40}>Demand forecast</Pin>
       <div className="at" style={{ left: 993.98, top: 158.98, display: "flex", alignItems: "baseline", gap: 12, height: 40 }}>
         <span style={{ fontSize: 60, fontWeight: 400, lineHeight: "40px", color: "#ffffff" }}>{forecastText}</span>
-        {demand?.forecast && <span style={{ fontSize: 24, lineHeight: "28px", color: "#a0aaa8" }}>m³</span>}
+        {chartDemand?.forecast && <span style={{ fontSize: 24, lineHeight: "28px", color: "#a0aaa8" }}>m³</span>}
       </div>
       <Pin x={993.98} y={220} size={18} color="#ffffff" lh={21}>Forecast for the next week</Pin>
 
@@ -1435,21 +1463,13 @@ function Screen8({ state }: { state: WallState }) {
         <FigAsset key={y} src={screen8Asset("chart-grid")} x={140.93} y={y - 0.5} w={1128} h={1} />
       ))}
       {(() => {
-        const liveChart = actualNumbers.length >= 1
+        const liveChart = actualNumbers.length >= 1 || forecastNumbers.length >= 1
         const chartLeft = 140.93
         const chartWidth = 1128
-        // Evenly spaced labels across the full series — never hardcode day-of-month as indices
-        const axisDays = (() => {
-          if (!days.length) return [] as { day: string; index: number }[]
-          const count = Math.min(7, days.length)
-          const picked: { day: string; index: number }[] = []
-          for (let slot = 0; slot < count; slot += 1) {
-            const index = count === 1 ? 0 : Math.round((slot * (days.length - 1)) / (count - 1))
-            if (picked.length && picked[picked.length - 1].index === index) continue
-            picked.push({ day: days[index], index })
-          }
-          return picked
-        })()
+        // 14 fixed days — label ends of each week + midpoint.
+        const axisDays = [0, 3, 6, 7, 10, 13]
+          .filter((index, slot, all) => all.indexOf(index) === slot && index < days.length)
+          .map((index) => ({ day: days[index], index }))
         const axisLabel = (iso: string) => {
           const { m, d } = parseIso(iso)
           return `${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}`
@@ -1966,14 +1986,13 @@ function ExecutiveAlerts({ height }: { height: number }) {
 
 function Screen14({ state }: { state: WallState }) {
   const d = useContent().screen14
-  const ufg = useUfgSummary(state)
-  const quality = useQuality(state)
-  // Temporarily hide Realization Gross / Outstanding Balance.
+  // Temporarily hide all top KPI figures.
   const collectionText = "—"
   const balanceText = "—"
-  const ufgText = ufg.current == null ? "—" : `${ufg.current.toFixed(1)}%`
-  const coverageShare = quality && quality.total > 0 && quality.days > 0 ? quality.received.overall / (quality.total * quality.days) : null
-  const metersText = coverageShare == null ? "—" : `${(coverageShare * 100).toFixed(1)}%`
+  const ufgText = "—"
+  const metersText = "—"
+  const reconnectText = "—"
+  const emergencyText = "—"
   const events = useTamper(state)
   const eventCounts = events ? [events.tampering, events.disassembly, events.interference, events.magnetic, events.battery] : null
   const eventMax = eventCounts ? Math.max(...eventCounts) : 0
@@ -2015,9 +2034,9 @@ function Screen14({ state }: { state: WallState }) {
       <Pin x={669} y={113} size={24} color="#34efde" lh={40}>Outstanding Balance</Pin>
       <Pin x={669} y={180} size={60} weight={700} color="#ffffff" lh={40}>{balanceText}</Pin>
       <Pin x={982} y={116} size={24} weight={500} color="#34efde" lh={40}>Emergency Response</Pin>
-      <Pin x={1000} y={180} size={60} weight={700} color="#ffffff" lh={40}>N/A {/*<span style={{ fontSize: 33 }}>MIN</span>*/}</Pin>
+      <Pin x={1000} y={180} size={60} weight={700} color="#ffffff" lh={40}>{emergencyText}</Pin>
       <Pin x={1301} y={116} size={24} color="#34efde" lh={40}>Reconnect within 24 h</Pin>
-      <Pin x={1299} y={180} size={60} weight={700} color="#ffffff" lh={40}>{100/*reconnectText*/}%</Pin>
+      <Pin x={1299} y={180} size={60} weight={700} color="#ffffff" lh={40}>{reconnectText}</Pin>
       <Pin x={1612} y={116} size={24} color="#34efde" lh={40}>Meters Communicating</Pin>
       <Pin x={1610} y={180} size={60} weight={700} color="#ffffff" lh={40}>{metersText}</Pin>
 
@@ -3023,16 +3042,13 @@ function PressureSpanList({ height }: { height: number }) {
 
 function Screen21({ state }: { state: WallState }) {
   const d = useContent().screen21
-  const pressure = usePressure(state)
   const leaks = useLeaks(state)
-  const lowSensors = pressure ? pressure.lowSensors : null
-  const mediumSensors = pressure ? pressure.mediumSensors : null
-  const totalSensors = lowSensors == null || mediumSensors == null ? null : lowSensors + mediumSensors
+  // Top pressure KPI counts temporarily hidden.
   const kpis = [
     { x: 31, lx: 56 },
     { x: 649, lx: 674 },
     { x: 1267, lx: 1294 },
-  ].map((item, index) => ({ ...item, ...d.cards[index], value: [countText(totalSensors), countText(lowSensors), countText(mediumSensors)][index] }))
+  ].map((item, index) => ({ ...item, ...d.cards[index], value: "—" }))
   const surveyedLeaks = leaks ? countText(leaks.suspected) : "—"
   // Grade A/B/C from leak.duckdb map to ppm bands 500–1000 / 1000–1500 / >1500
   const ppmCounts = [
