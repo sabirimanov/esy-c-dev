@@ -13,7 +13,6 @@ import { useGis } from "../data/gis"
 import { useQuality } from "../data/quality"
 import { useImpact } from "../data/impact"
 import { alertRowMs, useAlertScroll, useSmoothTrack } from "../data/alertScroll"
-import { billingForRange, useBilling } from "../data/billing"
 import { useTamper } from "../data/tamper"
 import { useFieldOps } from "../data/field"
 import { formatCount, formatPct, typeByKey, useConnectivity, type ConnectivityTypeKey } from "../data/connectivity"
@@ -1963,14 +1962,6 @@ function ExecutiveAlerts({ height }: { height: number }) {
       )}
     </At>
   )
-}
-
-function billingAmount(value: number | null | undefined) {
-  if (value == null) return "—"
-  const sign = value < 0 ? "−" : ""
-  const abs = Math.abs(value)
-  if (abs >= 1000) return `${sign}${compactCount(Math.round(abs), 1)}`
-  return `${sign}${Math.round(abs).toLocaleString("en-US")}`
 }
 
 function Screen14({ state }: { state: WallState }) {
