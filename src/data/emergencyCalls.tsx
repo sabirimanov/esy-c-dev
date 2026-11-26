@@ -225,15 +225,22 @@ const empty: EmergencyCallsState = {
   clearMapSelection: noop,
 }
 
+function legendKey(call: ResolvedCall) {
+  // Merge Tamamlanmışdır variants (ids 7 / 10 / 12) into one green Completed row.
+  if (statusBucket(call.statusId) === "done") return "done"
+  return call.statusId
+}
+
 function buildData(calls: ResolvedCall[]) {
   const points = callsToOverlayPoints(calls)
   const legendMap = new Map<string, EmergencyLegendRow>()
   for (const call of calls) {
-    const row = legendMap.get(call.statusId)
+    const key = legendKey(call)
+    const row = legendMap.get(key)
     if (row) row.count += 1
     else {
-      legendMap.set(call.statusId, {
-        statusId: call.statusId,
+      legendMap.set(key, {
+        statusId: key === "done" ? "7" : call.statusId,
         statusTitle: call.statusTitle,
         color: call.color,
         count: 1,

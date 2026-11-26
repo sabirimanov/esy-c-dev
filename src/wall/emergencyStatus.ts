@@ -27,9 +27,9 @@ const BY_ID: Record<string, StatusBucket> = {
   "5": "progress", // Yola çıxıb
   "6": "progress", // İşə başlayıb
   "11": "progress", // Təmir tələbi
-  "12": "progress", // Təmirə göndərildi
-  "7": "done", // Tamamlanıb
-  "10": "closed.null", // Aşkar olunmadı
+  "12": "done", // Təmirə göndərildi / yönləndirildi → Tamamlanmışdır (green)
+  "7": "done", // Tamamlanıb / Tamamlanmışdır
+  "10": "done", // Aşkar olunmadı → Tamamlanmışdır (green)
   "9": "unresolved", // Passiv
 }
 
@@ -42,9 +42,9 @@ const LABEL_EN: Record<string, string> = {
   "6": "Work started",
   "7": "Completed",
   "9": "Passive",
-  "10": "Not found",
+  "10": "Completed", // Aşkar olunmadı → Tamamlanmışdır
   "11": "Repair request",
-  "12": "Sent for repair",
+  "12": "Completed", // Təmirə yönləndirildi → Tamamlanmışdır
 }
 
 /** Fallback when id is unknown — normalize AZ / mixed API titles. */
@@ -60,13 +60,17 @@ const TITLE_EN: Record<string, string> = {
   "ise baslayib": "Work started",
   tamamlanıb: "Completed",
   tamamlanib: "Completed",
+  tamamlanmışdır: "Completed",
+  tamamlanmisdir: "Completed",
   passiv: "Passive",
-  "aşkar olunmadı": "Not found",
-  "askar olunmadi": "Not found",
+  "aşkar olunmadı": "Completed",
+  "askar olunmadi": "Completed",
   "təmir tələbi": "Repair request",
   "temir telebi": "Repair request",
-  "təmirə göndərildi": "Sent for repair",
-  "temire gonderildi": "Sent for repair",
+  "təmirə göndərildi": "Completed",
+  "temire gonderildi": "Completed",
+  "təmirə yönləndirildi": "Completed",
+  "temire yonlendirildi": "Completed",
 }
 
 function foldTitle(value: string) {
