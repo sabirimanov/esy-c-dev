@@ -121,8 +121,8 @@ async function loadDemand(scope, from, to) {
   const key = `demand:${JSON.stringify({ clusters: scope.clusters, forecast: scope.forecast, from, to })}`
   return cached(key, async () => {
     const [actual, forecast] = await Promise.all([
-      loadActual(scope.clusters, from, to),
-      loadForecast(scope.forecast, from, to),
+      loadActual(scope.clusters, from, to).catch(() => ({ total: 0, supply: 0, points: [], peak: null })),
+      loadForecast(scope.forecast, from, to).catch(() => null),
     ])
     return { ...actual, forecast }
   })

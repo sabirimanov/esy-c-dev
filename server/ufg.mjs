@@ -28,26 +28,31 @@ export function loadUfgHierarchy() {
 export async function loadClusterDemand(clusterId, from, to) {
   if (!/^[A-Za-z0-9_]{1,80}$/.test(clusterId)) return new Map()
   const key = `ufg:hourly:${clusterId}|${from}|${to}`
-  const record = await cached(key, async () => {
-    const data = await fetchCcc(`/api/v1/cluster_hourly/${clusterId}`, {
-      gasDay: to,
-      gasDayFrom: from,
-      series: "true",
+  try {
+    const record = await cached(key, async () => {
+      const data = await fetchCcc(`/api/v1/cluster_hourly/${clusterId}`, {
+        gasDay: to,
+        gasDayFrom: from,
+        series: "true",
+      })
+      const out = {}
+      for (const row of data.hours || []) {
+        const date = String(row.gas_day || "").slice(0, 10)
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+        const bucket = out[date] || { supply: 0, demand: 0 }
+        const supply = Number(row.supply_kwh)
+        const demand = Number(row.demand_kwh)
+        if (Number.isFinite(supply)) bucket.supply += supply
+        if (Number.isFinite(demand)) bucket.demand += demand
+        out[date] = bucket
+      }
+      return out
     })
-    const out = {}
-    for (const row of data.hours || []) {
-      const date = String(row.gas_day || "").slice(0, 10)
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
-      const bucket = out[date] || { supply: 0, demand: 0 }
-      const supply = Number(row.supply_kwh)
-      const demand = Number(row.demand_kwh)
-      if (Number.isFinite(supply)) bucket.supply += supply
-      if (Number.isFinite(demand)) bucket.demand += demand
-      out[date] = bucket
-    }
-    return out
-  })
-  return new Map(Object.entries(record || {}))
+    return new Map(Object.entries(record || {}))
+  } catch {
+    // UFG often returns reauth_required — keep demand/forecast screens alive.
+    return new Map()
+  }
 }
 
 async function hierarchy() {
