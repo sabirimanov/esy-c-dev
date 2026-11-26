@@ -1395,13 +1395,18 @@ function adjustIncompleteActual(series: (number | null)[]) {
 }
 
 function Screen8({ state }: { state: WallState }) {
-  // Chart is always 14 days anchored on range end: 7 actual + 7 forecast — independent of span length.
+  // Actual = full selected period; +7 forecast days after range end. KPI forecast = those 7 only.
+  const from = state.date <= state.dateTo ? state.date : state.dateTo
   const anchor = state.date <= state.dateTo ? state.dateTo : state.date
-  const actualDays = Array.from({ length: 7 }, (_, index) => addDays(anchor, -6 + index))
+  const actualDays = spanDays(from, anchor)
   const forecastDays = Array.from({ length: 7 }, (_, index) => addDays(anchor, 1 + index))
   const days = [...actualDays, ...forecastDays]
   const periodDemand = useDemand(state)
-  const chartDemand = useDemand({ ...state, date: actualDays[0], dateTo: forecastDays[6] })
+  const chartDemand = useDemand({
+    ...state,
+    date: actualDays[0] ?? from,
+    dateTo: forecastDays[6],
+  })
   const today = todayIso()
   const byDate = new Map(chartDemand?.points.map((point) => [point.date, point.value]) ?? [])
   const simulated = new Map(chartDemand?.forecast?.simulated.map((point) => [point.date, point.value]) ?? [])
@@ -1413,19 +1418,13 @@ function Screen8({ state }: { state: WallState }) {
     if (date <= today && simulatedValue != null) return simulatedValue
     return null
   }
-  // First 7: actual only (no future). Last 7: forecast only.
   const series = [
     ...adjustIncompleteActual(
       actualDays.map((date) => (date > today ? null : byDate.has(date) ? (byDate.get(date) as number) : null)),
     ),
-    ...Array.from({ length: 7 }, () => null as number | null),
+    ...Array.from({ length: forecastDays.length }, () => null as number | null),
   ]
-  const forecastSeries = chartDemand?.forecast
-    ? [
-        ...Array.from({ length: 7 }, () => null as number | null),
-        ...forecastDays.map((date) => forecastValue(date)),
-      ]
-    : null
+  const forecastSeries = chartDemand?.forecast ? days.map((date) => forecastValue(date)) : null
   const actualNumbers = series.filter((value): value is number => value != null)
   const forecastNumbers = (forecastSeries ?? []).filter((value): value is number => value != null)
   const nextWeekForecast = forecastDays.reduce((sum, date) => {
@@ -1466,10 +1465,17 @@ function Screen8({ state }: { state: WallState }) {
         const liveChart = actualNumbers.length >= 1 || forecastNumbers.length >= 1
         const chartLeft = 140.93
         const chartWidth = 1128
-        // 14 fixed days — label ends of each week + midpoint.
-        const axisDays = [0, 3, 6, 7, 10, 13]
-          .filter((index, slot, all) => all.indexOf(index) === slot && index < days.length)
-          .map((index) => ({ day: days[index], index }))
+        const axisDays = (() => {
+          if (!days.length) return [] as { day: string; index: number }[]
+          const count = Math.min(7, days.length)
+          const picked: { day: string; index: number }[] = []
+          for (let slot = 0; slot < count; slot += 1) {
+            const index = count === 1 ? 0 : Math.round((slot * (days.length - 1)) / (count - 1))
+            if (picked.length && picked[picked.length - 1].index === index) continue
+            picked.push({ day: days[index], index })
+          }
+          return picked
+        })()
         const axisLabel = (iso: string) => {
           const { m, d } = parseIso(iso)
           return `${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}`
