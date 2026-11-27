@@ -45,10 +45,11 @@ function regionClause(regionId, cityId) {
 
 function buildSql(from, to, regionId, cityId) {
   const region = regionClause(regionId, cityId)
+  // Normalize attendance casing: DB has both "Not attended" and "Not Attended".
   return `WITH scoped AS (
   SELECT
-    attendance,
-    final_status,
+    lower(btrim(coalesce(attendance, ''))) AS attendance_norm,
+    lower(btrim(coalesce(final_status, ''))) AS status_norm,
     resolution_action,
     coalesce(last_visit, first_visit)::date AS visit_day
   FROM om_jobs.om_jobs
@@ -61,10 +62,13 @@ ref AS (
 summary AS (
   SELECT
     count(*)::int AS assigned,
-    count(*) FILTER (WHERE attendance = 'Attended')::int AS attended,
-    count(*) FILTER (WHERE final_status = 'Resolved')::int AS resolved,
-    count(*) FILTER (WHERE attendance = 'Attended' AND final_status IS DISTINCT FROM 'Resolved')::int AS attended_not_resolved,
-    count(*) FILTER (WHERE attendance = 'Not attended')::int AS not_attended,
+    count(*) FILTER (WHERE attendance_norm = 'attended')::int AS attended,
+    count(*) FILTER (WHERE status_norm = 'resolved')::int AS resolved,
+    count(*) FILTER (WHERE status_norm = 'resolved' AND attendance_norm = 'attended')::int AS resolved_attended,
+    count(*) FILTER (WHERE status_norm = 'resolved' AND attendance_norm = 'not attended')::int AS resolved_without_attendance,
+    count(*) FILTER (WHERE attendance_norm = 'attended' AND status_norm IS DISTINCT FROM 'resolved')::int AS attended_not_resolved,
+    count(*) FILTER (WHERE attendance_norm = 'not attended' AND status_norm IS DISTINCT FROM 'resolved')::int AS not_attended,
+    count(*) FILTER (WHERE attendance_norm NOT IN ('attended', 'not attended'))::int AS other_status,
     count(*) FILTER (WHERE visit_day > (SELECT d FROM ref) - 7)::int AS visits_7,
     count(*) FILTER (WHERE visit_day > (SELECT d FROM ref) - 30)::int AS visits_30,
     (SELECT d FROM ref) AS ref_day
@@ -83,15 +87,15 @@ actions AS (
     END AS action,
     count(*)::int AS n
   FROM scoped
-  WHERE final_status = 'Resolved'
+  WHERE status_norm = 'resolved'
   GROUP BY 1
 ),
 months AS (
   SELECT
     to_char(date_trunc('month', visit_day), 'YYYY-MM') AS ym,
     count(*)::int AS assigned,
-    count(*) FILTER (WHERE attendance = 'Attended')::int AS attended,
-    count(*) FILTER (WHERE final_status = 'Resolved')::int AS resolved
+    count(*) FILTER (WHERE attendance_norm = 'attended')::int AS attended,
+    count(*) FILTER (WHERE status_norm = 'resolved')::int AS resolved
   FROM scoped
   GROUP BY 1
 ),
@@ -99,8 +103,8 @@ daily AS (
   SELECT
     visit_day AS day,
     count(*)::int AS assigned,
-    count(*) FILTER (WHERE final_status = 'Resolved')::int AS resolved,
-    count(*) FILTER (WHERE final_status = 'Pending')::int AS pending
+    count(*) FILTER (WHERE status_norm = 'resolved')::int AS resolved,
+    count(*) FILTER (WHERE status_norm = 'pending')::int AS pending
   FROM scoped
   GROUP BY 1
 )
@@ -162,12 +166,23 @@ function mapPayload(row) {
     pending: num(item.pending),
   }))
 
+  const resolvedAttended = num(summary.resolved_attended)
+  const resolvedWithoutAttendance = num(summary.resolved_without_attendance)
+  const attendedNotResolved = num(summary.attended_not_resolved)
+  const notAttended = num(summary.not_attended)
+  // Catch-all so the five status rows always sum to assigned (covers blank/other labels).
+  const partitioned = resolvedAttended + resolvedWithoutAttendance + attendedNotResolved + notAttended
+  const otherStatus = Math.max(num(summary.other_status), assigned - partitioned)
+
   return {
     assigned,
     attended,
     resolved,
-    attendedNotResolved: num(summary.attended_not_resolved),
-    notAttended: num(summary.not_attended),
+    resolvedAttended,
+    resolvedWithoutAttendance,
+    attendedNotResolved,
+    notAttended,
+    otherStatus,
     resolutionRate: share(resolved, assigned),
     visits7: num(summary.visits_7),
     visits30: num(summary.visits_30),
@@ -209,7 +224,7 @@ export function handleOmJobs(req, res) {
     send(res, 400, { error: "bad filter" })
     return true
   }
-  const key = `om-jobs:v1:${from}|${to}|${regionId}|${cityId}`
+  const key = `om-jobs:v2:${from}|${to}|${regionId}|${cityId}`
   cached(key, () => loadOmJobs(from, to, regionId, cityId))
     .then((body) => send(res, 200, body))
     .catch(() => send(res, 502, { error: "upstream unavailable" }))

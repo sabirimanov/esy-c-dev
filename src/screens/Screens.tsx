@@ -1182,11 +1182,23 @@ function Screen7({ state }: { state: WallState }) {
     { key: "rate" as const, x: 1800.96 },
   ]
   const statusTotal = Math.max(assigned ?? 0, 1)
-  const statusRows = [
-    { label: "Resolved", value: resolved, color: "#35e5d7", fill: "#35e5d7", y: 335.02, vy: 328.97, barY: 365.04 },
-    { label: "Attended, not resolved", value: jobs?.attendedNotResolved, color: "#f2bd56", fill: "#f2bd56", y: 419.04, vy: 412.99, barY: 448.96 },
-    { label: "Not yet attended", value: jobs?.notAttended, color: "#ed746b", fill: "#ed746b", y: 502.96, vy: 497.02, barY: 532.98 },
+  // Five mutually exclusive buckets — sum equals assigned (125 on the screenshot period).
+  const statusDefs = [
+    { label: "Resolved · attended", value: jobs?.resolvedAttended, color: "#35e5d7", fill: "#35e5d7" },
+    { label: "Resolved without attendance", value: jobs?.resolvedWithoutAttendance, color: "#6bb8ff", fill: "#6bb8ff" },
+    { label: "Attended, not resolved", value: jobs?.attendedNotResolved, color: "#f2bd56", fill: "#f2bd56" },
+    { label: "Not yet attended", value: jobs?.notAttended, color: "#ed746b", fill: "#ed746b" },
+    { label: "Other / unclassified", value: jobs?.otherStatus, color: "#91aaa8", fill: "#6e7775" },
   ]
+  const statusPitch = 52
+  const statusRows = statusDefs.map((row, index) => {
+    const y = 318 + index * statusPitch
+    return { ...row, y, vy: y - 6, barY: y + 28 }
+  })
+  const statusSum =
+    jobs == null
+      ? null
+      : statusDefs.reduce((sum, row) => sum + (row.value ?? 0), 0)
   const daily = jobs?.daily ?? []
   const dailyMax = Math.max(1, ...daily.map((day) => Math.max(day.assigned, day.resolved, day.pending)))
   const tickMax = Math.max(4, Math.ceil(dailyMax / 4) * 4)
@@ -1286,8 +1298,10 @@ function Screen7({ state }: { state: WallState }) {
           </span>
         )
       })}
-      <Pin x={1233.98} y={598} size={14} color="#91aaa8" lh={16}>
-        {assigned == null ? "Loading om_jobs…" : `Derived from om_jobs: ${fmt(assigned)} assigned, ${fmt(attended)} attended, ${fmt(resolved)} resolved.`}
+      <Pin x={1233.98} y={590} size={13} color="#91aaa8" lh={15}>
+        {assigned == null
+          ? "Loading om_jobs…"
+          : `Partition of assigned: ${fmt(statusSum)} = ${fmt(assigned)} · attended ${fmt(attended)} · resolved ${fmt(resolved)}.`}
       </Pin>
 
       <Pin x={73.92} y={666.04} size={25} weight={700} color="#f2f5f5" lh={29}>FIELD JOB RESOLUTION & ESCALATION BREAKDOWN</Pin>

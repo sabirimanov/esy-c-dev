@@ -47,8 +47,12 @@ export type OmJobsData = {
   assigned: number
   attended: number
   resolved: number
+  /** Partition of assigned (case-normalized attendance). Sum of the five = assigned. */
+  resolvedAttended: number
+  resolvedWithoutAttendance: number
   attendedNotResolved: number
   notAttended: number
+  otherStatus: number
   resolutionRate: number | null
   visits7: number
   visits30: number

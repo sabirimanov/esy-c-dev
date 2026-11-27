@@ -395,7 +395,6 @@ export function UfgScreen9({ state }: { state: WallState }) {
   const readiness = useUfgReadiness(state)
   const areas = readiness?.areas
   const clusters = readiness?.clusters
-  const snapshot = readiness == null ? "—" : readiness.day ? formatRange(readiness.day, readiness.day) : "No snapshot in the selected period"
   return (
     <Frame mirror>
       <Head hint="How much of the network is ready, qualified, or blocked for trusted UFG reporting" aside="Reconciliation readiness" />
@@ -403,11 +402,9 @@ export function UfgScreen9({ state }: { state: WallState }) {
       <Kpi {...cards[1]} label="CLUSTERS" value={clusters ? String(clusters.total) : "—"} note={clusters ? countLine(clusters) : "—"} labelColor="#34efde" wide />
       <Kpi {...cards[2]} label="BLOCKED CLUSTERS" value={clusters ? String(clusters.blocked) : "—"} note="Require data or reconciliation review" glow="heat" labelColor="#eb7d5c" wide />
       <Kpi {...cards[3]} label="P&T CONFIGURED CLUSTERS" value="3 / 42" note="Source configuration count" glow="gold" labelColor="#f2a65a" wide />
-      <Pin x={1280} y={266} w={600} size={15} color="#6e7775" align="right">{snapshot}</Pin>
 
       <Card x={40} y={324} w={1135} h={460}>
         <h2>Data readiness</h2>
-        <p className="sub">{snapshot}</p>
         <div className="ufg-block">
           <div className="ufg-block-head"><b>Service areas</b><span>{areas ? `${areas.total} total` : "—"}</span></div>
           <Stack parts={areas ? stackParts(areas) : []} />
