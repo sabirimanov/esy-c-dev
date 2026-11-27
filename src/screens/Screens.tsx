@@ -1195,10 +1195,6 @@ function Screen7({ state }: { state: WallState }) {
     const y = 318 + index * statusPitch
     return { ...row, y, vy: y - 6, barY: y + 28 }
   })
-  const statusSum =
-    jobs == null
-      ? null
-      : statusDefs.reduce((sum, row) => sum + (row.value ?? 0), 0)
   const daily = jobs?.daily ?? []
   const dailyMax = Math.max(1, ...daily.map((day) => Math.max(day.assigned, day.resolved, day.pending)))
   const tickMax = Math.max(4, Math.ceil(dailyMax / 4) * 4)
@@ -1298,12 +1294,6 @@ function Screen7({ state }: { state: WallState }) {
           </span>
         )
       })}
-      <Pin x={1233.98} y={590} size={13} color="#91aaa8" lh={15}>
-        {assigned == null
-          ? "Loading om_jobs…"
-          : `Partition of assigned: ${fmt(statusSum)} = ${fmt(assigned)} · attended ${fmt(attended)} · resolved ${fmt(resolved)}.`}
-      </Pin>
-
       <Pin x={73.92} y={666.04} size={25} weight={700} color="#f2f5f5" lh={29}>FIELD JOB RESOLUTION & ESCALATION BREAKDOWN</Pin>
       <Pin x={90.05} y={721.98} size={16} weight={700} color="#e6f3f2" lh={19}>Resolution action</Pin>
       <Pin x={675.07} y={721.98} w={67.01} size={16} weight={700} color="#e6f3f2" lh={19} align="right">Resolved</Pin>
